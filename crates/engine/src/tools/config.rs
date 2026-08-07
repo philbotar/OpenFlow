@@ -107,6 +107,9 @@ pub const PLAN_DRAFT_PATH: &str = "run://PLAN.md";
 /// Repository writes allowed during Planning, in addition to [`WRITE_PLAN_ARTIFACT_TOOL`].
 const PLANNING_DOCS_WRITE_TOOLS: &[&str] = &["write", "edit"];
 
+/// Bash commands that only inspect the execution folder when invoked plainly.
+const READ_ONLY_BASH_COMMANDS: &[&str] = &["ls", "find"];
+
 #[must_use]
 #[cfg_attr(not(test), allow(dead_code, reason = "exercised by config unit tests"))]
 pub const fn requires_approval(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
@@ -131,9 +134,13 @@ pub fn tool_tier_for_call(_config: &NodeToolConfig, tool_name: &str) -> ToolTier
 
 fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
     match tool_name {
-        "read" | "search" | "find" | "ast_grep" | "web_search" | "openflow_update_todo_list" => {
-            ToolTier::Read
-        }
+        "read"
+        | "ls"
+        | "search"
+        | "find"
+        | "ast_grep"
+        | "web_search"
+        | "openflow_update_todo_list" => ToolTier::Read,
         name if name.starts_with("mcp_") || name.starts_with("mcp/") => ToolTier::Write,
         _ => ToolTier::Write,
     }
@@ -155,8 +162,58 @@ pub fn tool_intent_from_arguments(arguments: &Value) -> Option<String> {
 
 #[must_use]
 pub fn tool_decision_for_call(config: &NodeToolConfig, call: &ToolCall) -> ToolDecision {
-    let tier = tool_tier_for_call(config, &call.name);
+    let tier = if is_read_only_bash_call(call) {
+        ToolTier::Read
+    } else {
+        tool_tier_for_call(config, &call.name)
+    };
     decision_from_mode(config.effective_approval_mode(), tier)
+}
+
+fn is_read_only_bash_call(call: &ToolCall) -> bool {
+    call.name == "bash"
+        && call
+            .arguments
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(is_read_only_bash_command)
+}
+
+fn is_read_only_bash_command(command: &str) -> bool {
+    let command = command.trim();
+    if command.is_empty()
+        || command.chars().any(|character| {
+            matches!(
+                character,
+                '\n' | '\r' | '|' | '&' | ';' | '>' | '<' | '$' | '`'
+            )
+        })
+    {
+        return false;
+    }
+
+    let mut arguments = command.split_whitespace();
+    let Some(program) = arguments.next() else {
+        return false;
+    };
+    if !READ_ONLY_BASH_COMMANDS.contains(&program) {
+        return false;
+    }
+
+    match program {
+        "ls" => true,
+        "find" => arguments.all(|argument| !is_mutating_find_argument(argument)),
+        _ => false,
+    }
+}
+
+fn is_mutating_find_argument(argument: &str) -> bool {
+    let argument = argument.trim_matches(|character| character == '\'' || character == '"');
+    argument == "-delete"
+        || argument.starts_with("-exec")
+        || argument.starts_with("-ok")
+        || argument.starts_with("-fprint")
+        || argument.starts_with("-fls")
 }
 
 /// Whether the run-wide policy permits a call before node approval is considered.
@@ -500,6 +557,8 @@ mod tests {
     fn tool_tier_uses_builtin_classification() {
         let config = NodeToolConfig::default();
         assert_eq!(tool_tier_for_call(&config, "read"), ToolTier::Read);
+        assert_eq!(tool_tier_for_call(&config, "ls"), ToolTier::Read);
+        assert_eq!(tool_tier_for_call(&config, "find"), ToolTier::Read);
         assert_eq!(tool_tier_for_call(&config, "web_search"), ToolTier::Read);
         assert_eq!(
             tool_tier_for_call(&config, "openflow_update_todo_list"),
@@ -528,6 +587,48 @@ mod tests {
             tool_tier_for_call(&config, "mcp_2_gh_search"),
             ToolTier::Write
         );
+    }
+
+    #[test]
+    fn plain_ls_and_find_bash_calls_auto_allow_in_write_mode() {
+        let config = NodeToolConfig::default();
+        for command in ["ls -la", "find . -type f -name '*.rs'"] {
+            let call = ToolCall {
+                id: format!("call-{command}"),
+                provider_call_id: None,
+                name: "bash".to_string(),
+                arguments: json!({"command": command}),
+            };
+            assert_eq!(
+                tool_decision_for_call(&config, &call),
+                ToolDecision::AutoAllow,
+                "{command} should use the read approval tier"
+            );
+        }
+    }
+
+    #[test]
+    fn shell_operators_and_mutating_find_predicates_still_prompt() {
+        let config = NodeToolConfig::default();
+        for command in [
+            "ls > files.txt",
+            "ls && rm -rf build",
+            r"find . -delete",
+            r"find . -exec rm {} \;",
+            r"find . -fprint output.txt",
+        ] {
+            let call = ToolCall {
+                id: format!("call-{command}"),
+                provider_call_id: None,
+                name: "bash".to_string(),
+                arguments: json!({"command": command}),
+            };
+            assert_eq!(
+                tool_decision_for_call(&config, &call),
+                ToolDecision::Prompt,
+                "{command} must remain write-tier"
+            );
+        }
     }
 
     #[test]

@@ -170,7 +170,7 @@ Only `run/execution/` constructs or drives `InteractiveEngine`, as required by t
 | `tool/runner.rs` | `tool::runner` | Execute registered tools and persist large artifacts. |
 | `tool/dispatch.rs` | `tool::dispatch` | Route calls to concrete tool implementations. |
 | `tool/retry.rs` | `tool::retry` | Retry transient tool failures according to workflow policy. |
-| `adapters/tool_impl/` | `tools` internal alias | Concrete read, search, find, write, edit, bash, grep, and patch implementations. |
+| `adapters/tool_impl/` | `tools` internal alias | Concrete read, ls, search, find, write, edit, bash, grep, and patch implementations. |
 | `adapters/mcp/` | `adapters::mcp` | MCP server discovery and per-run clients. |
 | `adapters/infrastructure/git` | `git` public alias | Execution-cwd-scoped diff and revert operations. |
 | `adapters/infrastructure/lsp` | `lsp` public alias | LSP settings and format/diagnostic integration. |

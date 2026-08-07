@@ -56,6 +56,7 @@ where
         node_interrupts: NodeInterrupts,
         aborted_emitted: Arc<parking_lot::Mutex<bool>>,
         runtime_config_store: NodeRuntimeConfigStore,
+        tool_budget: Arc<Semaphore>,
     ) -> Self {
         let mut declared_subagents = BTreeMap::new();
         for node in &workflow.nodes {
@@ -78,15 +79,9 @@ where
             node_interrupts,
             aborted_emitted,
             exclusive_locks: Arc::new(ExclusiveLocks::default()),
-            tool_budget: Arc::new(Semaphore::new(16)),
+            tool_budget,
             runtime_config_store,
         }
-    }
-
-    #[must_use]
-    pub(crate) fn with_tool_budget(mut self, tool_budget: Arc<Semaphore>) -> Self {
-        self.tool_budget = tool_budget;
-        self
     }
 
     pub fn tool_runner(&self) -> &Arc<ToolRunner> {
@@ -278,12 +273,11 @@ where
         for (index, tool_call) in tool_calls.iter().enumerate() {
             self.propose_tool_call(node_id, label, tool_call);
             if self.tool_runner.registry().get(&tool_call.name).is_err() {
-                let record = self.tool_runner.denied(
-                    tool_call.clone(),
+                results[index] = Some(self.deny_tool_call(
+                    node_id,
+                    tool_call,
                     format!("Tool unavailable: {}", tool_call.name),
-                );
-                self.emit_tool_completed(node_id, tool_call, &record.result);
-                results[index] = Some(record.result);
+                ));
             } else {
                 self.note_read_call(effects, tool_call);
                 self.emit_tool_started(node_id, tool_call);
@@ -343,26 +337,12 @@ where
             };
             match outcome {
                 Some(Ok(record)) => {
-                    if let Some(artifact) = record.artifact.clone() {
-                        let _ = self.event_tx.send(ExecutionEvent::ToolArtifactCreated {
-                            node_id: node_id.clone(),
-                            artifact_id: artifact.artifact_id.clone(),
-                            tool_name: artifact.tool_name.clone(),
-                            path: artifact.path.clone(),
-                            size_bytes: artifact.size_bytes,
-                        });
-                    }
-                    self.record_tool_file_changes(effects, node_id, &record);
-                    self.record_tool_reads(effects, node_id, &record);
-                    self.emit_tool_completed(node_id, tool_call, &record.result);
-                    results[index] = Some(record.result);
+                    results[index] =
+                        Some(self.complete_tool_call(effects, node_id, tool_call, record));
                 }
                 Some(Err(error)) => {
-                    let record = self
-                        .tool_runner
-                        .denied(tool_call.clone(), render_tool_error(error));
-                    self.emit_tool_completed(node_id, tool_call, &record.result);
-                    results[index] = Some(record.result);
+                    results[index] =
+                        Some(self.deny_tool_call(node_id, tool_call, render_tool_error(error)));
                 }
                 None => return None,
             }
@@ -372,6 +352,35 @@ where
             collected.push(result?);
         }
         Some(collected)
+    }
+
+    fn complete_tool_call(
+        &self,
+        effects: &mut ToolBatchEffects,
+        node_id: &NodeId,
+        tool_call: &ToolCall,
+        record: ToolExecutionRecord,
+    ) -> ToolResult {
+        if let Some(artifact) = record.artifact.as_ref() {
+            let _ = self.event_tx.send(ExecutionEvent::ToolArtifactCreated {
+                node_id: node_id.clone(),
+                artifact_id: artifact.artifact_id.clone(),
+                tool_name: artifact.tool_name.clone(),
+                path: artifact.path.clone(),
+                size_bytes: artifact.size_bytes,
+            });
+        }
+        self.record_tool_file_changes(effects, node_id, &record);
+        self.record_tool_reads(effects, node_id, &record);
+        let result = record.result;
+        self.emit_tool_completed(node_id, tool_call, &result);
+        result
+    }
+
+    fn deny_tool_call(&self, node_id: &NodeId, tool_call: &ToolCall, reason: String) -> ToolResult {
+        let record = self.tool_runner.denied(tool_call.clone(), reason);
+        self.emit_tool_completed(node_id, tool_call, &record.result);
+        record.result
     }
 
     fn exclusive_lock_keys_for(&self, node_id: &NodeId, call: &ToolCall) -> Vec<String> {
@@ -423,38 +432,20 @@ where
     ) -> Option<ToolResult> {
         self.propose_tool_call(node_id, label, &tool_call);
         if let Err(error) = self.tool_runner.registry().get(&tool_call.name) {
-            let record = self
-                .tool_runner
-                .denied(tool_call.clone(), format!("Tool unavailable: {error}"));
-            self.emit_tool_completed(node_id, &tool_call, &record.result);
-            return Some(record.result);
+            return Some(self.deny_tool_call(
+                node_id,
+                &tool_call,
+                format!("Tool unavailable: {error}"),
+            ));
         }
         self.emit_tool_started(node_id, &tool_call);
         match self
             .execute_tool_or_cancel(effects, tool_call.clone(), node_id, &node_id.0)
             .await
         {
-            Some(Ok(record)) => {
-                if let Some(artifact) = record.artifact.clone() {
-                    let _ = self.event_tx.send(ExecutionEvent::ToolArtifactCreated {
-                        node_id: node_id.clone(),
-                        artifact_id: artifact.artifact_id.clone(),
-                        tool_name: artifact.tool_name.clone(),
-                        path: artifact.path.clone(),
-                        size_bytes: artifact.size_bytes,
-                    });
-                }
-                self.record_tool_file_changes(effects, node_id, &record);
-                self.record_tool_reads(effects, node_id, &record);
-                self.emit_tool_completed(node_id, &tool_call, &record.result);
-                Some(record.result)
-            }
+            Some(Ok(record)) => Some(self.complete_tool_call(effects, node_id, &tool_call, record)),
             Some(Err(error)) => {
-                let record = self
-                    .tool_runner
-                    .denied(tool_call.clone(), render_tool_error(error));
-                self.emit_tool_completed(node_id, &tool_call, &record.result);
-                Some(record.result)
+                Some(self.deny_tool_call(node_id, &tool_call, render_tool_error(error)))
             }
             None => None,
         }
@@ -1036,6 +1027,7 @@ mod tests {
             Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
             Arc::new(parking_lot::Mutex::new(false)),
             engine::new_runtime_config_store(),
+            crate::run::resources::SharedRunResources::default().tool_budget(),
         );
         let calls = vec![
             ToolCall {
@@ -1133,6 +1125,7 @@ mod tests {
             Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
             Arc::new(parking_lot::Mutex::new(false)),
             engine::new_runtime_config_store(),
+            crate::run::resources::SharedRunResources::default().tool_budget(),
         );
 
         let output = port

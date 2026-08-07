@@ -23,12 +23,12 @@ pub use execution::{
     merge_subagent_summaries, normalize_submit_output_arguments, review_completed_run,
     start_subagent_invoke, subagent_runtime_builtin_denied, validate_checkpoint_against_workflow,
     CompleteSubmitOutputParams, EngineAwaitApproval, EngineAwaitInput, EngineRetryableNode,
-    EngineRunResult, FrozenChangeEvidencePacket, HandoffArtifact, HandoffFormat, InteractiveEngine,
-    InteractiveEngineCheckpoint, McpClientRequestKind, NodeRunOutput, OutputRepairPolicy,
-    PendingMcpClientRequest, PostRunReview, PostRunSuggestion, PostRunSuggestionCategory,
-    RepairingAiPort, RunError, RunReport, RunTelemetry, SubagentInvokeSession, SubagentInvokeStep,
-    SubagentStartOutcome, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
-    OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
+    EngineRunResult, EngineUserMessage, FrozenChangeEvidencePacket, HandoffArtifact, HandoffFormat,
+    InteractiveEngine, InteractiveEngineCheckpoint, McpClientRequestKind, NodeRunOutput,
+    OutputRepairPolicy, PendingMcpClientRequest, PostRunReview, PostRunSuggestion,
+    PostRunSuggestionCategory, RepairingAiPort, RunError, RunReport, RunTelemetry,
+    SubagentInvokeSession, SubagentInvokeStep, SubagentStartOutcome, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
 };
 pub use graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request,

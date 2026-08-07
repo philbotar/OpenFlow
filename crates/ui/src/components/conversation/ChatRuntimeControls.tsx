@@ -8,7 +8,16 @@ import {
 import ChevronDown from "lucide-solid/icons/chevron-down";
 import { TextSelect } from "@/components";
 import { useAppContext } from "../../context/AppContext";
-import { APPROVAL_MODE_OPTIONS } from "../../forms/approvalModeOptions";
+import type {
+  ApprovalMode,
+  Project,
+  ProviderProfile,
+  WorkflowAuthoringRuntimeConfig,
+} from "../../lib/types";
+import {
+  APPROVAL_MODE_OPTIONS,
+  writeStoredApprovalMode,
+} from "../../forms/approvalModeOptions";
 import {
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
@@ -29,8 +38,24 @@ type RuntimeMenuStyle = {
   "max-height"?: string;
 };
 
-export function ChatRuntimeControls() {
-  const ctx = useAppContext();
+type RuntimeConfig = WorkflowAuthoringRuntimeConfig;
+
+interface ConversationRuntimeControlsProps {
+  label: "Chat" | "Authoring";
+  profile: ProviderProfile;
+  projects: Project[];
+  projectId: string | null;
+  projectDisabled: boolean;
+  controlsDisabled: boolean;
+  config: RuntimeConfig;
+  approvalMode?: ApprovalMode;
+  onProjectChange: (projectId: string | null) => void;
+  onAddProject: () => void;
+  onConfigChange: (config: RuntimeConfig) => void;
+  onApprovalModeChange?: (approvalMode: ApprovalMode) => void;
+}
+
+function ConversationRuntimeControls(props: ConversationRuntimeControlsProps) {
   const [runtimeMenuOpen, setRuntimeMenuOpen] = createSignal(false);
   const [runtimeMenuStyle, setRuntimeMenuStyle] =
     createSignal<RuntimeMenuStyle>({
@@ -41,14 +66,13 @@ export function ChatRuntimeControls() {
     });
   let runtimeMenuRootRef: HTMLDivElement | undefined;
   let runtimeMenuTriggerRef: HTMLButtonElement | undefined;
-  const chat = createMemo(() => ctx.activeChat());
   const modelOptions = createMemo(() => {
-    const models = [...ctx.activeProfileMemo().known_models];
-    const current = chat()?.config.model;
+    const models = [...props.profile.known_models];
+    const current = props.config.model;
     if (current && !models.includes(current)) {
       models.unshift(current);
     }
-    const defaultModel = ctx.activeProfileMemo().default_model;
+    const defaultModel = props.profile.default_model;
     if (defaultModel && !models.includes(defaultModel)) {
       models.unshift(defaultModel);
     }
@@ -60,12 +84,12 @@ export function ChatRuntimeControls() {
       ...models.map((model) => ({ value: model, label: model })),
     ];
   });
-  const selectedModel = createMemo(() => chat()?.config.model ?? "");
+  const selectedModel = createMemo(() => props.config.model ?? "");
   const effortOptions = createMemo(() =>
-    reasoningEffortOptions(ctx.activeProfileMemo()),
+    reasoningEffortOptions(props.profile),
   );
   const defaultEffortLabel = createMemo(() => {
-    const effort = defaultReasoningEffort(ctx.activeProfileMemo());
+    const effort = defaultReasoningEffort(props.profile);
     if (!effort) {
       return "Default effort";
     }
@@ -83,7 +107,7 @@ export function ChatRuntimeControls() {
   const approvalOptions = APPROVAL_MODE_OPTIONS;
   const projectOptions = createMemo(() => [
     { value: "", label: "None" },
-    ...ctx.projects().map((project) => ({
+    ...props.projects.map((project) => ({
       value: project.id,
       label: project.name,
     })),
@@ -91,7 +115,7 @@ export function ChatRuntimeControls() {
   ]);
   const selectedEffortOption = createMemo(() =>
     effortOptions().find(
-      (option) => option.value === chat()?.config.reasoningEffort,
+      (option) => option.value === props.config.reasoningEffort,
     ),
   );
   const selectedModelLabel = createMemo(
@@ -102,10 +126,9 @@ export function ChatRuntimeControls() {
   const selectedEffortLabel = createMemo(
     () =>
       effortSelectOptions().find(
-        (option) => option.value === (chat()?.config.reasoningEffort ?? ""),
+        (option) => option.value === (props.config.reasoningEffort ?? ""),
       )?.label ?? defaultEffortLabel(),
   );
-  const controlsDisabled = () => ctx.startingRun();
 
   const syncRuntimeMenuPosition = () => {
     const trigger = runtimeMenuTriggerRef;
@@ -189,218 +212,271 @@ export function ChatRuntimeControls() {
   });
 
   return (
-    <Show when={chat()}>
-      {(currentChat) => (
-        <div
-          class="composer-runtime-controls direct-chat-runtime-controls"
-          aria-label="Chat runtime settings"
-        >
-          <TextSelect
-            class="composer-runtime-select direct-chat-project-select"
-            menuPlacement="above"
-            valuePrefix="Project: "
-            value={currentChat().config.projectId ?? ""}
-            options={projectOptions()}
-            disabled={controlsDisabled() || currentChat().runId !== null}
-            aria-label="Chat project"
-            onChange={(event) => {
-              if (event.currentTarget.value === ADD_PROJECT_VALUE) {
-                const chatId = currentChat().id;
-                const projectCount = ctx.projects().length;
-                void (async () => {
-                  await ctx.handleAddProject();
-                  const addedProject = ctx.projects()[projectCount];
-                  const activeChat = ctx.activeChat();
-                  if (!addedProject || activeChat?.id !== chatId) return;
-                  await ctx.handleUpdateChatConfig({
-                    ...activeChat.config,
-                    projectId: addedProject.id,
-                  });
-                })();
-                return;
-              }
-              void ctx.handleUpdateChatConfig({
-                ...currentChat().config,
-                projectId: event.currentTarget.value || null,
-              });
-            }}
-          />
-          <TextSelect
-            class="composer-runtime-select direct-chat-approval-select"
-            menuPlacement="above"
-            valuePrefix="Approval: "
-            value={currentChat().config.approvalMode}
-            options={approvalOptions}
-            disabled={controlsDisabled()}
-            aria-label="Chat tool approval mode"
-            onChange={(event) => {
-              void ctx.handleUpdateChatConfig({
-                ...currentChat().config,
-                approvalMode:
-                  event.currentTarget
-                    .value as (typeof APPROVAL_MODE_OPTIONS)[number]["value"],
-              });
-            }}
-          />
-          <div
-            ref={runtimeMenuRootRef}
-            class="chat-runtime-menu-root"
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
+    <div
+      class="composer-runtime-controls direct-chat-runtime-controls"
+      aria-label={`${props.label} runtime settings`}
+    >
+      <TextSelect
+        class="composer-runtime-select direct-chat-project-select"
+        menuPlacement="above"
+        valuePrefix="Project: "
+        value={props.projectId ?? ""}
+        options={projectOptions()}
+        disabled={props.controlsDisabled || props.projectDisabled}
+        aria-label={`${props.label} project`}
+        onChange={(event) => {
+          if (event.currentTarget.value === ADD_PROJECT_VALUE) {
+            props.onAddProject();
+            return;
+          }
+          props.onProjectChange(event.currentTarget.value || null);
+        }}
+      />
+      <Show when={props.approvalMode !== undefined}>
+        <TextSelect
+          class="composer-runtime-select direct-chat-approval-select"
+          menuPlacement="above"
+          valuePrefix="Approval: "
+          value={props.approvalMode ?? "read_only"}
+          options={approvalOptions}
+          disabled={props.controlsDisabled}
+          aria-label={`${props.label} tool approval mode`}
+          onChange={(event) => {
+            props.onApprovalModeChange?.(
+              event.currentTarget
+                .value as (typeof APPROVAL_MODE_OPTIONS)[number]["value"],
+            );
+          }}
+        />
+      </Show>
+      <div
+        ref={runtimeMenuRootRef}
+        class="chat-runtime-menu-root"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          closeRuntimeMenu();
+          runtimeMenuTriggerRef?.focus();
+        }}
+      >
+        <button
+          ref={runtimeMenuTriggerRef}
+          type="button"
+          class="chat-runtime-menu-trigger"
+          aria-label={`${props.label} runtime settings: model ${selectedModelLabel()}, effort ${selectedEffortLabel()}`}
+          aria-haspopup="dialog"
+          aria-expanded={runtimeMenuOpen()}
+          disabled={props.controlsDisabled || modelOptions().length === 0}
+          onClick={() => {
+            if (runtimeMenuOpen()) {
               closeRuntimeMenu();
-              runtimeMenuTriggerRef?.focus();
+              return;
+            }
+            syncRuntimeMenuPosition();
+            setRuntimeMenuOpen(true);
+          }}
+        >
+          <span class="chat-runtime-menu-summary">
+            <span>{selectedModelLabel()}</span>
+            <span aria-hidden="true">·</span>
+            <span>{selectedEffortLabel()}</span>
+          </span>
+          <ChevronDown
+            class="chat-runtime-menu-chevron"
+            classList={{ "is-open": runtimeMenuOpen() }}
+            aria-hidden="true"
+            width={14}
+            height={14}
+          />
+        </button>
+        <Show when={runtimeMenuOpen()}>
+          <div
+            ref={(_element) => {
+              queueMicrotask(syncRuntimeMenuPosition);
             }}
+            class="chat-runtime-menu-popover"
+            role="dialog"
+            aria-label={`${props.label} runtime settings`}
+            style={runtimeMenuStyle()}
           >
-            <button
-              ref={runtimeMenuTriggerRef}
-              type="button"
-              class="chat-runtime-menu-trigger"
-              aria-label={`Chat runtime settings: model ${selectedModelLabel()}, effort ${selectedEffortLabel()}`}
-              aria-haspopup="dialog"
-              aria-expanded={runtimeMenuOpen()}
-              disabled={controlsDisabled() || modelOptions().length === 0}
-              onClick={() => {
-                if (runtimeMenuOpen()) {
-                  closeRuntimeMenu();
-                  return;
-                }
-                syncRuntimeMenuPosition();
-                setRuntimeMenuOpen(true);
-              }}
-            >
-              <span class="chat-runtime-menu-summary">
-                <span>{selectedModelLabel()}</span>
-                <span aria-hidden="true">·</span>
-                <span>{selectedEffortLabel()}</span>
-              </span>
-              <ChevronDown
-                class="chat-runtime-menu-chevron"
-                classList={{ "is-open": runtimeMenuOpen() }}
-                aria-hidden="true"
-                width={14}
-                height={14}
-              />
-            </button>
-            <Show when={runtimeMenuOpen()}>
-              <div
-                ref={(_element) => {
-                  queueMicrotask(syncRuntimeMenuPosition);
+            <div class="chat-runtime-menu-row">
+              <span>Model</span>
+              <TextSelect
+                class="chat-runtime-menu-select"
+                menuPlacement="horizontal"
+                portalMenu
+                openOnHover
+                value={selectedModel()}
+                options={modelOptions()}
+                disabled={props.controlsDisabled || modelOptions().length === 0}
+                aria-label={`${props.label} model`}
+                onChange={(event) => {
+                  props.onConfigChange({
+                    ...props.config,
+                    model: event.currentTarget.value || null,
+                  });
                 }}
-                class="chat-runtime-menu-popover"
-                role="dialog"
-                aria-label="Chat runtime settings"
-                style={runtimeMenuStyle()}
-              >
-                <div class="chat-runtime-menu-row">
-                  <span>Model</span>
-                  <TextSelect
-                    class="chat-runtime-menu-select"
-                    menuPlacement="horizontal"
-                    portalMenu
-                    openOnHover
-                    value={selectedModel()}
-                    options={modelOptions()}
-                    disabled={controlsDisabled() || modelOptions().length === 0}
-                    aria-label="Chat model"
-                    onChange={(event) => {
-                      void ctx.handleUpdateChatConfig({
-                        ...currentChat().config,
-                        model: event.currentTarget.value || null,
-                      });
-                    }}
-                  />
-                </div>
-                <div class="chat-runtime-menu-row">
-                  <span>Effort</span>
-                  <TextSelect
-                    class="chat-runtime-menu-select"
-                    menuPlacement="horizontal"
-                    portalMenu
-                    openOnHover
-                    value={currentChat().config.reasoningEffort ?? ""}
-                    options={effortSelectOptions()}
-                    disabled={controlsDisabled()}
-                    aria-label="Chat reasoning effort"
-                    onChange={(event) => {
-                      const nextEffort = event.currentTarget.value || null;
-                      const option = effortOptions().find(
-                        (entry) => entry.value === nextEffort,
-                      );
-                      const defaultBudget =
-                        nextEffort === null
-                          ? null
-                          : defaultReasoningBudgetTokens(
-                              ctx.activeProfileMemo(),
-                            )[nextEffort] ?? null;
-                      void ctx.handleUpdateChatConfig({
-                        ...currentChat().config,
-                        reasoningEffort: nextEffort,
-                        reasoningBudgetTokens: option?.uses_budget_tokens
-                          ? currentChat().config.reasoningBudgetTokens ??
-                            defaultBudget
-                          : null,
-                      });
-                    }}
-                  />
-                </div>
-                <Show when={fastModeAvailable(ctx.activeProfileMemo())}>
-                  <div class="chat-runtime-menu-row">
-                    <span>Speed</span>
-                    <TextSelect
-                      class="chat-runtime-menu-select"
-                      menuPlacement="horizontal"
-                      portalMenu
-                      openOnHover
-                      value={
-                        currentChat().config.fastMode ? "fast" : "standard"
-                      }
-                      options={[
-                        { value: "standard", label: "Standard" },
-                        { value: "fast", label: "Fast" },
-                      ]}
-                      disabled={controlsDisabled()}
-                      aria-label="Chat speed"
-                      onChange={(event) => {
-                        void ctx.handleUpdateChatConfig({
-                          ...currentChat().config,
-                          fastMode: event.currentTarget.value === "fast",
-                        });
-                      }}
-                    />
-                  </div>
-                </Show>
-                <Show when={selectedEffortOption()?.uses_budget_tokens}>
-                  <div class="chat-runtime-menu-row chat-runtime-menu-budget-row">
-                    <span>Reasoning budget</span>
-                    <input
-                      class="chat-runtime-menu-budget"
-                      type="number"
-                      min={1}
-                      step={1}
-                      disabled={controlsDisabled()}
-                      aria-label="Chat reasoning budget tokens"
-                      value={currentChat().config.reasoningBudgetTokens ?? ""}
-                      onInput={(event) => {
-                        const parsed = Number.parseInt(
-                          event.currentTarget.value,
-                          10,
-                        );
-                        void ctx.handleUpdateChatConfig({
-                          ...currentChat().config,
-                          reasoningBudgetTokens:
-                            Number.isFinite(parsed) && parsed > 0
-                              ? parsed
-                              : null,
-                        });
-                      }}
-                    />
-                  </div>
-                </Show>
+              />
+            </div>
+            <div class="chat-runtime-menu-row">
+              <span>Effort</span>
+              <TextSelect
+                class="chat-runtime-menu-select"
+                menuPlacement="horizontal"
+                portalMenu
+                openOnHover
+                value={props.config.reasoningEffort ?? ""}
+                options={effortSelectOptions()}
+                disabled={props.controlsDisabled}
+                aria-label={`${props.label} reasoning effort`}
+                onChange={(event) => {
+                  const nextEffort = event.currentTarget.value || null;
+                  const option = effortOptions().find(
+                    (entry) => entry.value === nextEffort,
+                  );
+                  const defaultBudget =
+                    nextEffort === null
+                      ? null
+                      : defaultReasoningBudgetTokens(props.profile)[nextEffort] ??
+                        null;
+                  props.onConfigChange({
+                    ...props.config,
+                    reasoningEffort: nextEffort,
+                    reasoningBudgetTokens: option?.uses_budget_tokens
+                      ? props.config.reasoningBudgetTokens ?? defaultBudget
+                      : null,
+                  });
+                }}
+              />
+            </div>
+            <Show when={fastModeAvailable(props.profile)}>
+              <div class="chat-runtime-menu-row">
+                <span>Speed</span>
+                <TextSelect
+                  class="chat-runtime-menu-select"
+                  menuPlacement="horizontal"
+                  portalMenu
+                  openOnHover
+                  value={props.config.fastMode ? "fast" : "standard"}
+                  options={[
+                    { value: "standard", label: "Standard" },
+                    { value: "fast", label: "Fast" },
+                  ]}
+                  disabled={props.controlsDisabled}
+                  aria-label={`${props.label} speed`}
+                  onChange={(event) => {
+                    props.onConfigChange({
+                      ...props.config,
+                      fastMode: event.currentTarget.value === "fast",
+                    });
+                  }}
+                />
+              </div>
+            </Show>
+            <Show when={selectedEffortOption()?.uses_budget_tokens}>
+              <div class="chat-runtime-menu-row chat-runtime-menu-budget-row">
+                <span>Reasoning budget</span>
+                <input
+                  class="chat-runtime-menu-budget"
+                  type="number"
+                  min={1}
+                  step={1}
+                  disabled={props.controlsDisabled}
+                  aria-label={`${props.label} reasoning budget tokens`}
+                  value={props.config.reasoningBudgetTokens ?? ""}
+                  onInput={(event) => {
+                    const parsed = Number.parseInt(event.currentTarget.value, 10);
+                    props.onConfigChange({
+                      ...props.config,
+                      reasoningBudgetTokens:
+                        Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+                    });
+                  }}
+                />
               </div>
             </Show>
           </div>
-        </div>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+export function ChatRuntimeControls() {
+  const ctx = useAppContext();
+  return (
+    <Show when={ctx.activeChat()}>
+      {(chat) => (
+        <ConversationRuntimeControls
+          label="Chat"
+          profile={ctx.activeProfileMemo()}
+          projects={ctx.projects()}
+          projectId={chat().config.projectId}
+          projectDisabled={chat().runId !== null}
+          controlsDisabled={ctx.startingRun()}
+          config={{
+            model: chat().config.model,
+            reasoningEffort: chat().config.reasoningEffort,
+            reasoningBudgetTokens: chat().config.reasoningBudgetTokens,
+            fastMode: chat().config.fastMode ?? false,
+          }}
+          approvalMode={chat().config.approvalMode}
+          onProjectChange={(projectId) => {
+            void ctx.handleUpdateChatConfig({ ...chat().config, projectId });
+          }}
+          onAddProject={() => {
+            const chatId = chat().id;
+            const projectCount = ctx.projects().length;
+            void (async () => {
+              await ctx.handleAddProject();
+              const addedProject = ctx.projects()[projectCount];
+              const activeChat = ctx.activeChat();
+              if (!addedProject || activeChat?.id !== chatId) return;
+              await ctx.handleUpdateChatConfig({
+                ...activeChat.config,
+                projectId: addedProject.id,
+              });
+            })();
+          }}
+          onConfigChange={(config) => {
+            void ctx.handleUpdateChatConfig({ ...chat().config, ...config });
+          }}
+          onApprovalModeChange={(approvalMode) => {
+            writeStoredApprovalMode(globalThis.localStorage, approvalMode);
+            void ctx.handleUpdateChatConfig({ ...chat().config, approvalMode });
+          }}
+        />
       )}
     </Show>
+  );
+}
+
+export function WorkflowAuthoringRuntimeControls() {
+  const ctx = useAppContext();
+  return (
+    <ConversationRuntimeControls
+      label="Authoring"
+      profile={ctx.activeProfileMemo()}
+      projects={ctx.projects()}
+      projectId={ctx.workflowAuthoringTargetProjectId()}
+      projectDisabled={
+        ctx.workflowAuthoringBusy() ||
+        ctx.workflowAuthoringMessages().length > 0
+      }
+      controlsDisabled={!ctx.workflowAuthoringSessionReady()}
+      config={ctx.workflowAuthoringRuntimeConfig()}
+      onProjectChange={(projectId) => {
+        void ctx.handleWorkflowAuthoringProjectChange(projectId);
+      }}
+      onAddProject={() => {
+        const projectCount = ctx.projects().length;
+        void (async () => {
+          await ctx.handleAddProject();
+          const addedProject = ctx.projects()[projectCount];
+          if (!addedProject) return;
+          await ctx.handleWorkflowAuthoringProjectChange(addedProject.id);
+        })();
+      }}
+      onConfigChange={ctx.handleUpdateWorkflowAuthoringRuntimeConfig}
+    />
   );
 }

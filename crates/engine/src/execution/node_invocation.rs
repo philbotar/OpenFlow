@@ -104,7 +104,7 @@ description. After the human replies, continue working toward submit.\n\
 assistant messages; keep detailed reasoning in your private work.\n\
 - Gather enough context before acting. Use input.upstream, input.changed_files, and input.reads \
 first. When an upstream entry includes handoff, read its run:// URI before using the artifact's \
-contents. Then read/search/find only the files needed to make a correct change or answer.\n\
+contents. Then read/search/find/ls only the files needed to make a correct change or answer.\n\
 - Read before you edit. For existing files, inspect the relevant contents, preserve indentation \
 and local style, and prefer the smallest edit that satisfies the task.\n\
 - Recover from failed tool calls. Tool errors, failed edits, empty searches, and truncated output \
@@ -129,6 +129,7 @@ or :raw for full unnumbered content. Truncated tool output is readable via artif
 - search — search file contents by regex (ripgrep/Rust regex; no backrefs or lookaround). \
 Gitignore-aware by default. Results cap at 500 matches — narrow the pattern or paths if you hit \
 the limit.\n\
+- ls — list a local directory. Pass . to list the execution folder.\n\
 - find — find files and directories by glob (e.g. **/*.rs). Results cap at 200 paths — narrow \
 the pattern if you hit the limit.\n\
 - ast_grep — search code structurally with ast-grep patterns ($VAR metavariables). Prefer over \
@@ -151,8 +152,10 @@ structural multi-file rewrites; prefer edit for one-off local changes.\n\
 edit for targeted changes.\n\
 \n\
 ### Execute\n\
-- bash — run a command in the execution folder. Use cwd for the working directory (not \
-cd dir && …). Prefer read/search/find/edit/write when they suffice. Output over 50KB is \
+- bash — run a command in the execution folder. Plain ls and read-only find commands \
+auto-use the read approval tier; shell operators and mutating find predicates remain write-tier. \
+Use cwd for the working directory (not \
+cd dir && …). Prefer read/search/find/ls/edit/write when they suffice. Output over 50KB is \
 truncated to an artifact (read via artifact:{id}). Returns merged stdout/stderr, wall time, \
 and exit code.\n\
 - Run shell commands non-interactive: pass flags that avoid prompts, avoid pagers, and do not \
@@ -171,16 +174,16 @@ openflow_call_subagent schema lists currently available subagents for this node.
 ### Tool usage\n\
 - Use catalog tools when they improve correctness. Tool errors are returned to you; recover \
 and keep working toward submit unless the task is impossible.\n\
-- Batch independent read/search/find calls when you can.\n\
+- Batch independent read/search/find/ls calls when you can.\n\
 - search and find skip paths matched by .gitignore (including .flow/ when ignored).\n\
 - Your input JSON includes changed_files from upstream nodes — use it to avoid redundant reads.\n\
 - Your input JSON includes reads (paths already read upstream + structural outline) — use it to orient; only read a listed path when you need its actual contents.\n\
-- Write-tier and exec-tier tools may require human approval before running.\n\
+- Write-tier tools may require human approval before running.\n\
 \n\
 ## Project workflows\n\
 When this workflow is assigned to a project, the execution folder is that project's \
 repository checkout on disk. You are working inside a real codebase — not an isolated \
-sandbox. Use read/search/find (and bash for git or other CLI tasks) with \
+sandbox. Use read/search/find/ls (and bash for git or other CLI tasks) with \
 repository-relative paths only (e.g. package.json, src/App.tsx) — absolute paths under \
 the checkout work but waste tokens. Workflow definitions for this project live under \
 `.flow/workflows/` in that repo; do not confuse them with application source unless \
@@ -190,7 +193,7 @@ the task targets them. A follow-on system block may include the exact repository
 - Stop with prose only and expect the workflow to continue.\n\
 - Call submit before the task is actually complete.\n\
 - Ask the human for information you can discover with the available context or tools.\n\
-- Use bash for file reads, searches, or edits when read/search/find/edit/write are sufficient.\n\
+- Use bash for file reads, searches, or edits when read/search/find/ls/edit/write are sufficient.\n\
 - Assume downstream nodes have started before submit succeeds.";
 
 /// Override appended after the runtime preamble for nodes with `requestUserInput: false`.

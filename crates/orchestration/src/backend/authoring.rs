@@ -1,8 +1,9 @@
 use crate::api::{
-    WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent,
+    WorkflowAuthoringDraftEvent, WorkflowAuthoringRuntimeConfig, WorkflowAuthoringStartResult,
+    WorkflowAuthoringThinkingEvent,
 };
 use crate::settings::model::{merge_preserved_secrets, AppSettings};
-use crate::workflow::authoring::WorkflowAuthoringProjectContext;
+use crate::workflow::authoring::{WorkflowAuthoringEventHandlers, WorkflowAuthoringProjectContext};
 use engine::Workflow;
 
 use super::{AppBackend, BackendError, WorkflowAuthoringTurnResult};
@@ -42,9 +43,9 @@ impl AppBackend {
         session_id: String,
         message: String,
         settings: &AppSettings,
+        runtime_config: &WorkflowAuthoringRuntimeConfig,
         transient_api_key: Option<&str>,
-        on_thinking: F,
-        on_draft_update: G,
+        event_handlers: WorkflowAuthoringEventHandlers<F, G>,
     ) -> Result<WorkflowAuthoringTurnResult, BackendError>
     where
         F: Fn(WorkflowAuthoringThinkingEvent) + Send + Sync,
@@ -63,13 +64,13 @@ impl AppBackend {
         );
         let ai = providers::create_provider(provider_config);
         self.workflow_authoring
-            .send_turn(
+            .send_turn_with_runtime_config(
                 &session_id,
                 message,
                 &merged,
+                runtime_config,
                 &ai,
-                on_thinking,
-                on_draft_update,
+                event_handlers,
             )
             .await
             .map_err(Into::into)

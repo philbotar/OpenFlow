@@ -208,7 +208,7 @@ re-reading the same files and re-running the same searches their parents already
 
 ```mermaid
 flowchart TD
-    Call["Read-tier tool call<br/>(read / search / find / ast_grep)"] --> Key["cache_key = tool_name + canonical JSON args<br/>(BTreeMap ⇒ sorted keys ⇒ canonical)"]
+    Call["Read-tier tool call<br/>(read / ls / search / find / ast_grep)"] --> Key["cache_key = tool_name + canonical JSON args<br/>(BTreeMap ⇒ sorted keys ⇒ canonical)"]
     Key --> Hit{Entry exists?}
     Hit -->|no| Exec["Execute tool"]
     Hit -->|yes| Valid{Still valid?}

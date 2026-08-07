@@ -27,6 +27,7 @@ import type {
   TerminalStart,
   Workflow,
   WorkflowAuthoringMessage,
+  WorkflowAuthoringRuntimeConfig,
   WorkflowAuthoringValidation,
   WorkflowRunState,
   WorkflowSchedule,
@@ -247,6 +248,8 @@ export interface AppContextValue {
   workflowAuthoringValidation: Accessor<WorkflowAuthoringValidation | null>;
   workflowAuthoringDraft: Accessor<Workflow | null>;
   workflowAuthoringDraftPending: Accessor<boolean>;
+  workflowAuthoringTargetProjectId: Accessor<string | null>;
+  workflowAuthoringRuntimeConfig: Accessor<WorkflowAuthoringRuntimeConfig>;
   updateWorkflowAuthoringDraft: (mutator: (draft: Workflow) => void) => void;
   handleOpenWorkflowAuthoring: (
     baseWorkflow?: Workflow,
@@ -254,6 +257,12 @@ export interface AppContextValue {
     initialMessage?: string,
   ) => Promise<void>;
   handleCloseWorkflowAuthoring: () => void;
+  handleWorkflowAuthoringProjectChange: (
+    targetProjectId: string | null,
+  ) => Promise<void>;
+  handleUpdateWorkflowAuthoringRuntimeConfig: (
+    config: WorkflowAuthoringRuntimeConfig,
+  ) => void;
   handleWorkflowAuthoringSend: (message: string) => Promise<void>;
   handleApplyWorkflowAuthoringDraft: () => Promise<void>;
   handleRun: () => Promise<void>;

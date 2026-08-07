@@ -16,6 +16,7 @@ import {
   inferRunStateWorkflowId,
   replaceWorkflow,
 } from "../../lib/workflow";
+import { readStoredApprovalMode } from "../../forms/approvalModeOptions";
 import { normalizeError } from "../../lib/utils";
 import type {
   AgentDefinition,
@@ -207,7 +208,18 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
 
   const handleCreateChat = async () => {
     try {
-      const chat = await desktop.createChat();
+      const createdChat = await desktop.createChat();
+      const rememberedApprovalMode = readStoredApprovalMode(
+        globalThis.localStorage,
+      );
+      const chat =
+        rememberedApprovalMode !== null &&
+        rememberedApprovalMode !== createdChat.config.approvalMode
+          ? await desktop.updateChatConfig(createdChat.id, {
+              ...createdChat.config,
+              approvalMode: rememberedApprovalMode,
+            })
+          : createdChat;
       setChats([chat, ...chats()]);
       setActiveChatId(chat.id);
       params.selectChat(chat.id, null);
@@ -442,12 +454,6 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
       params.showErrorToast("Stop the project run before removing this project.");
       return;
     }
-    if (chats().some((chat) => chat.config.projectId === projectId)) {
-      params.showErrorToast(
-        "Move or delete chats linked to this project before removing it.",
-      );
-      return;
-    }
     const confirmed = await confirmNativeDialog(
       `Remove "${project.name}" from OpenFlow? Its folder and workflow files stay on disk.`,
       { title: "Remove project", kind: "warning" },
@@ -463,6 +469,13 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
       }
       setProjects(remainingProjects);
       setWorkflows(remainingWorkflows);
+      setChats(
+        chats().map((chat) =>
+          chat.config.projectId === projectId
+            ? { ...chat, config: { ...chat.config, projectId: null } }
+            : chat,
+        ),
+      );
       setExpandedProjectIds((current) => {
         const next = new Set(current);
         next.delete(projectId);

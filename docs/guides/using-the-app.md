@@ -108,8 +108,8 @@ Agent nodes can invoke built-in tools (read and edit files, run shell commands, 
 
 | Approval mode | Behavior |
 | --- | --- |
-| **Read only** | Only read-tier tools (for example read, search, find) are offered to the model; write and shell tools are omitted from the catalog. |
-| **Read auto-approve, write prompt** | Read-tier tools run without a prompt; write-tier tools (edit, bash, MCP, …) require approval in chat. |
+| **Read only** | Only read-tier tools (for example read, ls, search, find) are offered to the model; write and shell tools are omitted from the catalog. |
+| **Read auto-approve, write prompt** | Read-tier tools run without a prompt; write-tier tools (edit, bash, MCP, …) require approval in chat. Plain `ls` and read-only `find` commands through `bash` also run without a prompt. |
 | **Always ask** | Prompt before each tool call. |
 | **Auto-approve all** | No approval prompts for tools this node is allowed to use. |
 
@@ -130,7 +130,9 @@ When a run completes successfully, the chat may show **Run review** suggestions:
 
 ## Build with AI
 
-**Build with AI** starts a workflow authoring session. Ask questions or discuss the goal normally; the assistant proposes graph changes only after you explicitly ask to create or edit the workflow. Review the proposed graph, then select **Create Workflow** or **Apply Changes** to save it. Provider readiness is required, same as running a workflow.
+**Build with AI** starts a workflow authoring session. Its composer uses the same project and model controls as direct chat, including reasoning effort and speed when the provider supports them. You can change the project before the first message; the project then stays fixed for that authoring conversation. Authoring tool access stays fixed, so this composer does not show the direct-chat approval control.
+
+Ask questions or discuss the goal normally; the assistant proposes graph changes only after you explicitly ask to create or edit the workflow. Review the proposed graph, then select **Create Workflow** or **Apply Changes** to save it. Provider readiness is required, same as running a workflow.
 
 ## Schedule
 
@@ -156,7 +158,7 @@ The task-prompt editor lists matching skills after you type `/`, using the same 
 | **MCP Servers** | Discover supported configs, import `mcpServers` JSON, install registry packages, or add stdio/remote servers manually. Review trust before enablement. Test, edit, export, delete, or disable connections. **Disable all** turns off configured servers plus external discovery. |
 | **Diagnostics** | Local debug output and related developer options. |
 
-OpenFlow supports local stdio, Streamable HTTP, and legacy SSE MCP transports. Remote auth supports static secret-backed headers plus OAuth discovery, PKCE, callback validation, token refresh, and disconnect. MCP inputs and OAuth tokens stay in `{data_local}/openflow/mcp-secrets.json`; the file is plaintext with mode `0600` on Unix. Settings and exports contain opaque refs, never credential values. Remote URLs pass HTTPS, redirect, DNS/IP, and localhost policy checks before connection.
+OpenFlow supports local stdio, Streamable HTTP, and legacy SSE MCP transports. The embedded Terminal, bash tools, and local MCP probes, installs, and runs share the user's login-shell `PATH`, so GUI launches can resolve runtimes such as `npx` installed by nvm. Explicit per-command or MCP environment entries override that inherited `PATH`. Remote auth supports static secret-backed headers plus OAuth discovery, PKCE, callback validation, token refresh, and disconnect. Any failed remote test exposes **Authenticate OAuth**, even when the transport could not classify the failure as a standard OAuth challenge. Discovery and client registration must complete before the browser can open; failures remain visible on the server row with the failed stage. MCP inputs and OAuth tokens stay in `{data_local}/openflow/mcp-secrets.json`; the file is plaintext with mode `0600` on Unix. Settings and exports contain opaque refs, never credential values. Remote URLs pass HTTPS, redirect, DNS/IP, and localhost policy checks before connection.
 
 Server-to-client capabilities default to off per server. Enable **Expose selected project root**, **Allow approved sampling reqs**, or **Allow approved form/URL elicitation**, then run **Approve & Test** again. OpenFlow exposes only the selected project's canonical folder as an MCP root; app-managed workspaces stay hidden. Sampling and elicitation stay bound to the originating node and MCP tool call.
 

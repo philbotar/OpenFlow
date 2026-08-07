@@ -58,12 +58,8 @@ pub(super) struct ExecutionResources {
 }
 
 pub(super) struct SpawnRunInput {
-    pub entrypoint: Option<String>,
-    pub entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
-    pub execution_cwd: PathBuf,
+    pub metadata: RunLaunchMetadata,
     pub project_id: Option<String>,
-    pub artifact_root: PathBuf,
-    pub attachment_root: PathBuf,
     pub attachment_store: Arc<dyn crate::run::ports::RunAttachmentStore>,
     pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
     pub resume_continuation: Option<ResumeContinuation>,
@@ -71,11 +67,24 @@ pub(super) struct SpawnRunInput {
     pub mutation_gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
-pub(super) struct SpawnedRun {
-    pub event_rx: Option<UnboundedReceiver<ExecutionEvent>>,
+#[derive(Clone)]
+pub(super) struct RunLaunchMetadata {
+    pub entrypoint: Option<String>,
+    pub entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
+    pub execution_cwd: PathBuf,
+    pub artifact_root: PathBuf,
+    pub attachment_root: PathBuf,
+}
+
+pub(super) struct RunControl {
     pub handle: tokio::task::JoinHandle<()>,
     pub action_tx: UnboundedSender<ExecutionAction>,
     pub cancel_token: CancellationToken,
+}
+
+pub(super) struct ActiveRunResources {
+    pub resources: ExecutionResources,
+    pub control: Option<RunControl>,
 }
 
 /// Provider wiring shared by fresh start, in-session continue, and durable resume.
@@ -223,23 +232,32 @@ pub(super) fn spawn_prepared_run(
     mut prepared: PreparedWorkflowRun,
     input: SpawnRunInput,
     resources: &ExecutionResources,
-) -> SpawnedRun {
+) -> (RunControl, UnboundedReceiver<ExecutionEvent>) {
+    let SpawnRunInput {
+        metadata,
+        project_id,
+        attachment_store,
+        resume_checkpoint,
+        resume_continuation,
+        shared_resources,
+        mutation_gate,
+    } = input;
     let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
         runtime_handle,
         InteractiveWorkflowRunParams {
             workflow: prepared.workflow.clone(),
-            entrypoint: input.entrypoint,
-            entrypoint_attachments: input.entrypoint_attachments,
-            execution_cwd: input.execution_cwd.clone(),
+            entrypoint: metadata.entrypoint,
+            entrypoint_attachments: metadata.entrypoint_attachments,
+            execution_cwd: metadata.execution_cwd.clone(),
             project_repository_root: crate::run::execution::project_repository_root(
-                input.project_id.as_deref(),
-                &input.execution_cwd,
+                project_id.as_deref(),
+                &metadata.execution_cwd,
             ),
-            artifact_root: input.artifact_root.clone(),
-            attachment_root: input.attachment_root,
-            attachment_store: input.attachment_store,
-            resume_checkpoint: input.resume_checkpoint,
-            resume_continuation: input.resume_continuation,
+            artifact_root: metadata.artifact_root,
+            attachment_root: metadata.attachment_root,
+            attachment_store,
+            resume_checkpoint,
+            resume_continuation,
             checkpoint_sink: resources.checkpoint_sink.clone(),
             ai: prepared.ai,
             agent_snapshots: prepared.agent_snapshots,
@@ -255,26 +273,23 @@ pub(super) fn spawn_prepared_run(
                 .map(|clients| (clients, std::mem::take(&mut prepared.mcp_issues))),
             search: prepared.persisted_settings.search.clone(),
             runtime_config_store: resources.runtime_config_store.clone(),
-            tool_budget: input.shared_resources.tool_budget(),
-            mutation_gate: input.mutation_gate,
+            tool_budget: shared_resources.tool_budget(),
+            mutation_gate,
         },
     );
-    SpawnedRun {
-        event_rx: Some(event_rx),
-        handle,
-        action_tx,
-        cancel_token,
-    }
+    (
+        RunControl {
+            handle,
+            action_tx,
+            cancel_token,
+        },
+        event_rx,
+    )
 }
 
 pub(super) struct RunLaunchTail {
     pub spawn_input: SpawnRunInput,
     pub resources: ExecutionResources,
-    pub entrypoint: Option<String>,
-    pub entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
-    pub execution_cwd: PathBuf,
-    pub artifact_root: PathBuf,
-    pub attachment_root: PathBuf,
 }
 
 /// Shared tail for fresh start, in-session continue, and durable resume launches.
@@ -290,24 +305,15 @@ pub(super) async fn finalize_run_launch(
     let RunLaunchTail {
         spawn_input,
         resources,
-        entrypoint,
-        entrypoint_attachments,
-        execution_cwd,
-        artifact_root,
-        attachment_root,
     } = tail;
-    let mut spawned = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
-    let event_rx = spawned.event_rx.take().expect("spawned run event channel");
+    let metadata = spawn_input.metadata.clone();
+    let (spawned, event_rx) = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
     let mut session_guard = session.lock().await;
     let initial_state = configure_session(&mut session_guard)?;
     attach_execution_handles(
         &mut session_guard,
         workflow,
-        entrypoint,
-        entrypoint_attachments,
-        execution_cwd,
-        artifact_root,
-        attachment_root,
+        metadata,
         resources,
         skill_paths,
         spawned,
@@ -322,61 +328,30 @@ pub(super) async fn finalize_run_launch(
 pub(super) fn attach_execution_handles(
     session: &mut RunSession,
     workflow: Workflow,
-    entrypoint: Option<String>,
-    entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
-    execution_cwd: PathBuf,
-    artifact_root: PathBuf,
-    attachment_root: PathBuf,
+    metadata: RunLaunchMetadata,
     resources: ExecutionResources,
     skill_paths: SkillPaths,
-    spawned: SpawnedRun,
+    control: RunControl,
 ) {
-    let SpawnedRun {
-        event_rx: _,
-        handle,
-        action_tx,
-        cancel_token,
-    } = spawned;
-    let ExecutionResources {
-        snapshot_store,
-        lsp_settings,
-        pending_engine_reverts,
-        node_interrupts,
-        checkpoint_sink,
-        runtime_config_store,
-    } = resources;
     session.workflow = Some(workflow);
     session.skill_paths = skill_paths;
-    session.entrypoint = entrypoint;
-    session.entrypoint_attachments = entrypoint_attachments;
-    session.execution_cwd = Some(execution_cwd);
-    session.artifact_root = Some(artifact_root);
-    session.attachment_root = Some(attachment_root);
+    session.entrypoint = metadata.entrypoint;
+    session.entrypoint_attachments = metadata.entrypoint_attachments;
+    session.execution_cwd = Some(metadata.execution_cwd);
+    session.artifact_root = Some(metadata.artifact_root);
+    session.attachment_root = Some(metadata.attachment_root);
     session.generation = session.generation.wrapping_add(1);
     session.engine_checkpoint = None;
-    session.checkpoint_sink = Some(checkpoint_sink);
-    session.snapshot_store = Some(snapshot_store);
-    session.lsp_settings = Some(lsp_settings);
-    session.pending_engine_reverts = Some(pending_engine_reverts);
-    session.action_tx = Some(action_tx);
-    session.handle = Some(handle);
-    session.cancel_token = Some(cancel_token);
-    session.node_interrupts = Some(node_interrupts);
-    session.runtime_config_store = Some(runtime_config_store);
+    session.active = Some(ActiveRunResources {
+        resources,
+        control: Some(control),
+    });
 }
 
 /// Clears session-scoped resources when a run becomes inactive.
 pub(crate) fn finish_run_session(session: &mut RunSession) {
     session.generation = session.generation.wrapping_add(1);
-    session.snapshot_store = None;
-    session.lsp_settings = None;
-    session.pending_engine_reverts = None;
-    session.action_tx = None;
-    session.handle = None;
-    session.cancel_token = None;
-    session.node_interrupts = None;
-    session.checkpoint_sink = None;
-    session.runtime_config_store = None;
+    session.active = None;
     session.engine_checkpoint = None;
     session.skill_paths.clear();
 }
@@ -395,11 +370,14 @@ pub(crate) fn clear_artifact_root(session: &mut RunSession) {
 /// Marks the in-session run as user-stopped and captures a resume checkpoint when present.
 pub(crate) fn apply_user_stop_to_session(session: &mut RunSession) -> Option<WorkflowRunState> {
     let captured_checkpoint = session
-        .checkpoint_sink
+        .active
         .as_ref()
-        .and_then(|sink| sink.lock().clone());
+        .and_then(|active| active.resources.checkpoint_sink.lock().clone());
     if let Some(checkpoint) = captured_checkpoint {
         session.engine_checkpoint = Some(checkpoint.engine);
+    }
+    if let Some(active) = session.active.as_mut() {
+        active.resources.checkpoint_sink = Arc::new(ParkingMutex::new(None));
     }
     let workflow = session.workflow.clone()?;
     let run_state = session.run_state.as_mut()?;
@@ -439,7 +417,12 @@ pub(super) fn require_workflow_mut(
 pub(super) fn require_action_tx(
     session: &RunSession,
 ) -> Result<&UnboundedSender<ExecutionAction>, BackendError> {
-    session.action_tx.as_ref().ok_or(BackendError::NoActiveRun)
+    session
+        .active
+        .as_ref()
+        .and_then(|active| active.control.as_ref())
+        .map(|control| &control.action_tx)
+        .ok_or(BackendError::NoActiveRun)
 }
 
 pub(super) fn require_node_mut<'a>(
@@ -454,7 +437,6 @@ pub(super) fn require_node_mut<'a>(
         .ok_or_else(|| BackendError::NodeNotFoundInRun(node_id.to_string()))
 }
 
-#[derive(Debug)]
 pub(crate) struct RunSession {
     pub(crate) workflow: Option<Workflow>,
     pub(crate) run_state: Option<WorkflowRunState>,
@@ -469,16 +451,7 @@ pub(crate) struct RunSession {
     pub(crate) attachment_root: Option<PathBuf>,
     pub(crate) generation: u64,
     pub(crate) engine_checkpoint: Option<InteractiveEngineCheckpoint>,
-    pub(crate) checkpoint_sink: Option<Arc<ParkingMutex<Option<PendingRunCheckpoint>>>>,
-    pub(crate) snapshot_store:
-        Option<Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>>,
-    pub(crate) lsp_settings: Option<crate::lsp::LspSettings>,
-    pub(crate) pending_engine_reverts: Option<Arc<parking_lot::Mutex<Vec<engine::EditBatch>>>>,
-    pub(crate) action_tx: Option<UnboundedSender<ExecutionAction>>,
-    pub(crate) handle: Option<tokio::task::JoinHandle<()>>,
-    pub(crate) cancel_token: Option<CancellationToken>,
-    pub(crate) node_interrupts: Option<NodeInterrupts>,
-    pub(crate) runtime_config_store: Option<NodeRuntimeConfigStore>,
+    pub(crate) active: Option<ActiveRunResources>,
 }
 
 pub(super) enum TerminationMode {

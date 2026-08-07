@@ -507,7 +507,7 @@ Interactive shell in the bottom dock — a fourth tab beside Overview, Chat, and
 | Item | Priority | Status |
 | --- | --- | --- |
 | Terminal tab — add **Terminal** to dock tab switcher; persist selected tab in session | High | Done |
-| PTY backend — spawn login shell via `portable-pty`; stream stdout/stderr to UI; handle resize | High | Done |
+| PTY backend — resolve login-shell `PATH`, spawn the user shell via `portable-pty`; stream stdout/stderr to UI; handle resize | High | Done |
 | Cwd policy — default to linked project root; during an active run, optionally follow execution cwd; `cd` in terminal is session-local | High | Done |
 | xterm.js frontend — fit-to-panel, scrollback, copy/paste, basic ANSI colors | High | Done |
 | Job manager — long-running terminal/agent bash commands can return a job id; status/output/stop actions are available without blocking the run harness | High | Planned |
@@ -844,7 +844,7 @@ Under `ApprovalMode::Write`, **read** tier auto-allows; **write** and **exec** t
 
 | Layer | Role |
 | --- | --- |
-| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `search`, `find`, `ast_grep`; write tier: `ast_edit`, `write`, `edit`, `apply_patch`; exec tier: `bash`. **Adding a tool:** register here and update `NODE_RUNTIME_PREAMBLE` (`engine/src/execution/node_invocation.rs`) |
+| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `ls`, `search`, `find`, `ast_grep`; write tier: `ast_edit`, `write`, `edit`, `apply_patch`, `bash`. Plain `ls` and read-only `find` Bash calls use the read approval tier. **Adding a tool:** register here and update `NODE_RUNTIME_PREAMBLE` (`engine/src/execution/node_invocation.rs`) |
 | `crates/orchestration/src/tool/runner.rs` | `ToolRunner` executes builtins under execution cwd; drains `FileChangeRecord` ledger after write-tier calls |
 | `crates/engine/src/tools/config.rs` | `ToolTier`, `ToolRef.tier`, `ApprovalMode`, per-call tier resolution and approval policy |
 | `crates/engine/src/execution/interactive_engine.rs` | Batches tool calls; pauses on write-tier approval via `AwaitToolApproval` |

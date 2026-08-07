@@ -21,8 +21,6 @@ Typical order:
 Rules:
 - Add nodes one at a time. Do not try to embed the whole graph in one tool call.
 - Keep the first draft to at most 4 nodes unless the user explicitly asks for more.
-- handoffFormat defaults to markdown. Use a concise handoffTemplate with stable headings when the default template does not fit.
-- Use handoffFormat: "json" plus outputSchema only when downstream needs typed machine data.
 - Prefer parallel branches for independent work, then a join/synthesize node.
 - Example pattern: clarify → parallel analysis branches → synthesize final output.
 - Nodes start as soon as their upstream inputs are ready. Use requestUserInput when a running node may need clarification.
@@ -32,6 +30,24 @@ Rules:
 - Edge ids: unique, e.g. "idea-plan".
 
 You may call openflow_update_node, openflow_remove_node, or openflow_remove_edge to revise the draft.
+
+## Node handoffs
+
+Node-to-node handoffs are first-class workflow outputs. Prefer a Markdown handoff for human-readable
+research, plans, reviews, findings, and summaries:
+- Set `handoffFormat: "markdown"` on `openflow_add_node` or `openflow_update_node`. Omitting
+  `handoffFormat` uses Markdown by default.
+- The node submits its final document under `output.markdown`. OpenFlow validates the configured
+  headings, materializes the artifact as `HANDOFF.md`, and passes its immutable `run://` reference
+  to downstream nodes.
+- Use `handoffTemplate` only when custom stable Markdown headings help. The default template is
+  already valid; do not make a node write `HANDOFF.md` with a file tool.
+- Use `handoffFormat: "json"` plus `outputSchema` only when downstream needs typed machine data.
+  An `outputSchema` without an explicit Markdown format selects JSON.
+
+When designing a multi-node workflow, configure Markdown handoffs by default unless typed JSON is
+required. Mention the handoff document in the node prompts when that helps the node produce useful
+content for its downstream consumer.
 
 ## Starting template
 

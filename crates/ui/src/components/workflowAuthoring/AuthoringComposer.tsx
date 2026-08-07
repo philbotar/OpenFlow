@@ -2,6 +2,7 @@ import { createEffect, createSignal, Show } from "solid-js";
 import ArrowUp from "lucide-solid/icons/arrow-up";
 import { resizeComposerTextarea } from "../../lib/utils";
 import { Button } from "../Button";
+import { WorkflowAuthoringRuntimeControls } from "../conversation/ChatRuntimeControls";
 import { Spinner } from "../Spinner";
 
 export function AuthoringComposer(props: {
@@ -80,6 +81,7 @@ export function AuthoringComposer(props: {
               </Show>
             </Button>
           </div>
+          <WorkflowAuthoringRuntimeControls />
         </div>
       </div>
     </div>

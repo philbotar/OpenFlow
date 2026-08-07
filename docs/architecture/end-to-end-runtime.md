@@ -165,7 +165,7 @@ stateDiagram-v2
     Ready --> AwaitingInput: NeedsUserInput / Message (conversational)
     Ready --> PendingTools: ToolCalls (executable only)
     PendingTools --> RunningTools: auto-allow OR approved
-    RunningTools --> Ready: on_tool_results
+    RunningTools --> Ready: on_tool_results / queued live user message
     Ready --> Completed: AgentTurnOutcome::Completed
     Ready --> Failed: non-retryable AgentError
     Ready --> Backoff: AgentError::Transient
@@ -195,6 +195,11 @@ Batch rule: exactly one harness tool alone, **or** one or more executable tools 
 
 Provider requests mirror this lifecycle: workflow nodes require a tool call; `conversationMode`
 nodes use automatic tool choice so plain text remains a valid outcome.
+
+While a live node runs model or tool work, `ExecutionAction::ProvideInput` is forwarded to the
+engine's user-message queue. The engine appends the message to the node transcript; the next
+`AgentRequest` includes it. Paused input, approval, and retry actions keep their existing
+interaction handlers.
 
 ### 3.3 ToolCallStatus lifecycle
 

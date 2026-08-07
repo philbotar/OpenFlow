@@ -19,6 +19,7 @@ In **Read only** approval mode, write-tier and `bash` are not offered to the mod
 | Tool | Chat label | Tier |
 | --- | --- | --- |
 | [`read`](#read) | Read File | Read |
+| [`ls`](#ls) | List Directory | Read |
 | [`search`](#search) | Search Files | Read |
 | [`find`](#find) | Search Folders | Read |
 | [`ast_grep`](#ast_grep) | AST Search | Read |
@@ -49,6 +50,16 @@ In **Read only** approval mode, write-tier and `bash` are not offered to the mod
 **Key arguments:** `path` — repository-relative path, URL, or `artifact:{id}`. Append `:start-end` for a line range (e.g. `src/lib.rs:10-20`) or `:raw` for unnumbered full content.
 
 **Limits:** Default output is numbered lines, capped at 3000 lines.
+
+**Approval:** Read tier.
+
+## `ls`
+
+**Purpose:** List a local directory under the execution folder.
+
+**When to use:** Inspect directory contents without running a shell command.
+
+**Key arguments:** `path` — repository-relative directory path. Use `.` for the execution folder.
 
 **Approval:** Read tier.
 
@@ -183,7 +194,9 @@ In **Read only** approval mode, write-tier and `bash` are not offered to the mod
 
 **Limits:** Merged stdout/stderr over 50KB spills to an artifact; read via `artifact:{id}`.
 
-**Approval:** Write tier. **Not available during Plan → Execute planning.**
+**Approval:** Write tier. Plain `ls` and read-only `find` commands are treated as read-tier in
+Write mode. Shell operators and mutating `find` predicates remain write-tier. Bash is not available
+during Plan → Execute planning.
 
 **Concurrency:** At most one `bash` per node at a time.
 

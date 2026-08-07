@@ -1,6 +1,7 @@
 pub mod capabilities;
 pub mod catalog;
 pub mod client_capabilities;
+pub(crate) mod environment;
 pub mod installer;
 pub mod model;
 pub mod oauth;

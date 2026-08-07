@@ -138,6 +138,7 @@ impl AppBackend {
             .ok_or_else(|| {
                 mcp_invalid_input("MCP OAuth server was removed during authorization")
             })?;
+        crate::adapters::mcp::normalize_atlassian_connection(&mut server.connection);
         let auth = remote_auth_mut(&mut server.connection)?;
         *auth = McpAuth::OAuth {
             client_id: start.public_config.client_id.clone(),
@@ -763,12 +764,20 @@ fn oauth_connection(server: &McpServerRecord) -> Result<OAuthConnection, Backend
             "MCP connection is not configured for OAuth",
         ));
     };
+    let atlassian = crate::adapters::mcp::normalize_atlassian_url(url).is_some();
     Ok(OAuthConnection {
-        resource_url: url.clone(),
+        resource_url: crate::adapters::mcp::normalize_atlassian_url(url)
+            .unwrap_or_else(|| url.clone()),
         allow_localhost,
-        client_id: client_id.clone(),
+        // Atlassian rotates its DCR authorization server. Do not reuse a
+        // persisted client id or issuer after an explicit re-authentication.
+        client_id: if atlassian {
+            String::new()
+        } else {
+            client_id.clone()
+        },
         configured_scopes: scopes.clone(),
-        expected_issuer: issuer.clone(),
+        expected_issuer: if atlassian { None } else { issuer.clone() },
     })
 }
 
@@ -871,5 +880,35 @@ mod tests {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'));
         assert!(validate_operation_id("019fbdb8-a0d6-7981-a5a9-72df0c50dfed").is_ok());
         assert!(validate_operation_id("../escape").is_err());
+    }
+
+    #[test]
+    fn atlassian_oauth_start_ignores_cached_dcr_identity() {
+        let server = McpServerRecord::new(
+            "atlassian",
+            "Atlassian",
+            McpServerSource::Manual,
+            McpInstall::External,
+            McpConnection::StreamableHttp {
+                url: "https://mcp.atlassian.com/v1/mcp".to_string(),
+                allow_localhost: false,
+                headers: BTreeMap::new(),
+                auth: McpAuth::OAuth {
+                    client_id: "stale-client".to_string(),
+                    scopes: Vec::new(),
+                    issuer: Some("https://auth.atlassian.com/old-tenant".to_string()),
+                    credential_ref: None,
+                },
+            },
+        );
+
+        let connection = oauth_connection(&server).expect("OAuth connection");
+
+        assert_eq!(
+            connection.resource_url,
+            "https://mcp.atlassian.com/v1/mcp/authv2"
+        );
+        assert!(connection.client_id.is_empty());
+        assert_eq!(connection.expected_issuer, None);
     }
 }

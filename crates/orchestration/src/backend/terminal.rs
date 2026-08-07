@@ -4,16 +4,19 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use super::{AppBackend, BackendError};
 
 impl AppBackend {
-    pub fn start_terminal(
+    pub async fn start_terminal(
         &self,
         cwd: Option<&str>,
         cols: u16,
         rows: u16,
     ) -> Result<(TerminalStart, UnboundedReceiver<TerminalEvent>), BackendError> {
-        self.terminal.start(cwd, cols, rows).map_err(|message| {
-            log::warn!("terminal.start_failed: {message}");
-            BackendError::ProjectOperation(message)
-        })
+        self.terminal
+            .start(cwd, cols, rows)
+            .await
+            .map_err(|message| {
+                log::warn!("terminal.start_failed: {message}");
+                BackendError::ProjectOperation(message)
+            })
     }
 
     pub fn write_terminal(&self, session_id: &str, data: &str) -> Result<(), BackendError> {

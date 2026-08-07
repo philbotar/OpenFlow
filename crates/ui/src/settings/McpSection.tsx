@@ -590,7 +590,11 @@ export function McpSection() {
       await syncOauthMetadata(status);
       if (status.state === "connecting") pollOauth(server.id);
     } catch (error) {
-      setOauthFailure(server.id, error);
+      const message = error instanceof Error ? error.message : String(error);
+      setOauthFailure(
+        server.id,
+        new Error(`OAuth setup failed before browser launch: ${message}`),
+      );
     }
   };
 
@@ -882,11 +886,13 @@ export function McpSection() {
         attemptCount: lifecycle()[server.id]?.attemptCount ?? 0,
       };
     }
-    if (oauthStatus?.state === "failed" && server.enabled) {
+    if (oauthStatus?.state === "failed") {
       return {
-        state: "Degraded",
-        summary: oauthStatus.error ?? "OAuth health check failed.",
-        attemptCount: lifecycle()[server.id]?.attemptCount ?? 0,
+        state: "Auth required",
+        summary: oauthStatus.error ?? "OAuth setup failed.",
+        report: current?.report,
+        checkedAt: current?.checkedAt,
+        attemptCount: current?.attemptCount ?? 0,
       };
     }
     if (
@@ -1822,6 +1828,21 @@ export function McpSection() {
                             >
                               <Button
                                 variant="primary"
+                                size="small"
+                                onClick={() => void authenticateOauth(connection)}
+                              >
+                                Authenticate OAuth
+                              </Button>
+                            </Show>
+                            <Show
+                              when={
+                                lifecycleFor(connection.server).state === "Failed" &&
+                                connection.server.connection.type !== "stdio" &&
+                                oauthStatuses()[connection.id]?.state !== "connected"
+                              }
+                            >
+                              <Button
+                                variant="secondary"
                                 size="small"
                                 onClick={() => void authenticateOauth(connection)}
                               >

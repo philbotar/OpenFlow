@@ -245,6 +245,7 @@ export function canSendChat(
   readinessReady: boolean,
   text: string,
   hasAttachments = false,
+  allowActiveMessage = false,
 ): boolean {
   const status = selectedNodeId
     ? statusForNode(runState?.statusByNode ?? null, selectedNodeId)
@@ -252,7 +253,8 @@ export function canSendChat(
   const canResumeNode =
     isNodeAwaitingInput(runState, selectedNodeId) ||
     status === "failed" ||
-    status === "interrupted";
+    status === "interrupted" ||
+    (allowActiveMessage && (status === "started" || status === "running_tool"));
   return (
     runState?.active === true &&
     canResumeNode &&

@@ -449,6 +449,21 @@ describe("workflow helpers", () => {
     expect(canSendChat(failedState, "node-2", true, "try again")).toBe(true);
   });
 
+  test("canSendChat accepts a message during a live conversation turn", () => {
+    const liveState: WorkflowRunState = {
+      ...runState,
+      awaitingNodeId: null,
+      awaitingNodeIds: [],
+      statusByNode: {
+        ...runState.statusByNode,
+        "node-2": "running_tool",
+      },
+    };
+
+    expect(canSendChat(liveState, "node-2", true, "interrupt", false, true)).toBe(true);
+    expect(canSendChat(liveState, "node-2", true, "interrupt")).toBe(false);
+  });
+
   test("isChatComposerBusy only returns true while the selected node is started or running a tool", () => {
     expect(isChatComposerBusy(runState, "node-2")).toBe(false);
     expect(

@@ -22,8 +22,8 @@ pub use completion_protocol::{
 pub(crate) use interactive_engine::EngineInputError;
 pub use interactive_engine::{
     validate_checkpoint_against_workflow, EngineAwaitApproval, EngineAwaitInput,
-    EngineRetryableNode, EngineRunResult, FrozenChangeEvidencePacket, InteractiveEngine,
-    InteractiveEngineCheckpoint,
+    EngineRetryableNode, EngineRunResult, EngineUserMessage, FrozenChangeEvidencePacket,
+    InteractiveEngine, InteractiveEngineCheckpoint,
 };
 pub(crate) use node_invocation::{build_upstream_map, upstream_reads};
 pub use output_repair::{OutputRepairPolicy, RepairingAiPort};

@@ -7,9 +7,9 @@
 )]
 
 use super::{
-    checkpoint::CheckpointError, EngineInputError, EngineRunResult, InteractiveEngine,
-    PendingToolBatch, RunError, MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES,
-    MAX_OUTPUT_TRUNCATION_RETRIES,
+    checkpoint::CheckpointError, EngineInputError, EngineRunResult, EngineUserMessage,
+    InteractiveEngine, PendingToolBatch, RunError, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
+    MAX_MIXED_TOOL_TURN_RETRIES, MAX_OUTPUT_TRUNCATION_RETRIES,
 };
 use crate::conversation::{AgentTranscriptItem, ChatAttachmentKind, ChatAttachmentRef, ChatRole};
 use crate::execution::{HandoffArtifact, HandoffFormat, NodeFailureKind};
@@ -540,6 +540,128 @@ impl AiPort for ScriptedAi {
         }
         steps.remove(0)
     }
+}
+
+struct InterleavedUserMessageAi {
+    calls: Arc<AtomicUsize>,
+    captured: Arc<Mutex<Vec<AgentRequest>>>,
+}
+
+#[async_trait]
+impl AiPort for InterleavedUserMessageAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        self.captured.lock().expect("capture lock").push(request);
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                assistant_message: None,
+                tool_calls: vec![ToolCall {
+                    id: "call-1".to_string(),
+                    provider_call_id: None,
+                    name: "read".to_string(),
+                    arguments: json!({ "path": "README.md" }),
+                }],
+                reasoning: Vec::new(),
+                usage: None,
+            }));
+        }
+        Ok(message("tool finished"))
+    }
+}
+
+struct InterleavedBlockingToolPort {
+    started: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait]
+impl ToolPort for InterleavedBlockingToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+        _policy: ToolAccessPolicy,
+    ) -> ToolBatchOutput {
+        self.started.notify_one();
+        self.release.notified().await;
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "ok".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+}
+
+#[tokio::test]
+async fn run_accepts_user_message_while_tool_is_in_flight() {
+    let mut workflow = Workflow::new("interleaved-message");
+    let mut chat = conversation_node("chat");
+    chat.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    workflow.nodes = vec![chat];
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+    let ai = InterleavedUserMessageAi {
+        calls: Arc::new(AtomicUsize::new(0)),
+        captured: Arc::new(Mutex::new(Vec::new())),
+    };
+    let captured = Arc::clone(&ai.captured);
+    let tools = InterleavedBlockingToolPort {
+        started: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Notify::new()),
+    };
+    let tool_started = Arc::clone(&tools.started);
+    let tool_release = Arc::clone(&tools.release);
+    let cancel = CancellationToken::new();
+    let (message_tx, mut message_rx) = tokio::sync::mpsc::unbounded_channel();
+    let node_id = NodeId::from("chat");
+
+    let result = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut run =
+            Box::pin(engine.run_with_user_messages(&ai, &tools, &cancel, &mut message_rx));
+        tokio::select! {
+            () = tool_started.notified() => {
+                message_tx
+                    .send(EngineUserMessage {
+                        node_id,
+                        text: "while tool runs".to_string(),
+                        attachments: Vec::new(),
+                        system_prompt: None,
+                    })
+                    .expect("message channel");
+                tool_release.notify_one();
+            }
+            result = &mut run => panic!("run returned before tool release: {result:?}"),
+        }
+        run.await
+    })
+    .await
+    .expect("interleaved run");
+
+    assert!(matches!(result, EngineRunResult::NeedsInteraction { .. }));
+    let (captured_len, contains_message) = {
+        let captured = captured.lock().expect("capture lock");
+        let contains_message = captured[1].transcript.iter().any(|item| {
+            matches!(
+                item,
+                AgentTranscriptItem::UserMessage { content, .. }
+                    if content == "while tool runs"
+            )
+        });
+        (captured.len(), contains_message)
+    };
+    assert_eq!(captured_len, 2);
+    assert!(contains_message);
 }
 
 #[tokio::test(start_paused = true)]

@@ -243,16 +243,19 @@ fn parse_http_connection(
         return None;
     }
     let headers = parse_persisted_values(server_id, "header", config.get("headers"), diagnostics);
+    let normalized_url =
+        crate::adapters::mcp::normalize_atlassian_url(url).unwrap_or_else(|| url.to_string());
+    let legacy_sse = legacy_sse && normalized_url == url;
     if legacy_sse {
         Some(McpConnection::LegacySse {
-            url: url.to_string(),
+            url: normalized_url,
             allow_localhost: false,
             headers,
             auth: McpAuth::None,
         })
     } else {
         Some(McpConnection::StreamableHttp {
-            url: url.to_string(),
+            url: normalized_url,
             allow_localhost: false,
             headers,
             auth: McpAuth::None,
@@ -990,6 +993,20 @@ mod tests {
             vec!["url-only", "valid"]
         );
         assert_eq!(parsed.diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn import_normalizes_atlassian_legacy_sse_to_authv2_streamable_http() {
+        let parsed = super::parse_mcp_servers_json(
+            r#"{"mcpServers":{"atlassian":{"url":"https://mcp.atlassian.com/v1/sse","type":"sse"}}}"#,
+        )
+        .expect("parse Atlassian MCP config");
+
+        assert!(matches!(
+            &parsed[0].connection,
+            McpConnection::StreamableHttp { url, .. }
+                if url == "https://mcp.atlassian.com/v1/mcp/authv2"
+        ));
     }
 
     #[test]

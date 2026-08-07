@@ -245,6 +245,24 @@ describe("AppHeader", () => {
     dispose();
   });
 
+  it("cancels AI workflow authoring from the top bar", () => {
+    const handleCloseWorkflowAuthoring = vi.fn();
+    const { container, dispose } = renderWithContext({
+      screen: () => "workflow-authoring",
+      handleCloseWorkflowAuthoring,
+    });
+
+    const cancel = container.querySelector<HTMLButtonElement>(
+      "button[aria-label='Cancel AI workflow authoring']",
+    );
+    expect(cancel).not.toBeNull();
+
+    cancel!.click();
+
+    expect(handleCloseWorkflowAuthoring).toHaveBeenCalledOnce();
+    dispose();
+  });
+
   it("renders a topbar run action when idle", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "editor",

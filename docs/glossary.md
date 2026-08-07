@@ -29,7 +29,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **HandoffArtifact** | Immutable run-scoped `HANDOFF.md` or `HANDOFF.json` reference with media type, size, and SHA-256 digest | Handoff file |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
 | **RequestUserInput** | Whether a running node may call enabled human-input harnesses to pause; defaults to false | Manual start |
-| **ConversationMode** | Direct-chat lifecycle where a plain assistant message ends one turn; submit remains terminal and structured questions remain optional | Workflow completion |
+| **ConversationMode** | Direct-chat lifecycle where a plain assistant message ends one turn; live user messages may queue between model/tool calls; submit remains terminal | Workflow completion |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
@@ -48,7 +48,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | --- | --- | --- |
 | **NodeToolConfig** | Tool capabilities for a node or saved agent: approval mode plus separate free-text and structured human-input harness flags | Tool settings, tool setup |
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
-| **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
+| **Tool capability class** | Read/write grouping for builtins. Read: retrieval/search tools plus `ls`. Write: mutation, shell, and subagent tools. Plain `ls` and read-only `find` Bash calls use the read approval tier; drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
 | **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools and write-enabled `docs/**/*.md` mutations; only the selected evidence-source node receives `write`/`edit` access to `run://PLAN.md` plus the approval-gated plan sealer. Execution restores the node's normal catalog. | Approval mode |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |

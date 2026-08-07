@@ -1086,6 +1086,59 @@ describe("McpSection", () => {
     expect(mountPoint.textContent).toContain("Complete OAuth sign-in in your browser.");
   });
 
+  test("failed remote probes can try OAuth and surface setup failures", async () => {
+    const remote: McpServerConfig = {
+      ...stdioServer({ id: "hosted", displayName: "Hosted" }),
+      connection: {
+        type: "streamableHttp",
+        url: "https://mcp.example.test/mcp",
+        allowLocalhost: false,
+        headers: {},
+        auth: { type: "none" },
+      },
+    };
+    vi.mocked(probeMcpServer).mockResolvedValue({
+      server: remote,
+      report: {
+        state: "failed",
+        stage: "connect",
+        authRequired: false,
+        durationMs: 42,
+        transport: "streamableHttp",
+        capabilities: [],
+        toolNames: [],
+        error: "Remote transport failed before auth classification",
+      },
+    });
+    vi.mocked(startMcpOAuth).mockRejectedValue(new Error("MCP OAuth discovery failed"));
+    const harness = renderSection(appSettings([remote]));
+
+    [...mountPoint.querySelectorAll("button")]
+      .find((button) => button.textContent?.trim() === "Approve & Test")
+      ?.click();
+    await flushPromises();
+
+    expect(mountPoint.textContent).toContain("Authenticate OAuth");
+    [...mountPoint.querySelectorAll("button")]
+      .find((button) => button.textContent?.trim() === "Authenticate OAuth")
+      ?.click();
+    await flushPromises();
+
+    expect(startMcpOAuth).toHaveBeenCalledWith("hosted", []);
+    expect(harness.settings().mcp?.servers[0]).toMatchObject({
+      enabled: false,
+      trust: {},
+      connection: {
+        type: "streamableHttp",
+        auth: { type: "oauth", clientId: "" },
+      },
+    });
+    expect(mountPoint.querySelector('[data-state="auth-required"]')).not.toBeNull();
+    expect(mountPoint.textContent).toContain(
+      "OAuth setup failed before browser launch: MCP OAuth discovery failed",
+    );
+  });
+
   test("keeps section landmarks and disables every active source", async () => {
     const harness = renderSection(
       {

@@ -1,5 +1,8 @@
 export { ChatPanel } from "./ChatPanel";
-export { ChatRuntimeControls } from "./ChatRuntimeControls";
+export {
+  ChatRuntimeControls,
+  WorkflowAuthoringRuntimeControls,
+} from "./ChatRuntimeControls";
 export { PostRunSuggestions } from "./PostRunSuggestions";
 export { ComposerInput } from "./ComposerInput";
 export { Conversation, ConversationContent, ConversationScrollButton } from "./Conversation";

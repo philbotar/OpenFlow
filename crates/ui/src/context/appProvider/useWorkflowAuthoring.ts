@@ -6,12 +6,20 @@ import type {
   Screen,
   Workflow,
   WorkflowAuthoringMessage,
+  WorkflowAuthoringRuntimeConfig,
   WorkflowAuthoringValidation,
 } from "../../lib/types";
 import { cloneWorkflow, normalizeWorkflowLayout, replaceWorkflow } from "../../lib/workflow";
 import { normalizeError } from "../../lib/utils";
 
 type ToastHandler = (message: string, context?: string) => void;
+
+const defaultWorkflowAuthoringRuntimeConfig = (): WorkflowAuthoringRuntimeConfig => ({
+  model: null,
+  reasoningEffort: null,
+  reasoningBudgetTokens: null,
+  fastMode: false,
+});
 
 interface UseWorkflowAuthoringParams {
   screen: Accessor<Screen>;
@@ -47,12 +55,17 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     createSignal(false);
   const [workflowAuthoringTargetProjectId, setWorkflowAuthoringTargetProjectId] =
     createSignal<string | null>(null);
+  const [workflowAuthoringRuntimeConfig, setWorkflowAuthoringRuntimeConfig] =
+    createSignal<WorkflowAuthoringRuntimeConfig>(
+      defaultWorkflowAuthoringRuntimeConfig(),
+    );
   const [workflowAuthoringBusy, setWorkflowAuthoringBusy] = createSignal(false);
   const [workflowAuthoringThinkingContent, setWorkflowAuthoringThinkingContent] =
     createSignal("");
   const workflowAuthoringSessionReady = createMemo(
     () => workflowAuthoringSessionId() !== null,
   );
+  let authoringGeneration = 0;
 
   const updateWorkflowAuthoringDraft = (mutator: (draft: Workflow) => void) => {
     setWorkflowAuthoringDraft((current) => {
@@ -70,6 +83,12 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     setWorkflowAuthoringThinkingContent("");
     setWorkflowAuthoringTargetProjectId(null);
     setWorkflowAuthoringDraftPending(false);
+  };
+
+  const clearWorkflowAuthoringContent = () => {
+    setWorkflowAuthoringMessages([]);
+    setWorkflowAuthoringValidation(null);
+    setWorkflowAuthoringDraft(null);
   };
 
   const releaseWorkflowAuthoringSession = (sessionId: string | null) => {
@@ -112,6 +131,7 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
       unlistenDraft = stop;
     });
     onCleanup(() => {
+      authoringGeneration += 1;
       unlistenThinking?.();
       unlistenDraft?.();
       const sessionId = activeSessionId.current;
@@ -124,9 +144,17 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
   const submitWorkflowAuthoringTurn = async (
     sessionId: string,
     message: string,
+    generation = authoringGeneration,
   ) => {
     const trimmed = message.trim();
-    if (!trimmed || workflowAuthoringBusy()) return;
+    if (
+      !trimmed ||
+      workflowAuthoringBusy() ||
+      generation !== authoringGeneration ||
+      workflowAuthoringSessionId() !== sessionId
+    ) {
+      return;
+    }
     if (params.readiness()?.ready !== true) {
       params.showErrorToast(
         params.readiness()?.message ?? "Configure a provider in Settings first.",
@@ -145,7 +173,14 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
         trimmed,
         params.settings(),
         params.activeProviderKeyInput() || null,
+        workflowAuthoringRuntimeConfig(),
       );
+      if (
+        generation !== authoringGeneration ||
+        workflowAuthoringSessionId() !== sessionId
+      ) {
+        return;
+      }
       setWorkflowAuthoringMessages(result.messages);
       setWorkflowAuthoringValidation(result.validation);
       setWorkflowAuthoringDraft(result.draft ? normalizeWorkflowLayout(result.draft) : null);
@@ -153,6 +188,12 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
         setWorkflowAuthoringDraftPending(true);
       }
     } catch (error) {
+      if (
+        generation !== authoringGeneration ||
+        workflowAuthoringSessionId() !== sessionId
+      ) {
+        return;
+      }
       setWorkflowAuthoringMessages((current) =>
         current.filter(
           (entry, index) =>
@@ -165,8 +206,13 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
       );
       params.showErrorToast(normalizeError(error));
     } finally {
-      setWorkflowAuthoringBusy(false);
-      setWorkflowAuthoringThinkingContent("");
+      if (
+        generation === authoringGeneration &&
+        workflowAuthoringSessionId() === sessionId
+      ) {
+        setWorkflowAuthoringBusy(false);
+        setWorkflowAuthoringThinkingContent("");
+      }
     }
   };
 
@@ -182,13 +228,14 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
       params.navigateToScreen("workflow-authoring");
       return;
     }
+    const generation = ++authoringGeneration;
     const priorSessionId = workflowAuthoringSessionId();
     if (priorSessionId !== null) {
       void desktop.endWorkflowAuthoring(priorSessionId);
     }
     resetWorkflowAuthoringSession();
-    setWorkflowAuthoringMessages([]);
-    setWorkflowAuthoringValidation(null);
+    clearWorkflowAuthoringContent();
+    setWorkflowAuthoringRuntimeConfig(defaultWorkflowAuthoringRuntimeConfig());
     setWorkflowAuthoringDraft(baseWorkflow ?? null);
     setWorkflowAuthoringDraftPending(false);
     setWorkflowAuthoringTargetProjectId(targetProjectId);
@@ -199,23 +246,90 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
         baseWorkflow ?? null,
         targetProjectId,
       );
+      if (generation !== authoringGeneration) {
+        void desktop.endWorkflowAuthoring(started.sessionId);
+        return;
+      }
       setWorkflowAuthoringSessionId(started.sessionId);
       if (started.draft) {
         setWorkflowAuthoringDraft(normalizeWorkflowLayout(started.draft));
       }
       if (initialMessage?.trim()) {
         await readinessRefresh;
-        await submitWorkflowAuthoringTurn(started.sessionId, initialMessage);
+        if (generation !== authoringGeneration) {
+          return;
+        }
+        await submitWorkflowAuthoringTurn(
+          started.sessionId,
+          initialMessage,
+          generation,
+        );
       }
     } catch (error) {
+      if (generation !== authoringGeneration) {
+        return;
+      }
       params.showErrorToast(normalizeError(error));
       params.navigateToScreen("editor");
     }
   };
 
   const handleCloseWorkflowAuthoring = () => {
+    authoringGeneration += 1;
     releaseWorkflowAuthoringSession(workflowAuthoringSessionId());
+    clearWorkflowAuthoringContent();
+    setWorkflowAuthoringRuntimeConfig(defaultWorkflowAuthoringRuntimeConfig());
     params.navigateToScreen("editor");
+  };
+
+  const handleWorkflowAuthoringProjectChange = async (
+    targetProjectId: string | null,
+  ) => {
+    if (
+      targetProjectId === workflowAuthoringTargetProjectId() ||
+      workflowAuthoringBusy() ||
+      workflowAuthoringMessages().length > 0 ||
+      !workflowAuthoringSessionReady()
+    ) {
+      return;
+    }
+
+    const generation = ++authoringGeneration;
+    const priorSessionId = workflowAuthoringSessionId();
+    const baseWorkflow = workflowAuthoringDraft();
+    if (priorSessionId) {
+      void desktop.endWorkflowAuthoring(priorSessionId);
+    }
+    setWorkflowAuthoringSessionId(null);
+    setWorkflowAuthoringThinkingContent("");
+    setWorkflowAuthoringTargetProjectId(targetProjectId);
+
+    try {
+      const started = await desktop.startWorkflowAuthoring(
+        baseWorkflow,
+        targetProjectId,
+      );
+      if (generation !== authoringGeneration) {
+        void desktop.endWorkflowAuthoring(started.sessionId);
+        return;
+      }
+      setWorkflowAuthoringSessionId(started.sessionId);
+      if (started.draft) {
+        setWorkflowAuthoringDraft(normalizeWorkflowLayout(started.draft));
+      }
+    } catch (error) {
+      if (generation !== authoringGeneration) {
+        return;
+      }
+      params.showErrorToast(normalizeError(error));
+      params.navigateToScreen("editor");
+    }
+  };
+
+  const handleUpdateWorkflowAuthoringRuntimeConfig = (
+    config: WorkflowAuthoringRuntimeConfig,
+  ) => {
+    setWorkflowAuthoringRuntimeConfig(config);
   };
 
   const handleWorkflowAuthoringSend = async (message: string) => {
@@ -274,9 +388,13 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     workflowAuthoringValidation,
     workflowAuthoringDraft,
     workflowAuthoringDraftPending,
+    workflowAuthoringTargetProjectId,
+    workflowAuthoringRuntimeConfig,
     updateWorkflowAuthoringDraft,
     handleOpenWorkflowAuthoring,
     handleCloseWorkflowAuthoring,
+    handleWorkflowAuthoringProjectChange,
+    handleUpdateWorkflowAuthoringRuntimeConfig,
     handleWorkflowAuthoringSend,
     handleApplyWorkflowAuthoringDraft,
   };

@@ -281,8 +281,8 @@ where
         node_interrupts_for_tools,
         Arc::clone(&aborted_emitted),
         runtime_config_store,
-    )
-    .with_tool_budget(tool_budget);
+        tool_budget,
+    );
 
     Ok(RunWiring {
         engine,

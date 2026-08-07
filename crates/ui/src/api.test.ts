@@ -541,12 +541,23 @@ describe("api desktop seam", () => {
       validation: { valid: true, errors: [], warnings: [] },
       messages: [],
     });
-    await workflowAuthoringTurn("s1", "hello", settings, null);
+    await workflowAuthoringTurn("s1", "hello", settings, null, {
+      model: "gpt-5",
+      reasoningEffort: "high",
+      reasoningBudgetTokens: 24_000,
+      fastMode: true,
+    });
     expect(invoke).toHaveBeenCalledWith(
       "workflow_authoring_turn",
       expect.objectContaining({
         sessionId: "s1",
         message: "hello",
+        runtimeConfig: {
+          model: "gpt-5",
+          reasoningEffort: "high",
+          reasoningBudgetTokens: 24_000,
+          fastMode: true,
+        },
       }),
     );
   });

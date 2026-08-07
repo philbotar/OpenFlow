@@ -15,6 +15,8 @@ use crate::run::ports::{RunAttachmentStore, RunCheckpointStore};
 use crate::run::resources::SharedRunResources;
 use crate::run::skill_invocation::skill_prompt_for_ids;
 use crate::run::state::{AgentStatus, WorkflowRunState};
+#[cfg(test)]
+use crate::settings::model::AppSettings;
 use crate::tools::edit::preview::preview_file_edit;
 use chrono::Utc;
 #[cfg(test)]
@@ -43,8 +45,8 @@ use session::{
     apply_user_stop_to_session, clear_artifact_root, finalize_run_launch, finish_run_session,
     fresh_execution_resources, prepare_workflow_run, require_action_tx, require_active_run_state,
     require_node_mut, require_run_state, require_run_state_mut, require_workflow_mut,
-    resolve_mcp_context_for_run, ExecutionResources, RunLaunchTail, RunSession, SpawnRunInput,
-    TerminationMode,
+    resolve_mcp_context_for_run, ExecutionResources, RunControl, RunLaunchMetadata, RunLaunchTail,
+    RunSession, SpawnRunInput, TerminationMode,
 };
 
 pub struct RunCoordinator {
@@ -104,15 +106,7 @@ impl RunCoordinator {
                 attachment_root: None,
                 generation: 0,
                 engine_checkpoint: None,
-                checkpoint_sink: None,
-                snapshot_store: None,
-                lsp_settings: None,
-                pending_engine_reverts: None,
-                action_tx: None,
-                handle: None,
-                cancel_token: None,
-                node_interrupts: None,
-                runtime_config_store: None,
+                active: None,
             }),
         }
     }
@@ -287,12 +281,14 @@ impl RunCoordinator {
             prepared,
             RunLaunchTail {
                 spawn_input: SpawnRunInput {
-                    entrypoint: entrypoint_text.clone(),
-                    entrypoint_attachments: entrypoint_attachments.clone(),
-                    execution_cwd: resolved_cwd.clone(),
+                    metadata: RunLaunchMetadata {
+                        entrypoint: entrypoint_text,
+                        entrypoint_attachments,
+                        execution_cwd: resolved_cwd,
+                        artifact_root,
+                        attachment_root,
+                    },
                     project_id: run_root.project_id.clone(),
-                    artifact_root: artifact_root.clone(),
-                    attachment_root: attachment_root.clone(),
                     attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: None,
                     resume_continuation: None,
@@ -300,11 +296,6 @@ impl RunCoordinator {
                     mutation_gate,
                 },
                 resources,
-                entrypoint: entrypoint_text,
-                entrypoint_attachments,
-                execution_cwd: resolved_cwd,
-                artifact_root,
-                attachment_root,
             },
             |session| {
                 session.run_id = Some(run_id.clone());
@@ -376,16 +367,19 @@ impl RunCoordinator {
                     .clone()
                     .ok_or(BackendError::NoContinuableRun)?,
                 session
-                    .snapshot_store
-                    .clone()
+                    .active
+                    .as_ref()
+                    .map(|active| Arc::clone(&active.resources.snapshot_store))
                     .ok_or(BackendError::NoContinuableRun)?,
                 session
-                    .lsp_settings
-                    .clone()
+                    .active
+                    .as_ref()
+                    .map(|active| active.resources.lsp_settings.clone())
                     .ok_or(BackendError::NoContinuableRun)?,
                 session
-                    .pending_engine_reverts
-                    .clone()
+                    .active
+                    .as_ref()
+                    .map(|active| Arc::clone(&active.resources.pending_engine_reverts))
                     .ok_or(BackendError::NoContinuableRun)?,
                 session.project_id.clone(),
                 session.workflow.clone(),
@@ -450,12 +444,14 @@ impl RunCoordinator {
             prepared,
             RunLaunchTail {
                 spawn_input: SpawnRunInput {
-                    entrypoint: entrypoint_text.clone(),
-                    entrypoint_attachments: entrypoint_attachments.clone(),
-                    execution_cwd: execution_cwd.clone(),
+                    metadata: RunLaunchMetadata {
+                        entrypoint: entrypoint_text,
+                        entrypoint_attachments,
+                        execution_cwd,
+                        artifact_root,
+                        attachment_root,
+                    },
                     project_id: project_id.clone(),
-                    artifact_root: artifact_root.clone(),
-                    attachment_root: attachment_root.clone(),
                     attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: Some(checkpoint),
                     resume_continuation: None,
@@ -463,11 +459,6 @@ impl RunCoordinator {
                     mutation_gate: mutation_gate.clone(),
                 },
                 resources,
-                entrypoint: entrypoint_text,
-                entrypoint_attachments,
-                execution_cwd,
-                artifact_root,
-                attachment_root,
             },
             |session| {
                 let run_id = session.run_id.clone();
@@ -516,7 +507,11 @@ impl RunCoordinator {
         if !matches!(status, AgentStatus::Started | AgentStatus::RunningTool) {
             return Err(BackendError::NodeNotInterruptible(node_id.to_string()));
         }
-        if let Some(interrupts) = &session.node_interrupts {
+        if let Some(interrupts) = session
+            .active
+            .as_ref()
+            .map(|active| &active.resources.node_interrupts)
+        {
             if let Some((_, token)) = interrupts.lock().get(&node_id_key) {
                 token.cancel();
             }
@@ -564,7 +559,11 @@ impl RunCoordinator {
             let node = require_node_mut(require_workflow_mut(&mut session)?, node_id)?;
             apply_runtime_patch_to_agent(&mut node.agent, &patch);
         }
-        if let Some(store) = session.runtime_config_store.as_ref() {
+        if let Some(store) = session
+            .active
+            .as_ref()
+            .map(|active| &active.resources.runtime_config_store)
+        {
             upsert_runtime_patch(store, node_id_key, &patch);
         }
         Ok(snapshot)
@@ -578,7 +577,14 @@ impl RunCoordinator {
     pub async fn stop_run(&self) -> Result<WorkflowRunState, BackendError> {
         let should_terminate = {
             let session = self.session.lock().await;
-            match (&session.handle, &session.run_state, &session.workflow) {
+            match (
+                session
+                    .active
+                    .as_ref()
+                    .and_then(|active| active.control.as_ref()),
+                &session.run_state,
+                &session.workflow,
+            ) {
                 (Some(_), Some(run_state), _) if run_state.active => true,
                 (None, Some(run_state), _) if run_state.active => false,
                 (_, Some(run_state), _) => return Ok(run_state.clone()),
@@ -620,8 +626,10 @@ impl RunCoordinator {
         let snapshot = self.stop_run().await?;
         let pending_persist = {
             let mut session = self.session.lock().await;
-            let checkpoint_sink = session.checkpoint_sink.clone();
-            let pending = checkpoint_sink.and_then(|sink| sink.lock().take());
+            let pending = session
+                .active
+                .as_ref()
+                .and_then(|active| active.resources.checkpoint_sink.lock().take());
             let engine = pending
                 .map(|checkpoint| checkpoint.engine)
                 .or_else(|| session.engine_checkpoint.clone());
@@ -647,32 +655,27 @@ impl RunCoordinator {
     }
 
     async fn terminate_active_run(&self, mode: TerminationMode) -> Option<WorkflowRunState> {
-        let (handle, action_tx, cancel_token) = {
+        let control = {
             let mut session = self.session.lock().await;
-            if session.handle.is_none() && session.cancel_token.is_none() {
-                return None;
-            }
+            let active = session.active.as_mut()?;
+            let control = active.control.take()?;
             session.generation = session.generation.wrapping_add(1);
-            (
-                session.handle.take(),
-                session.action_tx.take(),
-                session.cancel_token.take(),
-            )
+            control
         };
+        let RunControl {
+            handle,
+            action_tx,
+            cancel_token,
+        } = control;
 
-        if let Some(tx) = action_tx {
-            let _ = tx.send(ExecutionAction::Stop);
-        }
-        if let Some(token) = cancel_token {
-            token.cancel();
-        }
+        let _ = action_tx.send(ExecutionAction::Stop);
+        cancel_token.cancel();
 
-        if let Some(mut handle) = handle {
-            match tokio::time::timeout(Duration::from_secs(2), &mut handle).await {
-                Ok(_) => {}
-                Err(_) => {
-                    handle.abort();
-                }
+        let mut handle = handle;
+        match tokio::time::timeout(Duration::from_secs(2), &mut handle).await {
+            Ok(_) => {}
+            Err(_) => {
+                handle.abort();
             }
         }
 
@@ -702,7 +705,8 @@ impl RunCoordinator {
             apply_event_to_run_state(&workflow, run_state, event);
             let finished = !run_state.active;
             let snapshot = run_state.clone();
-            let pending_checkpoint = session.checkpoint_sink.as_ref().and_then(|sink| {
+            let pending_checkpoint = session.active.as_ref().and_then(|active| {
+                let sink = &active.resources.checkpoint_sink;
                 let mut pending = sink.lock();
                 pending
                     .as_ref()
@@ -892,12 +896,14 @@ impl RunCoordinator {
             prepared,
             RunLaunchTail {
                 spawn_input: SpawnRunInput {
-                    entrypoint: None,
-                    entrypoint_attachments: Vec::new(),
-                    execution_cwd: execution_cwd.clone(),
+                    metadata: RunLaunchMetadata {
+                        entrypoint: None,
+                        entrypoint_attachments: Vec::new(),
+                        execution_cwd: execution_cwd.clone(),
+                        artifact_root,
+                        attachment_root: attachment_root.clone(),
+                    },
                     project_id: project_id.clone(),
-                    artifact_root: artifact_root.clone(),
-                    attachment_root: attachment_root.clone(),
                     attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: Some(engine_checkpoint),
                     resume_continuation,
@@ -905,11 +911,6 @@ impl RunCoordinator {
                     mutation_gate,
                 },
                 resources,
-                entrypoint: None,
-                entrypoint_attachments: Vec::new(),
-                execution_cwd,
-                artifact_root,
-                attachment_root: attachment_root.clone(),
             },
             |session| {
                 session.run_state = Some(resumed_state.clone());
@@ -1014,8 +1015,10 @@ impl RunCoordinator {
         let still_current = session.generation == generation
             && session.run_id == run_id
             && session
-                .action_tx
+                .active
                 .as_ref()
+                .and_then(|active| active.control.as_ref())
+                .map(|control| &control.action_tx)
                 .is_some_and(|current| current.same_channel(&action_tx));
         let validation = if still_current {
             validate_chat_target(&session, &node_id_key)
@@ -1157,8 +1160,9 @@ impl RunCoordinator {
             .clone()
             .ok_or(BackendError::NoActiveRun)?;
         let snapshot_store = session
-            .snapshot_store
-            .clone()
+            .active
+            .as_ref()
+            .map(|active| Arc::clone(&active.resources.snapshot_store))
             .ok_or(BackendError::NoActiveRun)?;
         let run_state = require_run_state(&session)?;
         let pending = run_state
@@ -1226,7 +1230,10 @@ impl RunCoordinator {
                 .find(|batch| batch.batch_id == batch_id)
                 .cloned()
                 .ok_or_else(|| BackendError::EditBatchNotFound(batch_id.clone()))?;
-            let pending_engine_reverts = session.pending_engine_reverts.clone();
+            let pending_engine_reverts = session
+                .active
+                .as_ref()
+                .map(|active| Arc::clone(&active.resources.pending_engine_reverts));
             (cwd, batch, pending_engine_reverts)
         };
 
@@ -1271,9 +1278,10 @@ impl RunCoordinator {
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
         let mut session = self.session.lock().await;
         if session.run_state.as_ref().is_some_and(|state| state.active)
-            || session.action_tx.is_some()
-            || session.handle.is_some()
-            || session.cancel_token.is_some()
+            || session
+                .active
+                .as_ref()
+                .is_some_and(|active| active.control.is_some())
         {
             return Err(BackendError::ActiveRun);
         }
@@ -1291,7 +1299,9 @@ impl RunCoordinator {
         };
         session.engine_checkpoint = None;
         clear_artifact_root(&mut session);
-        session.checkpoint_sink = None;
+        if let Some(active) = session.active.as_mut() {
+            active.resources.checkpoint_sink = Arc::new(parking_lot::Mutex::new(None));
+        }
         Ok(snapshot)
     }
 
@@ -1299,6 +1309,51 @@ impl RunCoordinator {
     #[allow(dead_code, reason = "coordinator tests seed varied session shapes")]
     pub(crate) async fn test_seed_full(&self, seed: TestSessionSeed) {
         let mut session = self.session.lock().await;
+        let has_resources = seed.checkpoint_sink.is_some()
+            || seed.snapshot_store.is_some()
+            || seed.lsp_settings.is_some()
+            || seed.pending_engine_reverts.is_some()
+            || seed.node_interrupts.is_some()
+            || seed.runtime_config_store.is_some();
+        let has_control =
+            seed.action_tx.is_some() || seed.handle.is_some() || seed.cancel_token.is_some();
+        let active = if has_resources || has_control {
+            let mut resources = fresh_execution_resources(&AppSettings::default());
+            if let Some(checkpoint_sink) = seed.checkpoint_sink {
+                resources.checkpoint_sink = checkpoint_sink;
+            }
+            if let Some(snapshot_store) = seed.snapshot_store {
+                resources.snapshot_store = snapshot_store;
+            }
+            if let Some(lsp_settings) = seed.lsp_settings {
+                resources.lsp_settings = lsp_settings;
+            }
+            if let Some(pending_engine_reverts) = seed.pending_engine_reverts {
+                resources.pending_engine_reverts = pending_engine_reverts;
+            }
+            if let Some(node_interrupts) = seed.node_interrupts {
+                resources.node_interrupts = node_interrupts;
+            }
+            if let Some(runtime_config_store) = seed.runtime_config_store {
+                resources.runtime_config_store = runtime_config_store;
+            }
+            let control = if has_control {
+                let action_tx = seed.action_tx.unwrap_or_else(|| {
+                    let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+                    action_tx
+                });
+                Some(RunControl {
+                    action_tx,
+                    handle: seed.handle.unwrap_or_else(|| tokio::spawn(async {})),
+                    cancel_token: seed.cancel_token.unwrap_or_default(),
+                })
+            } else {
+                None
+            };
+            Some(session::ActiveRunResources { resources, control })
+        } else {
+            None
+        };
         let attachment_root = seed
             .artifact_root
             .as_deref()
@@ -1309,20 +1364,12 @@ impl RunCoordinator {
         session.project_id = seed.project_id;
         session.workflow = Some(seed.workflow);
         session.run_state = Some(seed.run_state);
-        session.action_tx = seed.action_tx;
         session.execution_cwd = seed.execution_cwd;
         session.entrypoint = seed.entrypoint;
         session.artifact_root = seed.artifact_root;
         session.attachment_root = attachment_root;
         session.engine_checkpoint = seed.engine_checkpoint;
-        session.checkpoint_sink = seed.checkpoint_sink;
-        session.snapshot_store = seed.snapshot_store;
-        session.lsp_settings = seed.lsp_settings;
-        session.pending_engine_reverts = seed.pending_engine_reverts;
-        session.node_interrupts = seed.node_interrupts;
-        session.runtime_config_store = seed.runtime_config_store;
-        session.cancel_token = seed.cancel_token;
-        session.handle = seed.handle;
+        session.active = active;
     }
 
     #[cfg(test)]
@@ -1366,6 +1413,19 @@ fn validate_chat_target(session: &RunSession, node_id: &NodeId) -> Result<(), Ba
             Some(AgentStatus::Failed | AgentStatus::Interrupted)
         )
     {
+        return Ok(());
+    }
+    let accepts_live_message = matches!(
+        run_state.status_by_node.get(node_id),
+        Some(AgentStatus::Started | AgentStatus::RunningTool)
+    ) && session.workflow.as_ref().is_some_and(|workflow| {
+        workflow
+            .nodes
+            .iter()
+            .find(|node| node.id == *node_id)
+            .is_some_and(|node| node.agent.request_user_input || node.agent.conversation_mode)
+    });
+    if accepts_live_message {
         return Ok(());
     }
     let expected = run_state

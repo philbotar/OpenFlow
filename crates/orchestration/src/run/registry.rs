@@ -15,7 +15,7 @@ use engine::NodeRuntimeConfigPatch;
 #[cfg(test)]
 use engine::Workflow;
 use parking_lot::Mutex as ParkingMutex;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::UnboundedReceiver;
 #[cfg(test)]
@@ -26,26 +26,34 @@ const MAX_RETAINED_RUN_SESSIONS: usize = 64;
 
 #[derive(Default)]
 struct RegistryState {
-    sessions: BTreeMap<String, Arc<RunCoordinator>>,
+    sessions: BTreeMap<String, RegistryEntry>,
     session_order: VecDeque<String>,
-    active_run_ids: BTreeSet<String>,
     latest_run_id: Option<String>,
+}
+
+struct RegistryEntry {
+    coordinator: Arc<RunCoordinator>,
+    active: bool,
 }
 
 impl RegistryState {
     fn register(&mut self, run_id: String, coordinator: Arc<RunCoordinator>, active: bool) {
         self.session_order.retain(|candidate| candidate != &run_id);
         self.session_order.push_back(run_id.clone());
-        self.sessions.insert(run_id.clone(), coordinator);
+        self.sessions.insert(
+            run_id.clone(),
+            RegistryEntry {
+                coordinator,
+                active,
+            },
+        );
         self.latest_run_id = Some(run_id.clone());
-        self.set_active(&run_id, active);
+        self.prune_inactive_sessions();
     }
 
     fn set_active(&mut self, run_id: &str, active: bool) {
-        if active {
-            self.active_run_ids.insert(run_id.to_string());
-        } else {
-            self.active_run_ids.remove(run_id);
+        if let Some(entry) = self.sessions.get_mut(run_id) {
+            entry.active = active;
         }
         self.prune_inactive_sessions();
     }
@@ -55,7 +63,7 @@ impl RegistryState {
             let Some(index) = self
                 .session_order
                 .iter()
-                .position(|run_id| !self.active_run_ids.contains(run_id))
+                .position(|run_id| self.sessions.get(run_id).is_some_and(|entry| !entry.active))
             else {
                 break;
             };
@@ -64,7 +72,6 @@ impl RegistryState {
                 .remove(index)
                 .expect("inactive run index must exist");
             self.sessions.remove(&run_id);
-            self.active_run_ids.remove(&run_id);
             if self.latest_run_id.as_deref() == Some(run_id.as_str()) {
                 self.latest_run_id = self.session_order.back().cloned();
             }
@@ -156,7 +163,7 @@ impl RunRegistry {
             .await
             .sessions
             .get(run_id)
-            .cloned()
+            .map(|entry| Arc::clone(&entry.coordinator))
             .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))
     }
 
@@ -169,7 +176,7 @@ impl RunRegistry {
         state
             .sessions
             .get(run_id)
-            .cloned()
+            .map(|entry| Arc::clone(&entry.coordinator))
             .ok_or_else(|| BackendError::RunNotFound(run_id.clone()))
     }
 
@@ -198,7 +205,13 @@ impl RunRegistry {
         let start_gate = self.workflow_start_gate(&workflow_id);
         let _start_guard = start_gate.lock().await;
         self.ensure_workflow_inactive(&workflow_id).await?;
-        let existing = self.state.read().await.sessions.get(params.run_id).cloned();
+        let existing = self
+            .state
+            .read()
+            .await
+            .sessions
+            .get(params.run_id)
+            .map(|entry| Arc::clone(&entry.coordinator));
         if let Some(coordinator) = existing.as_ref() {
             if coordinator.is_run_active().await {
                 return Err(BackendError::RunAlreadyActive(params.run_id.to_string()));
@@ -222,7 +235,13 @@ impl RunRegistry {
     }
 
     pub async fn get_run_state_for(&self, run_id: &str) -> Option<WorkflowRunState> {
-        let coordinator = self.state.read().await.sessions.get(run_id).cloned()?;
+        let coordinator = self
+            .state
+            .read()
+            .await
+            .sessions
+            .get(run_id)
+            .map(|entry| Arc::clone(&entry.coordinator))?;
         coordinator.get_run_state().await
     }
 
@@ -233,7 +252,7 @@ impl RunRegistry {
             .await
             .sessions
             .values()
-            .cloned()
+            .map(|entry| Arc::clone(&entry.coordinator))
             .collect::<Vec<_>>();
         let mut active = Vec::new();
         for coordinator in coordinators {
@@ -581,7 +600,7 @@ impl RunRegistry {
             .await
             .sessions
             .values()
-            .cloned()
+            .map(|entry| Arc::clone(&entry.coordinator))
             .collect::<Vec<_>>();
         for coordinator in coordinators {
             if coordinator.is_run_active().await {

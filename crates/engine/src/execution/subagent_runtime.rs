@@ -57,15 +57,15 @@ pub fn handle_declare_subagents(
         Ok(batch) => batch.subagents,
         Err(err) => {
             return DeclareSubagentsOutcome {
-                    summaries: Vec::new(),
-                    tool_result: error_tool_result(
-                        tool_call,
-                        format!(
-                            "Invalid arguments for {DECLARE_SUBAGENTS_TOOL}: {err}. \
+                summaries: Vec::new(),
+                tool_result: error_tool_result(
+                    tool_call,
+                    format!(
+                        "Invalid arguments for {DECLARE_SUBAGENTS_TOOL}: {err}. \
                              Expected {{\"subagents\": [{{\"name\": \"...\", \"purpose\": \"...\"}}]}}."
-                        ),
                     ),
-                };
+                ),
+            };
         }
     };
     let base_index = adhoc_subagent_base_index(node_id, declared_subagents);

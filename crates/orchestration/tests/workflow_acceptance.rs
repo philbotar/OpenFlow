@@ -432,15 +432,13 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 *calls
             };
             if call_number == 1 {
-                assert_eq!(request.available_tools.len(), 12);
-                assert!(request
-                    .available_tools
-                    .iter()
-                    .any(|tool| tool.name == "ast_edit"));
-                assert!(request
-                    .available_tools
-                    .iter()
-                    .any(|tool| tool.name == "openflow_update_todo_list"));
+                assert_eq!(request.available_tools.len(), 13);
+                for tool_name in ["ast_edit", "ls", "openflow_update_todo_list"] {
+                    assert!(request
+                        .available_tools
+                        .iter()
+                        .any(|tool| tool.name == tool_name));
+                }
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Need repo context".to_string()),
