@@ -558,12 +558,11 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: serde_json::json!({"path": "note.txt:2-3"}),
-                },
+                ToolCall::new(
+                    "call-1",
+                    "read",
+                    serde_json::json!({"path": "note.txt:2-3"}),
+                ),
                 None,
             )
             .await
@@ -584,12 +583,7 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-trunc".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: serde_json::json!({"path": "big.txt"}),
-                },
+                ToolCall::new("call-trunc", "read", serde_json::json!({"path": "big.txt"})),
                 None,
             )
             .await
@@ -614,12 +608,11 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-2".to_string(),
-                    provider_call_id: None,
-                    name: "search".to_string(),
-                    arguments: serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
-                },
+                ToolCall::new(
+                    "call-2",
+                    "search",
+                    serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
+                ),
                 None,
             )
             .await
@@ -634,12 +627,11 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "new.txt", "content": "hello\n"}),
-                },
+                ToolCall::new(
+                    "call-write",
+                    "write",
+                    serde_json::json!({"path": "new.txt", "content": "hello\n"}),
+                ),
                 None,
             )
             .await
@@ -679,15 +671,14 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-edit".to_string(),
-                    provider_call_id: None,
-                    name: "edit".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "call-edit",
+                    "edit",
+                    serde_json::json!({
                         "path": "note.txt",
                         "edits": [{"old_text": "beta", "new_text": "gamma"}]
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -709,12 +700,11 @@ mod tests {
         let runner = runner(dir.path());
         let error = runner
             .execute(
-                ToolCall {
-                    id: "call-escape".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "../escape.txt", "content": "nope"}),
-                },
+                ToolCall::new(
+                    "call-escape",
+                    "write",
+                    serde_json::json!({"path": "../escape.txt", "content": "nope"}),
+                ),
                 None,
             )
             .await
@@ -730,12 +720,11 @@ mod tests {
         let runner = runner(dir.path());
         let error = runner
             .execute(
-                ToolCall {
-                    id: "call-noop".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
-                },
+                ToolCall::new(
+                    "call-noop",
+                    "write",
+                    serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
+                ),
                 None,
             )
             .await
@@ -755,15 +744,14 @@ mod tests {
         let runner = runner(dir.path());
         let error = runner
             .execute(
-                ToolCall {
-                    id: "call-edit-escape".to_string(),
-                    provider_call_id: None,
-                    name: "edit".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "call-edit-escape",
+                    "edit",
+                    serde_json::json!({
                         "path": "../escape.txt",
                         "edits": [{"old_text": "alpha", "new_text": "beta"}]
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -779,12 +767,11 @@ mod tests {
         let patch = "*** Begin Patch\n*** Add File: new.txt\n+hello\n*** End Patch\n";
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-patch".to_string(),
-                    provider_call_id: None,
-                    name: "apply_patch".to_string(),
-                    arguments: serde_json::json!({"input": patch}),
-                },
+                ToolCall::new(
+                    "call-patch",
+                    "apply_patch",
+                    serde_json::json!({"input": patch}),
+                ),
                 None,
             )
             .await
@@ -877,11 +864,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
         let runner = runner(dir.path());
-        let search = |id: &str| ToolCall {
-            id: id.to_string(),
-            provider_call_id: None,
-            name: "search".to_string(),
-            arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
+        let search = |id: &str| {
+            ToolCall::new(
+                id,
+                "search",
+                serde_json::json!({"pattern": "alpha", "paths": "."}),
+            )
         };
         runner
             .execute(search("call-1"), ctx("recon", "recon"))
@@ -894,12 +882,11 @@ mod tests {
         assert!(hit.result.content.contains("[cached]"));
         runner
             .execute(
-                ToolCall {
-                    id: "call-write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "other.txt", "content": "alpha too\n"}),
-                },
+                ToolCall::new(
+                    "call-write",
+                    "write",
+                    serde_json::json!({"path": "other.txt", "content": "alpha too\n"}),
+                ),
                 ctx("implement", "implement"),
             )
             .await
@@ -918,11 +905,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
         let runner = runner(dir.path());
-        let search = |id: &str| ToolCall {
-            id: id.to_string(),
-            provider_call_id: None,
-            name: "search".to_string(),
-            arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
+        let search = |id: &str| {
+            ToolCall::new(
+                id,
+                "search",
+                serde_json::json!({"pattern": "alpha", "paths": "."}),
+            )
         };
         runner
             .execute(search("call-1"), ctx("recon", "recon"))
@@ -981,15 +969,14 @@ mod tests {
         let markdown = "# Plan\n\nImplement the smallest safe change.\n";
         let drafted = runner
             .execute(
-                ToolCall {
-                    id: "plan-draft".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "plan-draft",
+                    "write",
+                    serde_json::json!({
                         "path": engine::PLAN_DRAFT_PATH,
                         "content": "# Plan\n\nStub."
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -999,18 +986,17 @@ mod tests {
 
         let edited = runner
             .execute(
-                ToolCall {
-                    id: "plan-edit".to_string(),
-                    provider_call_id: None,
-                    name: "edit".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "plan-edit",
+                    "edit",
+                    serde_json::json!({
                         "path": engine::PLAN_DRAFT_PATH,
                         "edits": [{
                             "old_text": "Stub.",
                             "new_text": "Implement the smallest safe change."
                         }]
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -1024,12 +1010,11 @@ mod tests {
 
         let written = runner
             .execute(
-                ToolCall {
-                    id: "plan-write".to_string(),
-                    provider_call_id: None,
-                    name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                    arguments: serde_json::json!({}),
-                },
+                ToolCall::new(
+                    "plan-write",
+                    engine::WRITE_PLAN_ARTIFACT_TOOL,
+                    serde_json::json!({}),
+                ),
                 None,
             )
             .await
@@ -1074,12 +1059,11 @@ mod tests {
         let patch = "*** Begin Patch\n*** Add File: good.txt\n+hello\n*** Update File: missing.txt\n@ old\n-old\n+new\n*** End Patch\n";
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-partial".to_string(),
-                    provider_call_id: None,
-                    name: "apply_patch".to_string(),
-                    arguments: serde_json::json!({"input": patch}),
-                },
+                ToolCall::new(
+                    "call-partial",
+                    "apply_patch",
+                    serde_json::json!({"input": patch}),
+                ),
                 None,
             )
             .await
@@ -1108,12 +1092,11 @@ mod tests {
 
         let write_record = runner
             .execute(
-                ToolCall {
-                    id: "call-after-partial".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "after.txt", "content": "ok\n"}),
-                },
+                ToolCall::new(
+                    "call-after-partial",
+                    "write",
+                    serde_json::json!({"path": "after.txt", "content": "ok\n"}),
+                ),
                 None,
             )
             .await
@@ -1130,12 +1113,7 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .finalize_record_with_status(
-                ToolCall {
-                    id: "call-external".into(),
-                    provider_call_id: None,
-                    name: "mcp_4_test_echo".into(),
-                    arguments: serde_json::json!({}),
-                },
+                ToolCall::new("call-external", "mcp_4_test_echo", serde_json::json!({})),
                 "invalid input".into(),
                 true,
                 Vec::new(),
@@ -1174,12 +1152,7 @@ mod tests {
         );
         let err = runner
             .execute(
-                ToolCall {
-                    id: "call-mcp".into(),
-                    provider_call_id: None,
-                    name: "mcp_4_test_echo".into(),
-                    arguments: serde_json::json!({}),
-                },
+                ToolCall::new("call-mcp", "mcp_4_test_echo", serde_json::json!({})),
                 None,
             )
             .await

@@ -16,8 +16,9 @@ use std::time::Duration;
 use uuid::Uuid;
 
 macro_rules! string_id {
-    ($name:ident) => {
+    ($(#[$meta:meta])* $name:ident) => {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        $(#[$meta])*
         pub struct $name(pub String);
 
         impl fmt::Display for $name {
@@ -74,7 +75,10 @@ macro_rules! string_id {
 
 string_id!(NodeId);
 string_id!(EdgeId);
-string_id!(WorkflowId);
+string_id!(
+    #[derive(Default)]
+    WorkflowId
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RetryPolicy {

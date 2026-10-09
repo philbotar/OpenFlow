@@ -1302,6 +1302,8 @@ pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveE
 impl core::cmp::Eq for engine::InteractiveEngineCheckpoint
 impl core::cmp::PartialEq for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::eq(&self, &engine::InteractiveEngineCheckpoint) -> bool
+impl core::default::Default for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::default() -> engine::InteractiveEngineCheckpoint
 impl core::fmt::Debug for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::InteractiveEngineCheckpoint
@@ -2873,6 +2875,8 @@ pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveE
 impl core::cmp::Eq for engine::InteractiveEngineCheckpoint
 impl core::cmp::PartialEq for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::eq(&self, &engine::InteractiveEngineCheckpoint) -> bool
+impl core::default::Default for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::default() -> engine::InteractiveEngineCheckpoint
 impl core::fmt::Debug for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::InteractiveEngineCheckpoint
@@ -4404,6 +4408,8 @@ impl core::convert::From<alloc::string::String> for engine::graph::workflow::Wor
 pub fn engine::graph::workflow::WorkflowId::from(alloc::string::String) -> Self
 impl core::convert::From<engine::graph::workflow::WorkflowId> for alloc::string::String
 pub fn alloc::string::String::from(engine::graph::workflow::WorkflowId) -> Self
+impl core::default::Default for engine::graph::workflow::WorkflowId
+pub fn engine::graph::workflow::WorkflowId::default() -> engine::graph::workflow::WorkflowId
 impl core::fmt::Debug for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for engine::graph::workflow::WorkflowId
@@ -5650,6 +5656,8 @@ impl core::convert::From<alloc::string::String> for engine::graph::workflow::Wor
 pub fn engine::graph::workflow::WorkflowId::from(alloc::string::String) -> Self
 impl core::convert::From<engine::graph::workflow::WorkflowId> for alloc::string::String
 pub fn alloc::string::String::from(engine::graph::workflow::WorkflowId) -> Self
+impl core::default::Default for engine::graph::workflow::WorkflowId
+pub fn engine::graph::workflow::WorkflowId::default() -> engine::graph::workflow::WorkflowId
 impl core::fmt::Debug for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for engine::graph::workflow::WorkflowId
@@ -8687,6 +8695,8 @@ pub engine::tools::ToolCall::arguments: serde_json::value::Value
 pub engine::tools::ToolCall::id: alloc::string::String
 pub engine::tools::ToolCall::name: alloc::string::String
 pub engine::tools::ToolCall::provider_call_id: core::option::Option<alloc::string::String>
+impl engine::ToolCall
+pub fn engine::ToolCall::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, serde_json::value::Value) -> Self
 impl core::clone::Clone for engine::ToolCall
 pub fn engine::ToolCall::clone(&self) -> engine::ToolCall
 impl core::cmp::Eq for engine::ToolCall
@@ -11914,6 +11924,8 @@ pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveE
 impl core::cmp::Eq for engine::InteractiveEngineCheckpoint
 impl core::cmp::PartialEq for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::eq(&self, &engine::InteractiveEngineCheckpoint) -> bool
+impl core::default::Default for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::default() -> engine::InteractiveEngineCheckpoint
 impl core::fmt::Debug for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::InteractiveEngineCheckpoint
@@ -13366,6 +13378,8 @@ pub engine::ToolCall::arguments: serde_json::value::Value
 pub engine::ToolCall::id: alloc::string::String
 pub engine::ToolCall::name: alloc::string::String
 pub engine::ToolCall::provider_call_id: core::option::Option<alloc::string::String>
+impl engine::ToolCall
+pub fn engine::ToolCall::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, serde_json::value::Value) -> Self
 impl core::clone::Clone for engine::ToolCall
 pub fn engine::ToolCall::clone(&self) -> engine::ToolCall
 impl core::cmp::Eq for engine::ToolCall
@@ -13841,6 +13855,8 @@ impl core::convert::From<alloc::string::String> for engine::graph::workflow::Wor
 pub fn engine::graph::workflow::WorkflowId::from(alloc::string::String) -> Self
 impl core::convert::From<engine::graph::workflow::WorkflowId> for alloc::string::String
 pub fn alloc::string::String::from(engine::graph::workflow::WorkflowId) -> Self
+impl core::default::Default for engine::graph::workflow::WorkflowId
+pub fn engine::graph::workflow::WorkflowId::default() -> engine::graph::workflow::WorkflowId
 impl core::fmt::Debug for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for engine::graph::workflow::WorkflowId

@@ -502,15 +502,14 @@ mod tests {
             },
         );
 
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: CALL_SUBAGENT_TOOL.to_string(),
-            arguments: json!({
+        let tool_call = ToolCall::new(
+            "call-1",
+            CALL_SUBAGENT_TOOL,
+            json!({
                 "subagent_id": "sub-1",
                 "input": "wire the API"
             }),
-        };
+        );
 
         match start_subagent_invoke(
             &workflow,
@@ -541,12 +540,11 @@ mod tests {
                 status: SubagentStatus::Declared,
             },
         );
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: CALL_SUBAGENT_TOOL.to_string(),
-            arguments: json!({ "subagent_id": "sub-1", "input": "go" }),
-        };
+        let tool_call = ToolCall::new(
+            "call-1",
+            CALL_SUBAGENT_TOOL,
+            json!({ "subagent_id": "sub-1", "input": "go" }),
+        );
 
         match start_subagent_invoke(
             &workflow,
@@ -565,12 +563,11 @@ mod tests {
     #[test]
     fn declare_subagents_rejects_malformed_arguments() {
         let mut declared = std::collections::BTreeMap::new();
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: DECLARE_SUBAGENTS_TOOL.to_string(),
-            arguments: json!({ "subagents": "not-an-array" }),
-        };
+        let tool_call = ToolCall::new(
+            "call-1",
+            DECLARE_SUBAGENTS_TOOL,
+            json!({ "subagents": "not-an-array" }),
+        );
 
         let outcome =
             handle_declare_subagents(&NodeId("n1".to_string()), &tool_call, &mut declared);
@@ -594,12 +591,11 @@ mod tests {
         let mut snapshots = std::collections::BTreeMap::new();
         snapshots.insert("agent-1".to_string(), agent);
 
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: CALL_SUBAGENT_TOOL.to_string(),
-            arguments: json!({ "subagent_id": "agent-1", "input": "go" }),
-        };
+        let tool_call = ToolCall::new(
+            "call-1",
+            CALL_SUBAGENT_TOOL,
+            json!({ "subagent_id": "agent-1", "input": "go" }),
+        );
 
         match start_subagent_invoke(
             &workflow,
@@ -622,12 +618,7 @@ mod tests {
     #[test]
     fn advance_subagent_invoke_records_tool_calls_before_results() {
         let session = sample_session();
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: "read_file".to_string(),
-            arguments: json!({ "path": "notes.txt" }),
-        };
+        let tool_call = ToolCall::new("call-1", "read_file", json!({ "path": "notes.txt" }));
         let tool_result = ToolResult {
             tool_call_id: tool_call.id.clone(),
             tool_name: tool_call.name.clone(),

@@ -133,6 +133,12 @@ impl ToolPort for PlanningRecordingToolPort {
     fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
 }
 
+fn engine_with(nodes: Vec<Node>) -> InteractiveEngine {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = nodes;
+    InteractiveEngine::new(workflow, None, None).unwrap()
+}
+
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -143,15 +149,8 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 
 #[test]
 fn mark_node_interrupted_closes_dangling_tool_calls() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes.push(node("a"));
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let call = ToolCall {
-        id: "call-1".to_string(),
-        provider_call_id: None,
-        name: "bash".to_string(),
-        arguments: json!({}),
-    };
+    let mut engine = engine_with(vec![node("a")]);
+    let call = ToolCall::new("call-1", "bash", json!({}));
     engine
         .transcripts
         .entry(NodeId("a".to_string()))
@@ -180,9 +179,7 @@ fn mark_node_interrupted_closes_dangling_tool_calls() {
 
 #[test]
 fn retry_node_saturates_retry_counter() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes.push(node("a"));
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("a")]);
     for _ in 0..300 {
         engine
             .failed_nodes
@@ -197,10 +194,8 @@ fn retry_node_saturates_retry_counter() {
 
 #[test]
 fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes.push(node("a"));
+    let mut engine = engine_with(vec![node("a")]);
     let node_id = NodeId("a".to_string());
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     engine
         .failed_nodes
         .insert(node_id.clone(), "boom".to_string());
@@ -276,10 +271,8 @@ fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
 
 #[test]
 fn retry_failed_node_appends_new_human_message() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes.push(node("a"));
+    let mut engine = engine_with(vec![node("a")]);
     let node_id = NodeId("a".to_string());
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     engine
         .failed_nodes
         .insert(node_id.clone(), "boom".to_string());
@@ -366,10 +359,8 @@ fn retry_failed_node_uses_the_latest_runtime_model() {
 
 #[test]
 fn retry_interrupted_node_preserves_conversation() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes.push(node("a"));
+    let mut engine = engine_with(vec![node("a")]);
     let node_id = NodeId("a".to_string());
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     engine.interrupted_nodes.insert(node_id.clone());
     engine
         .recovery
@@ -399,168 +390,81 @@ async fn run_once<A: AiPort, T: ToolPort>(
     engine.run(ai, tools, &CancellationToken::new()).await
 }
 
+fn user_messages(request: &AgentRequest) -> Vec<&str> {
+    request
+        .transcript
+        .iter()
+        .filter_map(|item| match item {
+            AgentTranscriptItem::UserMessage { content, .. } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
-    struct MixedThenCompleteAi {
-        requests: Arc<Mutex<Vec<AgentRequest>>>,
-    }
+    let ai = ScriptedAi::new(vec![
+        Err(AgentError::mixed_tool_turn(
+            "test provider",
+            "openflow_submit_node_output, write",
+        )),
+        Ok(completed(json!({"status": "complete"}))),
+    ]);
 
-    #[async_trait]
-    impl AiPort for MixedThenCompleteAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            let attempt = {
-                let mut requests = self.requests.lock().expect("requests lock");
-                let attempt = requests.len();
-                requests.push(request);
-                attempt
-            };
-            if attempt == 0 {
-                return Err(AgentError::mixed_tool_turn(
-                    "test provider",
-                    "openflow_submit_node_output, write",
-                ));
-            }
-            assert!(self
-                .requests
-                .lock()
-                .expect("requests lock")
-                .last()
-                .expect("retry request")
-                .transcript
-                .iter()
-                .any(|item| {
-                    matches!(
-                        item,
-                        AgentTranscriptItem::UserMessage { content, .. }
-                            if content.contains("mixed harness and executable tools")
-                                && content.contains("write")
-                    )
-                }));
-            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({"status": "complete"}),
-                raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
-            }))
-        }
-    }
-
-    let mut workflow = Workflow::new("mixed-tool-turn");
-    workflow.nodes = vec![node("idea")];
-    let requests = Arc::new(Mutex::new(Vec::new()));
-    let ai = MixedThenCompleteAi {
-        requests: Arc::clone(&requests),
-    };
-
-    let result = run_once(
-        &mut InteractiveEngine::new(workflow, None, None).unwrap(),
-        &ai,
-        &NoopToolPort,
-    )
-    .await;
+    let result = run_once(&mut engine_with(vec![node("idea")]), &ai, &NoopToolPort).await;
 
     assert!(matches!(result, EngineRunResult::Completed(_)));
-    assert_eq!(requests.lock().expect("requests lock").len(), 2);
+    let requests = ai.captured.lock().expect("requests lock");
+    assert_eq!(requests.len(), 2);
+    assert!(user_messages(&requests[1])
+        .iter()
+        .any(|m| m.contains("mixed harness and executable tools") && m.contains("write")));
 }
 
 #[tokio::test]
 async fn output_truncation_retries_with_small_write_feedback() {
-    struct TruncatedThenCompleteAi {
-        requests: Arc<Mutex<Vec<AgentRequest>>>,
-    }
+    let ai = ScriptedAi::new(vec![
+        Err(AgentError::output_truncated(
+            "test provider",
+            "output token limit",
+            vec![PartialToolCall::new(
+                "call-1",
+                "internal-1",
+                Some("write".to_string()),
+                r#"{"path":"docs/large.md","content":"secret partial"#,
+            )],
+        )),
+        Ok(completed(json!({"status": "complete"}))),
+    ]);
 
-    #[async_trait]
-    impl AiPort for TruncatedThenCompleteAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            let attempt = {
-                let mut requests = self.requests.lock().expect("requests lock");
-                let attempt = requests.len();
-                requests.push(request);
-                attempt
-            };
-            if attempt == 0 {
-                return Err(AgentError::output_truncated(
-                    "test provider",
-                    "output token limit",
-                    vec![PartialToolCall::new(
-                        "call-1",
-                        "internal-1",
-                        Some("write".to_string()),
-                        r#"{"path":"docs/large.md","content":"secret partial"#,
-                    )],
-                ));
-            }
-            let retry_request = self
-                .requests
-                .lock()
-                .expect("requests lock")
-                .last()
-                .expect("retry request")
-                .clone();
-            let feedback = retry_request
-                .transcript
-                .iter()
-                .find_map(|item| match item {
-                    AgentTranscriptItem::UserMessage { content, .. }
-                        if content.contains("output token limit") =>
-                    {
-                        Some(content)
-                    }
-                    _ => None,
-                })
-                .expect("retry feedback");
-            assert!(feedback.contains("write"));
-            assert!(feedback.contains("smaller"));
-            assert!(!feedback.contains("secret partial"));
-            assert!(!feedback.contains("docs/large.md"));
-            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({"status": "complete"}),
-                raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
-            }))
-        }
-    }
-
-    let mut workflow = Workflow::new("output-truncation");
-    workflow.nodes = vec![node("idea")];
-    let requests = Arc::new(Mutex::new(Vec::new()));
-    let ai = TruncatedThenCompleteAi {
-        requests: Arc::clone(&requests),
-    };
-
-    let result = run_once(
-        &mut InteractiveEngine::new(workflow, None, None).unwrap(),
-        &ai,
-        &NoopToolPort,
-    )
-    .await;
+    let result = run_once(&mut engine_with(vec![node("idea")]), &ai, &NoopToolPort).await;
 
     assert!(matches!(result, EngineRunResult::Completed(_)));
-    assert_eq!(requests.lock().expect("requests lock").len(), 2);
+    let requests = ai.captured.lock().expect("requests lock");
+    assert_eq!(requests.len(), 2);
+    let feedback = *user_messages(&requests[1])
+        .iter()
+        .find(|m| m.contains("output token limit"))
+        .expect("retry feedback");
+    assert!(feedback.contains("write"));
+    assert!(feedback.contains("smaller"));
+    assert!(!feedback.contains("secret partial"));
+    assert!(!feedback.contains("docs/large.md"));
 }
 
 #[test]
 fn output_truncation_fails_after_retry_cap() {
-    let mut workflow = Workflow::new("output-truncation-cap");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     let node_id = NodeId::from("idea");
     let truncated =
         || AgentError::output_truncated("test provider", "output token limit", Vec::new());
 
     for _ in 0..MAX_OUTPUT_TRUNCATION_RETRIES {
-        engine.test_insert_in_flight(node_id.clone());
-        engine.on_ai_complete(&node_id, Err(truncated()));
+        engine.test_deliver_ai(&node_id, Err(truncated()));
     }
     assert!(!engine.failed_nodes.contains_key(&node_id));
 
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(&node_id, Err(truncated()));
+    engine.test_deliver_ai(&node_id, Err(truncated()));
     assert!(engine
         .failed_nodes
         .get(&node_id)
@@ -569,21 +473,17 @@ fn output_truncation_fails_after_retry_cap() {
 
 #[test]
 fn mixed_tool_turn_fails_after_retry_cap() {
-    let mut workflow = Workflow::new("mixed-tool-turn-cap");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     let node_id = NodeId::from("idea");
     let mixed =
         || AgentError::mixed_tool_turn("test provider", "openflow_submit_node_output, write");
 
     for _ in 0..MAX_MIXED_TOOL_TURN_RETRIES {
-        engine.test_insert_in_flight(node_id.clone());
-        engine.on_ai_complete(&node_id, Err(mixed()));
+        engine.test_deliver_ai(&node_id, Err(mixed()));
     }
     assert!(!engine.failed_nodes.contains_key(&node_id));
 
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(&node_id, Err(mixed()));
+    engine.test_deliver_ai(&node_id, Err(mixed()));
     assert!(engine
         .failed_nodes
         .get(&node_id)
@@ -658,12 +558,11 @@ impl AiPort for InterleavedUserMessageAi {
             return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({ "path": "README.md" }),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-1",
+                    "read",
+                    json!({ "path": "README.md" }),
+                )],
                 reasoning: Vec::new(),
                 usage: None,
             }));
@@ -769,67 +668,38 @@ async fn run_accepts_user_message_while_tool_is_in_flight() {
 
 #[tokio::test(start_paused = true)]
 async fn run_sleeps_backoff_before_transient_retry() {
-    struct TransientOnceAi {
-        calls: Arc<AtomicUsize>,
-    }
-
-    #[async_trait]
-    impl AiPort for TransientOnceAi {
-        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                return Err(AgentError::Transient("timeout".to_string()));
-            }
-            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({"summary": "ok"}),
-                raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
-            }))
-        }
-    }
-
     let mut workflow = Workflow::new("backoff");
     workflow.settings.retry_policy.max_attempts = 1;
     workflow.settings.retry_policy.backoff_ms = 500;
     workflow.nodes = vec![node("idea")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let ai = TransientOnceAi {
-        calls: Arc::new(AtomicUsize::new(0)),
-    };
-    let calls = ai.calls.clone();
-    let cancel = CancellationToken::new();
+    let ai = ScriptedAi::new(vec![
+        Err(AgentError::Transient("timeout".to_string())),
+        Ok(completed(json!({"summary": "ok"}))),
+    ]);
     let started = tokio::time::Instant::now();
 
-    let result = engine.run(&ai, &NoopToolPort, &cancel).await;
+    let result = engine
+        .run(&ai, &NoopToolPort, &CancellationToken::new())
+        .await;
 
     assert!(matches!(result, EngineRunResult::Completed(_)));
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(ai.captured.lock().expect("lock").len(), 2);
     assert!(started.elapsed() >= Duration::from_millis(500));
 }
 
 #[tokio::test(start_paused = true)]
 async fn run_cancel_during_backoff_returns_cancelled() {
-    struct AlwaysTransientAi;
-
-    #[async_trait]
-    impl AiPort for AlwaysTransientAi {
-        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            Err(AgentError::Transient("timeout".to_string()))
-        }
-    }
-
     let mut workflow = Workflow::new("cancel");
     workflow.settings.retry_policy.max_attempts = 3;
     workflow.settings.retry_policy.backoff_ms = 5_000;
     workflow.nodes = vec![node("idea")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let ai = ScriptedAi::new(vec![Err(AgentError::Transient("timeout".to_string()))]);
     let cancel = CancellationToken::new();
     let cancel_handle = cancel.clone();
     let started = tokio::time::Instant::now();
-    let handle =
-        tokio::spawn(async move { engine.run(&AlwaysTransientAi, &NoopToolPort, &cancel).await });
+    let handle = tokio::spawn(async move { engine.run(&ai, &NoopToolPort, &cancel).await });
     tokio::task::yield_now().await;
     cancel_handle.cancel();
     let result = handle.await.expect("run task");
@@ -845,8 +715,7 @@ fn checkpoint_preserves_transient_streaks_by_node() {
     workflow.nodes = vec![node("a")];
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
     let node_a = NodeId("a".to_string());
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+    engine.test_deliver_ai(&node_a, Err(AgentError::Transient("blip".into())));
 
     let checkpoint = engine.prepare_stop_checkpoint();
     assert_eq!(checkpoint.transient_streaks_by_node.get(&node_a), Some(&1));
@@ -1067,30 +936,14 @@ async fn plan_mode_denies_hidden_write_mcp_and_subagent_calls_before_tool_port()
             raw_text: String::new(),
             assistant_message: None,
             tool_calls: vec![
-                ToolCall {
-                    id: "write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: json!({ "path": "src/lib.rs", "content": "bad" }),
-                },
-                ToolCall {
-                    id: "mcp".to_string(),
-                    provider_call_id: None,
-                    name: "mcp/example".to_string(),
-                    arguments: json!({}),
-                },
-                ToolCall {
-                    id: "subagent".to_string(),
-                    provider_call_id: None,
-                    name: "openflow_call_subagent".to_string(),
-                    arguments: json!({}),
-                },
-                ToolCall {
-                    id: "read".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({ "path": "README.md" }),
-                },
+                ToolCall::new(
+                    "write",
+                    "write",
+                    json!({ "path": "src/lib.rs", "content": "bad" }),
+                ),
+                ToolCall::new("mcp", "mcp/example", json!({})),
+                ToolCall::new("subagent", "openflow_call_subagent", json!({})),
+                ToolCall::new("read", "read", json!({ "path": "README.md" })),
             ],
             reasoning: Vec::new(),
             usage: None,
@@ -1138,18 +991,16 @@ fn plan_source_seal_always_requires_explicit_human_approval() {
     let planner_id = NodeId::from("planner");
     let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
 
-    engine.test_insert_in_flight(planner_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &planner_id,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
             assistant_message: None,
-            tool_calls: vec![ToolCall {
-                id: "seal".to_string(),
-                provider_call_id: None,
-                name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                arguments: json!({ "_i": "Approve and seal the implementation plan" }),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "seal",
+                crate::tools::WRITE_PLAN_ARTIFACT_TOOL,
+                json!({ "_i": "Approve and seal the implementation plan" }),
+            )],
             reasoning: Vec::new(),
             usage: None,
         })),
@@ -1180,8 +1031,7 @@ fn plan_source_cannot_complete_before_an_approved_seal_succeeds() {
     let planner_id = NodeId::from("planner");
     let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
 
-    engine.test_insert_in_flight(planner_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &planner_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
             handoff: None,
@@ -1215,28 +1065,21 @@ fn non_source_node_cannot_mutate_or_seal_the_run_plan() {
     let research_id = NodeId::from("research");
     let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
 
-    engine.test_insert_in_flight(research_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &research_id,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
             assistant_message: None,
             tool_calls: vec![
-                ToolCall {
-                    id: "draft".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: json!({
+                ToolCall::new(
+                    "draft",
+                    "write",
+                    json!({
                         "path": crate::tools::PLAN_DRAFT_PATH,
                         "content": "# Plan\n"
                     }),
-                },
-                ToolCall {
-                    id: "seal".to_string(),
-                    provider_call_id: None,
-                    name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                    arguments: json!({}),
-                },
+                ),
+                ToolCall::new("seal", crate::tools::WRITE_PLAN_ARTIFACT_TOOL, json!({})),
             ],
             reasoning: Vec::new(),
             usage: None,
@@ -1269,12 +1112,11 @@ fn committed_plan_artifact_records_reference_without_plan_payload() {
         evidence_source_node_id: NodeId::from("planner"),
     });
     let planner_id = NodeId::from("planner");
-    let call = ToolCall {
-        id: "plan-call".to_string(),
-        provider_call_id: None,
-        name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-        arguments: json!({}),
-    };
+    let call = ToolCall::new(
+        "plan-call",
+        crate::tools::WRITE_PLAN_ARTIFACT_TOOL,
+        json!({}),
+    );
     let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
     engine
         .transcripts
@@ -1369,13 +1211,11 @@ fn transient_streak_resets_after_successful_turn() {
     let node_a = NodeId("a".to_string());
 
     for _ in 0..2 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        engine.test_deliver_ai(&node_a, Err(AgentError::Transient("blip".into())));
         assert!(!engine.failed_nodes.contains_key(&node_a));
     }
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
@@ -1387,8 +1227,7 @@ fn transient_streak_resets_after_successful_turn() {
     );
 
     for _ in 0..2 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        engine.test_deliver_ai(&node_a, Err(AgentError::Transient("blip".into())));
         assert!(
             !engine.failed_nodes.contains_key(&node_a),
             "streak should have reset after successful turn"
@@ -1406,13 +1245,11 @@ fn model_attempt_does_not_decrease_after_streak_reset() {
     let node_a = NodeId("a".to_string());
 
     for _ in 0..2 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        engine.test_deliver_ai(&node_a, Err(AgentError::Transient("blip".into())));
     }
 
     let before = engine.model_attempt_for_node(&node_a);
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
@@ -1422,8 +1259,7 @@ fn model_attempt_does_not_decrease_after_streak_reset() {
             usage: None,
         })),
     );
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+    engine.test_deliver_ai(&node_a, Err(AgentError::Transient("blip".into())));
 
     let after = engine.model_attempt_for_node(&node_a);
     assert!(after >= before);
@@ -1439,8 +1275,7 @@ fn transient_retry_backoff_blocks_only_the_failing_node() {
     let node_a = NodeId("a".to_string());
     let node_b = NodeId("b".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Err(AgentError::Transient("proxy blip".to_string())),
     );
@@ -1454,9 +1289,7 @@ fn transient_retry_backoff_blocks_only_the_failing_node() {
 
 #[test]
 fn revert_file_changes_for_batch_removes_only_matching_records() {
-    let mut workflow = Workflow::new("revert");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     let node_id = NodeId("idea".to_string());
     engine.record_file_changes(
         &node_id,
@@ -1517,9 +1350,7 @@ fn shared_context_is_appended_to_system_prompt() {
 
 #[test]
 fn auto_start_node_runs_ai_and_completes() {
-    let mut workflow = Workflow::new("test");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     let ai = CompleteAi::new(json!({"summary": "ok"}));
 
     let result = block_on(run_once(&mut engine, &ai, &NoopToolPort));
@@ -1551,9 +1382,7 @@ fn legacy_non_auto_start_node_runs_without_initial_input() {
 
 #[test]
 fn model_requested_user_input_resumes_ai_request() {
-    let mut workflow = Workflow::new("interactive");
-    workflow.nodes = vec![interactive_node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("idea")]);
     let ai = ScriptedAi::new(vec![
         Ok(needs_input("Which launch scope should I use?")),
         Ok(completed(json!({"summary": "ok"}))),
@@ -1692,9 +1521,7 @@ fn structured_human_message_survives_history_and_checkpoint() {
 
 #[test]
 fn wrong_node_human_input_is_rejected_without_advancing() {
-    let mut workflow = Workflow::new("interactive");
-    workflow.nodes = vec![interactive_node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("idea")]);
     let ai = ScriptedAi::new(vec![Ok(needs_input("Which node should I update?"))]);
 
     block_on(async {
@@ -1731,12 +1558,11 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: "...".to_string(),
             assistant_message: None,
-            tool_calls: vec![ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({"path": "README.md"}),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "call-1",
+                "read",
+                json!({"path": "README.md"}),
+            )],
             reasoning: vec![],
             usage: None,
         })),
@@ -1772,20 +1598,18 @@ fn apply_tool_calls_relativizes_absolute_paths_under_project_root() {
     let root = "/Users/philipbotar/Developer/DailyPlanner".to_string();
     let mut engine = InteractiveEngine::new(workflow, None, Some(root.clone())).unwrap();
     let node_id = NodeId("idea".to_string());
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_id,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: "...".to_string(),
             assistant_message: None,
-            tool_calls: vec![ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "edit".to_string(),
-                arguments: json!({
+            tool_calls: vec![ToolCall::new(
+                "call-1",
+                "edit",
+                json!({
                     "path": format!("{root}/package.json"),
                 }),
-            }],
+            )],
             reasoning: vec![],
             usage: None,
         })),
@@ -1809,12 +1633,11 @@ fn yolo_mode_skips_tool_approval() {
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: "...".to_string(),
             assistant_message: None,
-            tool_calls: vec![ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({"path": "README.md"}),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "call-1",
+                "read",
+                json!({"path": "README.md"}),
+            )],
             reasoning: vec![],
             usage: None,
         })),
@@ -1856,18 +1679,16 @@ fn runtime_approval_patch_applies_before_tool_decision() {
     upsert_runtime_patch(&store, NodeId("idea".to_string()), &runtime_patch);
 
     let node_id = NodeId("idea".to_string());
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_id,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: "...".to_string(),
             assistant_message: None,
-            tool_calls: vec![ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: json!({"command": "echo hi"}),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "call-1",
+                "bash",
+                json!({"command": "echo hi"}),
+            )],
             reasoning: vec![],
             usage: None,
         })),
@@ -1894,9 +1715,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
 
 #[test]
 fn misrouted_completion_is_rejected() {
-    let mut workflow = Workflow::new("misroute");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     engine.test_insert_in_flight(NodeId::from("idea"));
 
     engine.on_ai_complete(
@@ -1939,9 +1758,7 @@ async fn stale_in_flight_in_parallel_layer_surfaces_needs_interaction() {
         }
     }
 
-    let mut workflow = Workflow::new("stale-run");
-    workflow.nodes = vec![node("done"), node("stale")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("done"), node("stale")]);
     engine.test_insert_output(NodeId::from("done"), json!({"summary": "ok"}));
     engine.test_insert_in_flight(NodeId::from("stale"));
 
@@ -1993,8 +1810,7 @@ fn checkpoint_roundtrip_preserves_node_handoff() {
         size_bytes: 42,
     };
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
             handoff: Some(handoff.clone()),
@@ -2031,9 +1847,7 @@ fn checkpoint_rejects_unknown_node_ids_in_workflow() {
 
 #[test]
 fn checkpoint_rejects_workflow_id_mismatch() {
-    let mut workflow = Workflow::new("one");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     let checkpoint = engine.prepare_stop_checkpoint();
     let mut other = Workflow::new("two");
     other.nodes = vec![node("idea")];
@@ -2145,12 +1959,7 @@ impl AiPort for ToolOverlapAi {
             assistant_message: None,
             reasoning: vec![],
             usage: None,
-            tool_calls: vec![ToolCall {
-                id: "t1".to_string(),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: json!({}),
-            }],
+            tool_calls: vec![ToolCall::new("t1", "bash", json!({}))],
         }))
     }
 }
@@ -2270,15 +2079,14 @@ fn tool_batch_effects_are_recorded_on_engine() {
                 assistant_message: None,
                 reasoning: vec![],
                 usage: None,
-                tool_calls: vec![ToolCall {
-                    id: "t1".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: json!({
+                tool_calls: vec![ToolCall::new(
+                    "t1",
+                    "write",
+                    json!({
                         "path": "src/x.rs",
                         "content": "fn x() {}\n"
                     }),
-                }],
+                )],
             })),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 handoff: None,
@@ -2303,20 +2111,13 @@ fn tool_batch_effects_are_recorded_on_engine() {
 
 #[test]
 fn checkpoint_stop_mid_tool_execution_marks_node_retryable() {
-    let mut workflow = Workflow::new("mid-tool");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![node("idea")]);
     let node_id = NodeId::from("idea");
 
     engine.test_insert_pending_batch(PendingToolBatch {
         approval_id: "batch-1".to_string(),
         node_id: node_id.clone(),
-        tool_calls: vec![ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: "read".to_string(),
-            arguments: json!({"path": "foo.txt"}),
-        }],
+        tool_calls: vec![ToolCall::new("call-1", "read", json!({"path": "foo.txt"}))],
         requires_approval: false,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
     });
@@ -2383,9 +2184,7 @@ fn message(message: &str) -> AgentTurnOutcome {
 
 #[test]
 fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
     let empty = || {
         Err(AgentError::Failed(
@@ -2394,8 +2193,7 @@ fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
     };
 
     for attempt in 1..=3 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, empty());
+        engine.test_deliver_ai(&node_a, empty());
         assert!(
             !engine.failed_nodes.contains_key(&node_a),
             "attempt {attempt} should nudge, not fail"
@@ -2408,20 +2206,16 @@ fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
             if content.contains("No human input is available")
     ));
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, empty());
+    engine.test_deliver_ai(&node_a, empty());
     assert!(engine.failed_nodes.contains_key(&node_a));
 }
 
 #[test]
 fn interactive_empty_provider_turn_keeps_human_input_available() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("grill")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("grill")]);
     let grill = NodeId("grill".to_string());
 
-    engine.test_insert_in_flight(grill.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &grill,
         Err(AgentError::Failed(
             "provider returned neither tool calls nor recoverable output".to_string(),
@@ -2439,9 +2233,7 @@ fn interactive_empty_provider_turn_keeps_human_input_available() {
 
 #[test]
 fn interactive_empty_provider_turn_pauses_for_human_after_retry_cap() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("grill")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("grill")]);
     let grill = NodeId("grill".to_string());
     let empty = || {
         Err(AgentError::Failed(
@@ -2451,14 +2243,12 @@ fn interactive_empty_provider_turn_pauses_for_human_after_retry_cap() {
     };
 
     for _ in 0..3 {
-        engine.test_insert_in_flight(grill.clone());
-        engine.on_ai_complete(&grill, empty());
+        engine.test_deliver_ai(&grill, empty());
         assert!(!engine.failed_nodes.contains_key(&grill));
         assert!(!engine.awaiting_nodes.contains(&grill));
     }
 
-    engine.test_insert_in_flight(grill.clone());
-    engine.on_ai_complete(&grill, empty());
+    engine.test_deliver_ai(&grill, empty());
     assert!(
         !engine.failed_nodes.contains_key(&grill),
         "conversational nodes must pause, not fail, after empty-turn retries"
@@ -2473,13 +2263,10 @@ fn interactive_empty_provider_turn_pauses_for_human_after_retry_cap() {
 
 #[test]
 fn empty_after_narrated_write_uses_write_specific_nudge() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("brief")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("brief")]);
     let brief = NodeId("brief".to_string());
 
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Ok(message(
             "Writing the brief to `docs/feature-briefs/002.md` now.",
@@ -2491,8 +2278,7 @@ fn empty_after_narrated_write_uses_write_specific_nudge() {
             if content.contains("narrated creating or updating a file")
     ));
 
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Err(AgentError::Failed(
             "provider returned neither tool calls nor recoverable output".to_string(),
@@ -2509,26 +2295,22 @@ fn empty_after_narrated_write_uses_write_specific_nudge() {
 
 #[test]
 fn incomplete_write_is_rejected_with_chunked_write_nudge() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
 
     engine
         .recovery
         .auto_continue_streaks_by_node
         .insert(node_a.clone(), 5);
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
-            tool_calls: vec![ToolCall {
-                id: "w1".to_string(),
-                provider_call_id: None,
-                name: "write".to_string(),
-                arguments: json!({ "path": "docs/feature-briefs/002.md" }),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "w1",
+                "write",
+                json!({ "path": "docs/feature-briefs/002.md" }),
+            )],
             assistant_message: None,
             reasoning: vec![],
             usage: None,
@@ -2558,22 +2340,18 @@ fn incomplete_write_is_rejected_with_chunked_write_nudge() {
 
 #[test]
 fn write_with_empty_content_is_allowed_through_to_pending() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
-            tool_calls: vec![ToolCall {
-                id: "w1".to_string(),
-                provider_call_id: None,
-                name: "write".to_string(),
-                arguments: json!({ "path": "docs/stub.md", "content": "" }),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "w1",
+                "write",
+                json!({ "path": "docs/stub.md", "content": "" }),
+            )],
             assistant_message: None,
             reasoning: vec![],
             usage: None,
@@ -2592,13 +2370,10 @@ fn write_with_empty_content_is_allowed_through_to_pending() {
 
 #[test]
 fn autonomous_node_auto_continues_instead_of_awaiting_input() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Ok(needs_input("Now I'll write the tests.")));
+    engine.test_deliver_ai(&node_a, Ok(needs_input("Now I'll write the tests.")));
 
     assert!(!engine.awaiting_nodes.contains(&node_a), "must not pause");
     assert!(!engine.failed_nodes.contains_key(&node_a));
@@ -2617,13 +2392,10 @@ fn autonomous_node_auto_continues_instead_of_awaiting_input() {
 
 #[test]
 fn autonomous_node_repairs_plain_message_instead_of_awaiting_input() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Ok(message("I will inspect the repository next.")));
+    engine.test_deliver_ai(&node_a, Ok(message("I will inspect the repository next.")));
 
     assert!(!engine.awaiting_nodes.contains(&node_a));
     assert!(!engine.failed_nodes.contains_key(&node_a));
@@ -2636,52 +2408,38 @@ fn autonomous_node_repairs_plain_message_instead_of_awaiting_input() {
 
 #[test]
 fn autonomous_node_fails_after_consecutive_auto_continue_cap() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
 
     for _ in 0..10 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("still narrating")));
+        engine.test_deliver_ai(&node_a, Ok(needs_input("still narrating")));
         assert!(!engine.failed_nodes.contains_key(&node_a));
     }
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Ok(needs_input("still narrating")));
+    engine.test_deliver_ai(&node_a, Ok(needs_input("still narrating")));
     assert!(engine.failed_nodes.contains_key(&node_a));
     assert!(!engine.awaiting_nodes.contains(&node_a));
 }
 
 #[test]
 fn autonomous_auto_continue_streak_resets_on_tool_calls() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![autonomous_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![autonomous_node("a")]);
     let node_a = NodeId("a".to_string());
 
     for _ in 0..9 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+        engine.test_deliver_ai(&node_a, Ok(needs_input("narration")));
     }
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
-            tool_calls: vec![ToolCall {
-                id: "c1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({}),
-            }],
+            tool_calls: vec![ToolCall::new("c1", "read", json!({}))],
             assistant_message: None,
             reasoning: vec![],
             usage: None,
         })),
     );
     for _ in 0..10 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+        engine.test_deliver_ai(&node_a, Ok(needs_input("narration")));
         assert!(
             !engine.failed_nodes.contains_key(&node_a),
             "streak should have reset after tool-call progress"
@@ -2691,13 +2449,10 @@ fn autonomous_auto_continue_streak_resets_on_tool_calls() {
 
 #[test]
 fn interactive_node_still_pauses_for_real_questions() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("a")]);
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(needs_input("Which environment should I target?")),
     );
@@ -2706,13 +2461,10 @@ fn interactive_node_still_pauses_for_real_questions() {
 
 #[test]
 fn interactive_node_accepts_a_complete_response_without_a_forced_question() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("a")]);
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(needs_input(
             "The list now includes the requested item and remains sorted.",
@@ -2727,13 +2479,10 @@ fn interactive_node_accepts_a_complete_response_without_a_forced_question() {
 
 #[test]
 fn direct_conversation_plain_reply_ends_the_turn() {
-    let mut workflow = Workflow::new("direct chat");
-    workflow.nodes = vec![conversation_node("assistant")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![conversation_node("assistant")]);
     let node_id = NodeId::from("assistant");
 
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_id,
         Ok(message(
             "The list now includes the requested item and remains sorted.",
@@ -2781,8 +2530,7 @@ fn structured_question_pauses_and_survives_checkpoint_restore() {
         }],
     };
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             raw_text: "{}".to_string(),
@@ -2815,8 +2563,7 @@ fn structured_question_is_not_projected_when_disabled_for_the_node() {
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let node_id = NodeId::from("assistant");
 
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_id,
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             raw_text: "{}".to_string(),
@@ -2856,8 +2603,7 @@ fn structured_only_request_retries_with_free_text_feedback_when_disabled() {
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let node_id = NodeId::from("assistant");
 
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_id,
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             raw_text: "{}".to_string(),
@@ -2895,13 +2641,10 @@ fn structured_only_request_retries_with_free_text_feedback_when_disabled() {
 
 #[test]
 fn invalid_structured_question_retries_even_when_prompt_looks_direct() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("a")]);
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             raw_text: "{}".to_string(),
@@ -2929,13 +2672,10 @@ fn invalid_structured_question_retries_even_when_prompt_looks_direct() {
 
 #[test]
 fn conversational_node_auto_continues_plain_message_without_pausing() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("brief")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("brief")]);
     let brief = NodeId("brief".to_string());
 
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Ok(message("Auth and Postgres are in scope. Storage can wait.")),
     );
@@ -2962,13 +2702,10 @@ fn conversational_node_auto_continues_plain_message_without_pausing() {
 
 #[test]
 fn narrated_write_without_tool_gets_write_specific_nudge() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("brief")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("brief")]);
     let brief = NodeId("brief".to_string());
 
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Ok(message(
             "Writing the brief to `docs/feature-briefs/002.md` now.",
@@ -2999,8 +2736,7 @@ fn plan_mode_narrated_write_nudge_uses_run_local_draft_and_seal_tool() {
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let planner = NodeId::from("planner");
 
-    engine.test_insert_in_flight(planner.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &planner,
         Ok(message("Writing the complete consolidated plan now.")),
     );
@@ -3016,24 +2752,21 @@ fn plan_mode_narrated_write_nudge_uses_run_local_draft_and_seal_tool() {
 
 #[test]
 fn narrated_write_after_successful_write_nudges_edit_chunks() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("brief")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("brief")]);
     let brief = NodeId("brief".to_string());
 
     engine.transcripts.insert(
         brief.clone(),
         vec![
             AgentTranscriptItem::ToolCall {
-                call: ToolCall {
-                    id: "w1".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: json!({
+                call: ToolCall::new(
+                    "w1",
+                    "write",
+                    json!({
                         "path": "docs/feature-briefs/002.md",
                         "content": "# Stub\n"
                     }),
-                },
+                ),
             },
             AgentTranscriptItem::ToolResult {
                 result: ToolResult {
@@ -3048,8 +2781,7 @@ fn narrated_write_after_successful_write_nudges_edit_chunks() {
         ],
     );
 
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Ok(message(
             "Writing the full canonical feature brief in one write.",
@@ -3067,19 +2799,15 @@ fn narrated_write_after_successful_write_nudges_edit_chunks() {
 
 #[test]
 fn conversational_node_pauses_after_text_only_auto_continue_cap() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("brief")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("brief")]);
     let brief = NodeId("brief".to_string());
 
     for _ in 0..10 {
-        engine.test_insert_in_flight(brief.clone());
-        engine.on_ai_complete(&brief, Ok(message("still narrating")));
+        engine.test_deliver_ai(&brief, Ok(message("still narrating")));
         assert!(!engine.failed_nodes.contains_key(&brief));
         assert!(!engine.awaiting_nodes.contains(&brief));
     }
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(&brief, Ok(message("still narrating")));
+    engine.test_deliver_ai(&brief, Ok(message("still narrating")));
     assert!(
         !engine.failed_nodes.contains_key(&brief),
         "conversational nodes must pause, not fail, after text-only streak"
@@ -3094,9 +2822,7 @@ fn conversational_node_pauses_after_text_only_auto_continue_cap() {
 
 #[test]
 fn valid_conversational_pause_resets_protocol_recovery_budgets() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("brief")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("brief")]);
     let brief = NodeId("brief".to_string());
 
     engine
@@ -3116,8 +2842,7 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
         .auto_continue_streaks_by_node
         .insert(brief.clone(), 2);
 
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Ok(needs_input("Which Supabase products should be included?")),
     );
@@ -3143,8 +2868,7 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
     engine
         .on_human_input(&brief, "Auth and Postgres. What else do you think?")
         .unwrap();
-    engine.test_insert_in_flight(brief.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &brief,
         Ok(message("Storage is the most useful third surface.")),
     );
@@ -3163,14 +2887,11 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
 
 #[test]
 fn malformed_request_input_fails_after_retry_cap_without_pausing() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("a")]);
     let node_a = NodeId("a".to_string());
 
     for _ in 0..=MAX_MALFORMED_REQUEST_INPUT_RETRIES {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("")));
+        engine.test_deliver_ai(&node_a, Ok(needs_input("")));
     }
 
     assert!(!engine.awaiting_nodes.contains(&node_a));
@@ -3183,36 +2904,26 @@ fn malformed_request_input_fails_after_retry_cap_without_pausing() {
 
 #[test]
 fn malformed_request_input_retries_reset_on_tool_call_progress() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![interactive_node("a")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let mut engine = engine_with(vec![interactive_node("a")]);
     let node_a = NodeId("a".to_string());
 
     for _ in 0..3 {
-        engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("")));
+        engine.test_deliver_ai(&node_a, Ok(needs_input("")));
         assert!(!engine.awaiting_nodes.contains(&node_a));
     }
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(
+    engine.test_deliver_ai(
         &node_a,
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
-            tool_calls: vec![ToolCall {
-                id: "c1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({}),
-            }],
+            tool_calls: vec![ToolCall::new("c1", "read", json!({}))],
             assistant_message: None,
             reasoning: vec![],
             usage: None,
         })),
     );
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Ok(needs_input("")));
+    engine.test_deliver_ai(&node_a, Ok(needs_input("")));
     assert!(
         !engine.awaiting_nodes.contains(&node_a),
         "invalid input after progress must retry instead of pausing"
@@ -3226,8 +2937,7 @@ fn checkpoint_roundtrips_auto_continue_streaks() {
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
     let node_a = NodeId("a".to_string());
 
-    engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+    engine.test_deliver_ai(&node_a, Ok(needs_input("narration")));
 
     let checkpoint = engine.prepare_stop_checkpoint();
     let mut value = serde_json::to_value(&checkpoint).unwrap();

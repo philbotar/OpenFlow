@@ -259,12 +259,7 @@ impl AiPort for ProposalThenToolsAi {
             1 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "set-weekly-options-name".to_string(),
-                    provider_call_id: None,
-                    name: "openflow_set_workflow_meta".to_string(),
-                    arguments: json!({ "name": "Weekly Options Research" }),
-                }],
+                tool_calls: vec![ToolCall::new("set-weekly-options-name", "openflow_set_workflow_meta", json!({ "name": "Weekly Options Research" }))],
                 reasoning: Vec::new(),
                 usage: None,
             })),
@@ -436,12 +431,11 @@ impl AiPort for ProjectReadToolsAi {
                 Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "read-project-manifest".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({ "path": "PROJECT.md" }),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "read-project-manifest",
+                        "read",
+                        json!({ "path": "PROJECT.md" }),
+                    )],
                     reasoning: Vec::new(),
                     usage: None,
                 }))
@@ -529,24 +523,22 @@ impl AiPort for IncrementalAuthoringAi {
                 raw_text: String::new(),
                 assistant_message: None,
                 tool_calls: vec![
-                    ToolCall {
-                        id: "call-meta".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_set_workflow_meta".to_string(),
-                        arguments: json!({ "name": "Demo" }),
-                    },
-                    ToolCall {
-                        id: "call-root".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_add_node".to_string(),
-                        arguments: json!({
+                    ToolCall::new(
+                        "call-meta",
+                        "openflow_set_workflow_meta",
+                        json!({ "name": "Demo" }),
+                    ),
+                    ToolCall::new(
+                        "call-root",
+                        "openflow_add_node",
+                        json!({
                             "id": "root",
                             "label": "Root",
                             "systemPrompt": "You are root.",
                             "taskPrompt": "Summarize the idea.",
                             "autoStart": true
                         }),
-                    },
+                    ),
                 ],
                 reasoning: vec![],
                 usage: None,
@@ -555,24 +547,22 @@ impl AiPort for IncrementalAuthoringAi {
                 raw_text: String::new(),
                 assistant_message: None,
                 tool_calls: vec![
-                    ToolCall {
-                        id: "call-plan".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_add_node".to_string(),
-                        arguments: json!({
+                    ToolCall::new(
+                        "call-plan",
+                        "openflow_add_node",
+                        json!({
                             "id": "plan",
                             "label": "Plan",
                             "systemPrompt": "You plan.",
                             "taskPrompt": "Plan from upstream.",
                             "autoStart": true
                         }),
-                    },
-                    ToolCall {
-                        id: "call-edge".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_add_edge".to_string(),
-                        arguments: json!({ "id": "root-plan", "from": "root", "to": "plan" }),
-                    },
+                    ),
+                    ToolCall::new(
+                        "call-edge",
+                        "openflow_add_edge",
+                        json!({ "id": "root-plan", "from": "root", "to": "plan" }),
+                    ),
                 ],
                 reasoning: vec![],
                 usage: None,
@@ -657,24 +647,22 @@ impl AiPort for MixedToolTurnRetryAi {
                     raw_text: String::new(),
                     assistant_message: None,
                     tool_calls: vec![
-                        ToolCall {
-                            id: "call-meta".to_string(),
-                            provider_call_id: None,
-                            name: "openflow_set_workflow_meta".to_string(),
-                            arguments: json!({ "name": "Demo" }),
-                        },
-                        ToolCall {
-                            id: "call-root".to_string(),
-                            provider_call_id: None,
-                            name: "openflow_add_node".to_string(),
-                            arguments: json!({
+                        ToolCall::new(
+                            "call-meta",
+                            "openflow_set_workflow_meta",
+                            json!({ "name": "Demo" }),
+                        ),
+                        ToolCall::new(
+                            "call-root",
+                            "openflow_add_node",
+                            json!({
                                 "id": "root",
                                 "label": "Root",
                                 "systemPrompt": "You are root.",
                                 "taskPrompt": "Summarize the idea.",
                                 "autoStart": true
                             }),
-                        },
+                        ),
                     ],
                     reasoning: vec![],
                     usage: None,

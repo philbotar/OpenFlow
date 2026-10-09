@@ -648,14 +648,13 @@ mod tests {
             .get("arguments")
             .and_then(Value::as_str)
             .ok_or_else(|| AgentError::Failed("tool call missing function.arguments".into()))?;
-        Ok(ToolCall {
-            id: call_id.to_string(),
-            provider_call_id: None,
-            name: name.to_string(),
-            arguments: try_parse_or_recover_json(arguments).map_err(|error| {
+        Ok(ToolCall::new(
+            call_id,
+            name,
+            try_parse_or_recover_json(arguments).map_err(|error| {
                 AgentError::Failed(format!("tool call arguments were not valid JSON: {error}"))
             })?,
-        })
+        ))
     }
     #[test]
     fn truncated_json_recovered_missing_close_brace() {
@@ -1135,18 +1134,8 @@ mod tests {
     fn control_turn_rejects_hallucinated_executable_tool_calls() {
         let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
             tool_calls: vec![
-                ToolCall {
-                    id: "1".to_string(),
-                    provider_call_id: None,
-                    name: SUBMIT_OUTPUT_TOOL.to_string(),
-                    arguments: json!({"output": {"x": 1}}),
-                },
-                ToolCall {
-                    id: "2".to_string(),
-                    provider_call_id: None,
-                    name: "search".to_string(),
-                    arguments: json!({"pattern": "x"}),
-                },
+                ToolCall::new("1", SUBMIT_OUTPUT_TOOL, json!({"output": {"x": 1}})),
+                ToolCall::new("2", "search", json!({"pattern": "x"})),
             ],
             assistant_message: None,
             reasoning: vec![],
@@ -1169,18 +1158,12 @@ mod tests {
     fn control_turn_rejects_multiple_control_tool_calls_as_mixed() {
         let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
             tool_calls: vec![
-                ToolCall {
-                    id: "1".to_string(),
-                    provider_call_id: None,
-                    name: REQUEST_INPUT_TOOL.to_string(),
-                    arguments: json!({"assistant_message": "Which env?"}),
-                },
-                ToolCall {
-                    id: "2".to_string(),
-                    provider_call_id: None,
-                    name: SUBMIT_OUTPUT_TOOL.to_string(),
-                    arguments: json!({"output": {"x": 1}}),
-                },
+                ToolCall::new(
+                    "1",
+                    REQUEST_INPUT_TOOL,
+                    json!({"assistant_message": "Which env?"}),
+                ),
+                ToolCall::new("2", SUBMIT_OUTPUT_TOOL, json!({"output": {"x": 1}})),
             ],
             assistant_message: None,
             reasoning: vec![],

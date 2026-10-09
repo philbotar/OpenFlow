@@ -38,15 +38,9 @@ pub enum ApprovalMode {
 pub struct NodeToolConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_mode: Option<ApprovalMode>,
-    #[serde(
-        default = "default_allow_structured_user_input",
-        skip_serializing_if = "is_true"
-    )]
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub allow_structured_user_input: bool,
-    #[serde(
-        default = "default_allow_free_text_user_input",
-        skip_serializing_if = "is_true"
-    )]
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub allow_free_text_user_input: bool,
 }
 
@@ -70,11 +64,7 @@ impl NodeToolConfig {
     }
 }
 
-const fn default_allow_structured_user_input() -> bool {
-    true
-}
-
-const fn default_allow_free_text_user_input() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -105,12 +95,6 @@ const PLANNING_DOCS_WRITE_TOOLS: &[&str] = &["write", "edit"];
 /// Bash commands that only inspect the execution folder when invoked plainly.
 const READ_ONLY_BASH_COMMANDS: &[&str] = &["ls", "find"];
 
-#[must_use]
-#[cfg_attr(not(test), allow(dead_code, reason = "exercised by config unit tests"))]
-pub const fn requires_approval(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
-    decision_from_mode(mode, tier)
-}
-
 const fn decision_from_mode(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
     match mode {
         ApprovalMode::Yolo | ApprovalMode::ReadOnly => ToolDecision::AutoAllow,
@@ -136,7 +120,6 @@ fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
         | "ast_grep"
         | "web_search"
         | "openflow_update_todo_list" => ToolTier::Read,
-        name if name.starts_with("mcp_") || name.starts_with("mcp/") => ToolTier::Write,
         _ => ToolTier::Write,
     }
 }
@@ -331,6 +314,18 @@ pub struct ToolCall {
     pub arguments: Value,
 }
 
+impl ToolCall {
+    #[must_use]
+    pub fn new(id: impl Into<String>, name: impl Into<String>, arguments: Value) -> Self {
+        Self {
+            id: id.into(),
+            provider_call_id: None,
+            name: name.into(),
+            arguments,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCallStatus {
@@ -507,25 +502,25 @@ mod tests {
     fn requires_approval_honours_modes_and_tiers() {
         for tier in [ToolTier::Read, ToolTier::Write] {
             assert_eq!(
-                requires_approval(ApprovalMode::Yolo, tier),
+                decision_from_mode(ApprovalMode::Yolo, tier),
                 ToolDecision::AutoAllow
             );
             assert_eq!(
-                requires_approval(ApprovalMode::ReadOnly, tier),
+                decision_from_mode(ApprovalMode::ReadOnly, tier),
                 ToolDecision::AutoAllow
             );
             assert_eq!(
-                requires_approval(ApprovalMode::AlwaysAsk, tier),
+                decision_from_mode(ApprovalMode::AlwaysAsk, tier),
                 ToolDecision::Prompt
             );
         }
 
         assert_eq!(
-            requires_approval(ApprovalMode::Write, ToolTier::Read),
+            decision_from_mode(ApprovalMode::Write, ToolTier::Read),
             ToolDecision::AutoAllow
         );
         assert_eq!(
-            requires_approval(ApprovalMode::Write, ToolTier::Write),
+            decision_from_mode(ApprovalMode::Write, ToolTier::Write),
             ToolDecision::Prompt
         );
     }
@@ -536,12 +531,7 @@ mod tests {
             approval_mode: Some(ApprovalMode::Yolo),
             ..NodeToolConfig::default()
         };
-        let call = ToolCall {
-            id: "call-bash".to_string(),
-            provider_call_id: None,
-            name: "bash".to_string(),
-            arguments: json!({"command": "rm -rf /"}),
-        };
+        let call = ToolCall::new("bash", "bash", json!({"command": "rm -rf /"}));
         assert_eq!(
             tool_decision_for_call(&config, &call),
             ToolDecision::AutoAllow
@@ -562,12 +552,7 @@ mod tests {
         assert_eq!(
             tool_decision_for_call(
                 &config,
-                &ToolCall {
-                    id: "call-web".to_string(),
-                    provider_call_id: None,
-                    name: "web_search".to_string(),
-                    arguments: json!({"query": "rust"}),
-                }
+                &ToolCall::new("web_search", "web_search", json!({"query": "rust"}))
             ),
             ToolDecision::AutoAllow
         );
@@ -588,12 +573,7 @@ mod tests {
     fn plain_ls_and_find_bash_calls_auto_allow_in_write_mode() {
         let config = NodeToolConfig::default();
         for command in ["ls -la", "find . -type f -name '*.rs'"] {
-            let call = ToolCall {
-                id: format!("call-{command}"),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: json!({"command": command}),
-            };
+            let call = ToolCall::new("bash", "bash", json!({"command": command}));
             assert_eq!(
                 tool_decision_for_call(&config, &call),
                 ToolDecision::AutoAllow,
@@ -612,12 +592,7 @@ mod tests {
             r"find . -exec rm {} \;",
             r"find . -fprint output.txt",
         ] {
-            let call = ToolCall {
-                id: format!("call-{command}"),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: json!({"command": command}),
-            };
+            let call = ToolCall::new("bash", "bash", json!({"command": command}));
             assert_eq!(
                 tool_decision_for_call(&config, &call),
                 ToolDecision::Prompt,
@@ -629,33 +604,25 @@ mod tests {
     #[test]
     fn plan_artifact_writer_is_planning_only() {
         let config = NodeToolConfig::default();
-        let writer = ToolCall {
-            id: "plan".to_string(),
-            provider_call_id: None,
-            name: WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-            arguments: json!({}),
-        };
-        let read = ToolCall {
-            id: "read".to_string(),
-            provider_call_id: None,
-            name: "read".to_string(),
-            arguments: json!({ "path": "README.md" }),
-        };
-        let write = ToolCall {
-            id: "write".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({ "path": "blocked", "content": "no" }),
-        };
-        let ast_edit = ToolCall {
-            id: "ast-edit".to_string(),
-            provider_call_id: None,
-            name: "ast_edit".to_string(),
-            arguments: json!({
+        let writer = ToolCall::new(
+            WRITE_PLAN_ARTIFACT_TOOL,
+            WRITE_PLAN_ARTIFACT_TOOL,
+            json!({}),
+        );
+        let read = ToolCall::new("read", "read", json!({ "path": "README.md" }));
+        let write = ToolCall::new(
+            "write",
+            "write",
+            json!({ "path": "blocked", "content": "no" }),
+        );
+        let ast_edit = ToolCall::new(
+            "ast_edit",
+            "ast_edit",
+            json!({
                 "ops": [{"pat": "old()", "out": "new()"}],
                 "paths": ["src/**/*.ts"]
             }),
-        };
+        );
 
         assert!(tool_access_policy_allows_call(
             ToolAccessPolicy::Planning,
@@ -690,33 +657,30 @@ mod tests {
             approval_mode: Some(ApprovalMode::ReadOnly),
             ..NodeToolConfig::default()
         };
-        let plan_write = ToolCall {
-            id: "plan-write".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({
+        let plan_write = ToolCall::new(
+            "write",
+            "write",
+            json!({
                 "path": "run://PLAN.md",
                 "content": "# Plan\n"
             }),
-        };
-        let plan_edit = ToolCall {
-            id: "plan-edit".to_string(),
-            provider_call_id: None,
-            name: "edit".to_string(),
-            arguments: json!({
+        );
+        let plan_edit = ToolCall::new(
+            "edit",
+            "edit",
+            json!({
                 "path": "run://PLAN.md",
                 "edits": [{ "old_text": "# Plan", "new_text": "# Approved plan" }]
             }),
-        };
-        let docs_write = ToolCall {
-            id: "docs-write".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({
+        );
+        let docs_write = ToolCall::new(
+            "write",
+            "write",
+            json!({
                 "path": "docs/plan.md",
                 "content": "# Repo plan\n"
             }),
-        };
+        );
 
         assert!(tool_access_policy_allows_call(
             ToolAccessPolicy::Planning,
@@ -743,56 +707,45 @@ mod tests {
     #[test]
     fn planning_allows_docs_markdown_write_and_edit_only() {
         let config = NodeToolConfig::default();
-        let docs_write = ToolCall {
-            id: "w".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({
+        let docs_write = ToolCall::new(
+            "write",
+            "write",
+            json!({
                 "path": "docs/feature-briefs/002-ai.md",
                 "content": "# brief"
             }),
-        };
-        let docs_edit = ToolCall {
-            id: "e".to_string(),
-            provider_call_id: None,
-            name: "edit".to_string(),
-            arguments: json!({
+        );
+        let docs_edit = ToolCall::new(
+            "edit",
+            "edit",
+            json!({
                 "path": "docs/AGENTS.md",
                 "edits": [{ "old_text": "a", "new_text": "b" }]
             }),
-        };
-        let hashline_edit = ToolCall {
-            id: "h".to_string(),
-            provider_call_id: None,
-            name: "edit".to_string(),
-            arguments: json!({
+        );
+        let hashline_edit = ToolCall::new(
+            "edit",
+            "edit",
+            json!({
                 "input": "¶docs/product-specs/001-x.md#abc\n- keep"
             }),
-        };
-        let code_write = ToolCall {
-            id: "c".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({ "path": "src/lib.rs", "content": "fn main() {}" }),
-        };
-        let escape = ToolCall {
-            id: "esc".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({ "path": "docs/../src/lib.rs", "content": "no" }),
-        };
-        let md_outside = ToolCall {
-            id: "out".to_string(),
-            provider_call_id: None,
-            name: "write".to_string(),
-            arguments: json!({ "path": "README.md", "content": "no" }),
-        };
-        let bash = ToolCall {
-            id: "b".to_string(),
-            provider_call_id: None,
-            name: "bash".to_string(),
-            arguments: json!({ "command": "echo hi > docs/x.md" }),
-        };
+        );
+        let code_write = ToolCall::new(
+            "write",
+            "write",
+            json!({ "path": "src/lib.rs", "content": "fn main() {}" }),
+        );
+        let escape = ToolCall::new(
+            "write",
+            "write",
+            json!({ "path": "docs/../src/lib.rs", "content": "no" }),
+        );
+        let md_outside = ToolCall::new(
+            "write",
+            "write",
+            json!({ "path": "README.md", "content": "no" }),
+        );
+        let bash = ToolCall::new("bash", "bash", json!({ "command": "echo hi > docs/x.md" }));
 
         assert!(tool_access_policy_allows_call(
             ToolAccessPolicy::Planning,

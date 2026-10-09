@@ -1111,12 +1111,7 @@ mod tests {
             approval_id: "approval-1".to_string(),
             node_id: NodeId("plan".to_string()),
             node_label: "Plan".to_string(),
-            tool_call: ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: serde_json::json!({}),
-            },
+            tool_call: ToolCall::new("call-1", "bash", serde_json::json!({})),
             tier: ToolTier::Read,
         });
 

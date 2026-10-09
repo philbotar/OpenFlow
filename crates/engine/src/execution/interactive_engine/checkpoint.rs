@@ -21,7 +21,7 @@ pub struct CheckpointPendingToolBatch {
 }
 
 /// Serializable engine state for in-session resume after user stop.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InteractiveEngineCheckpoint {
     pub workflow_id: WorkflowId,
     pub layer_idx: usize,

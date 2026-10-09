@@ -186,12 +186,11 @@ async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
 
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
-                tool_calls: vec![ToolCall {
-                    id: "read-handoff".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({"path": handoff_uri}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "read-handoff",
+                    "read",
+                    json!({"path": handoff_uri}),
+                )],
                 assistant_message: None,
                 reasoning: Vec::new(),
                 usage: None,
@@ -442,12 +441,11 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Need repo context".to_string()),
-                    tool_calls: vec![ToolCall {
-                        id: "call-1".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "README.md"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-1",
+                        "read",
+                        json!({"path": "README.md"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -542,12 +540,11 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Saving draft".to_string()),
-                    tool_calls: vec![ToolCall {
-                        id: "call-write".to_string(),
-                        provider_call_id: None,
-                        name: "write".to_string(),
-                        arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-write",
+                        "write",
+                        json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -645,12 +642,11 @@ impl AiPort for CheckpointWriteToolAi {
             return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: Some("Saving draft".to_string()),
-                tool_calls: vec![ToolCall {
-                    id: "call-write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-write",
+                    "write",
+                    json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
+                )],
                 reasoning: vec![],
                 usage: None,
             }));
@@ -838,12 +834,11 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-1".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "missing-acceptance-file.txt"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-1",
+                        "read",
+                        json!({"path": "missing-acceptance-file.txt"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -921,15 +916,14 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-search".to_string(),
-                        provider_call_id: None,
-                        name: "search".to_string(),
-                        arguments: json!({
+                    tool_calls: vec![ToolCall::new(
+                        "call-search",
+                        "search",
+                        json!({
                             "pattern": "ORCHID-91",
                             "paths": "missing-acceptance-target.txt"
                         }),
-                    }],
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));

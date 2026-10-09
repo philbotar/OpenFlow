@@ -1223,6 +1223,16 @@ impl InteractiveEngine {
         self.in_flight_ai.insert(node_id);
     }
 
+    /// Mark `node_id` in flight, then deliver `result` as its AI completion.
+    pub(crate) fn test_deliver_ai(
+        &mut self,
+        node_id: &NodeId,
+        result: Result<crate::AgentTurnOutcome, crate::AgentError>,
+    ) {
+        self.test_insert_in_flight(node_id.clone());
+        self.on_ai_complete(node_id, result);
+    }
+
     pub(crate) fn test_insert_output(&mut self, node_id: NodeId, output: Value) {
         self.outputs.insert(node_id, output);
     }

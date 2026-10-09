@@ -65,11 +65,7 @@ pub fn default_templates() -> Vec<Template> {
                 handoff: HandoffSpec::Json,
                 ..AgentNodeConfig::default()
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("output_schema".to_string());
-                locked
-            },
+            HashSet::from(["output_schema".to_string()]),
         ),
         Template::with_id(
             "builtin.document-summarizer",
@@ -97,11 +93,7 @@ pub fn default_templates() -> Vec<Template> {
                 handoff: HandoffSpec::Json,
                 ..AgentNodeConfig::default()
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("output_schema".to_string());
-                locked
-            },
+            HashSet::from(["output_schema".to_string()]),
         ),
         Template::with_id(
             "builtin.classifier",
@@ -123,11 +115,7 @@ pub fn default_templates() -> Vec<Template> {
                 handoff: HandoffSpec::Json,
                 ..AgentNodeConfig::default()
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("output_schema".to_string());
-                locked
-            },
+            HashSet::from(["output_schema".to_string()]),
         ),
         Template::with_id(
             "builtin.manual-start-node",

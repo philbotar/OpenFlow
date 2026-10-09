@@ -558,12 +558,7 @@ fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
         ExecutionEvent::ToolCallProposed {
             node_id: NodeId("first".to_string()),
             label: "First".to_string(),
-            tool_call: ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({ "path": "README.md" }),
-            },
+            tool_call: ToolCall::new("call-1", "read", json!({ "path": "README.md" })),
         },
     );
     apply_event_to_run_state(
@@ -929,12 +924,7 @@ fn reducer_tracks_tool_approval_and_completion() {
         ExecutionEvent::ToolCallProposed {
             node_id: NodeId("first".to_string()),
             label: "First".to_string(),
-            tool_call: ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({"path": "README.md"}),
-            },
+            tool_call: ToolCall::new("call-1", "read", json!({"path": "README.md"})),
         },
     );
     apply_event_to_run_state(
@@ -945,12 +935,7 @@ fn reducer_tracks_tool_approval_and_completion() {
                 approval_id: "approval-1".to_string(),
                 node_id: NodeId::from("first"),
                 node_label: "First".to_string(),
-                tool_call: ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({"path": "README.md"}),
-                },
+                tool_call: ToolCall::new("call-1", "read", json!({"path": "README.md"})),
                 tier: ToolTier::Read,
             },
         },
@@ -1022,12 +1007,11 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Inspecting docs".to_string()),
-                    tool_calls: vec![ToolCall {
-                        id: "call-1".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "README.md"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-1",
+                        "read",
+                        json!({"path": "README.md"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -1093,12 +1077,11 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-missing".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "definitely-missing-file-orch-test.txt"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-missing",
+                        "read",
+                        json!({"path": "definitely-missing-file-orch-test.txt"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -1165,12 +1148,11 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({"path": "README.md"}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-1",
+                    "read",
+                    json!({"path": "README.md"}),
+                )],
                 reasoning: vec![],
                 usage: None,
             }))
@@ -1739,12 +1721,11 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "call-sleep".to_string(),
-                    provider_call_id: None,
-                    name: "bash".to_string(),
-                    arguments: json!({"command": "sleep 30", "timeout": 30}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-sleep",
+                    "bash",
+                    json!({"command": "sleep 30", "timeout": 30}),
+                )],
                 reasoning: vec![],
                 usage: None,
             }))
@@ -2005,12 +1986,11 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-sleep".to_string(),
-                        provider_call_id: None,
-                        name: "bash".to_string(),
-                        arguments: json!({"command": "sleep 1", "timeout": 5}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-sleep",
+                        "bash",
+                        json!({"command": "sleep 1", "timeout": 5}),
+                    )],
                     reasoning: Vec::new(),
                     usage: None,
                 }));
@@ -2692,12 +2672,11 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-write".to_string(),
-                        provider_call_id: None,
-                        name: "write".to_string(),
-                        arguments: json!({"path": "out.txt", "content": "deny-me\n"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-write",
+                        "write",
+                        json!({"path": "out.txt", "content": "deny-me\n"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));

@@ -1030,36 +1030,24 @@ mod tests {
             crate::run::resources::SharedRunResources::default().tool_budget(),
         );
         let calls = vec![
-            ToolCall {
-                id: "plan-draft".to_string(),
-                provider_call_id: None,
-                name: "write".to_string(),
-                arguments: serde_json::json!({
+            ToolCall::new(
+                "plan-draft",
+                "write",
+                serde_json::json!({
                     "path": engine::PLAN_DRAFT_PATH,
                     "content": "# Plan\n"
                 }),
-            },
-            ToolCall {
-                id: "write".to_string(),
-                provider_call_id: None,
-                name: "write".to_string(),
-                arguments: serde_json::json!({
+            ),
+            ToolCall::new(
+                "write",
+                "write",
+                serde_json::json!({
                     "path": "docs/blocked.md",
                     "content": "no"
                 }),
-            },
-            ToolCall {
-                id: "mcp".to_string(),
-                provider_call_id: None,
-                name: "mcp_7_example_tool".to_string(),
-                arguments: serde_json::json!({}),
-            },
-            ToolCall {
-                id: "subagent".to_string(),
-                provider_call_id: None,
-                name: CALL_SUBAGENT_TOOL.to_string(),
-                arguments: serde_json::json!({}),
-            },
+            ),
+            ToolCall::new("mcp", "mcp_7_example_tool", serde_json::json!({})),
+            ToolCall::new("subagent", CALL_SUBAGENT_TOOL, serde_json::json!({})),
         ];
 
         let output = port
@@ -1140,12 +1128,11 @@ mod tests {
                             "content": "# Unauthorized plan\n"
                         }),
                     ),
-                    ToolCall {
-                        id: "seal".to_string(),
-                        provider_call_id: None,
-                        name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                        arguments: serde_json::json!({}),
-                    },
+                    ToolCall::new(
+                        "seal",
+                        engine::WRITE_PLAN_ARTIFACT_TOOL,
+                        serde_json::json!({}),
+                    ),
                 ],
                 ToolAccessPolicy::Planning,
             )

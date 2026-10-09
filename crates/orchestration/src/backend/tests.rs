@@ -130,29 +130,7 @@ fn mcp_probe_ignores_blank_import_source_path() {
 fn empty_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
     InteractiveEngineCheckpoint {
         workflow_id: workflow.id.clone(),
-        layer_idx: 0,
-        outputs: Default::default(),
-        handoffs: Default::default(),
-        changed_files_by_node: Default::default(),
-        reads_by_node: Default::default(),
-        transcripts: Default::default(),
-        awaiting_nodes: Default::default(),
-        structured_input_by_node: Default::default(),
-        plan_mode_source_node_id: None,
-        frozen_change_evidence_packet: None,
-        pending_tool_batches: Default::default(),
-        retries_by_node: Default::default(),
-        transient_streaks_by_node: Default::default(),
-        submit_output_retries_by_node: Default::default(),
-        request_input_retries_by_node: Default::default(),
-        empty_turn_retries_by_node: Default::default(),
-        mixed_tool_turn_retries_by_node: Default::default(),
-        output_truncation_retries_by_node: Default::default(),
-        auto_continue_streaks_by_node: Default::default(),
-        entrypoint_text: None,
-        entrypoint_attachments: Vec::new(),
-        interrupted_nodes: Default::default(),
-        failed_nodes: Default::default(),
+        ..Default::default()
     }
 }
 

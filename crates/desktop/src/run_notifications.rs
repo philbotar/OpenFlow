@@ -131,12 +131,11 @@ mod tests {
                 approval_id: "approval-1".to_string(),
                 node_id: NodeId("node-1".to_string()),
                 node_label: "Implementer".to_string(),
-                tool_call: ToolCall {
-                    id: "tool-1".to_string(),
-                    provider_call_id: None,
-                    name: "bash".to_string(),
-                    arguments: json!({ "cmd": "cargo test -p desktop" }),
-                },
+                tool_call: ToolCall::new(
+                    "tool-1",
+                    "bash",
+                    json!({ "cmd": "cargo test -p desktop" }),
+                ),
                 tier: ToolTier::Write,
             },
         };

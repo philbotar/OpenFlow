@@ -248,7 +248,6 @@ fn review_output_schema() -> Value {
 mod tests {
     use super::*;
     use crate::{AgentError, AgentTurnSuccess, Node, NodeRunOutput};
-    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Mutex;
 
     struct RecordingReviewer {
@@ -312,29 +311,8 @@ mod tests {
         let workflow = Workflow::new("Review");
         let checkpoint = InteractiveEngineCheckpoint {
             workflow_id: workflow.id.clone(),
-            layer_idx: 0,
-            outputs: BTreeMap::default(),
-            handoffs: BTreeMap::default(),
-            changed_files_by_node: BTreeMap::default(),
-            reads_by_node: BTreeMap::default(),
-            transcripts: BTreeMap::default(),
-            awaiting_nodes: BTreeSet::default(),
-            structured_input_by_node: BTreeMap::default(),
-            plan_mode_source_node_id: None,
-            frozen_change_evidence_packet: None,
-            pending_tool_batches: BTreeMap::default(),
-            retries_by_node: BTreeMap::default(),
-            transient_streaks_by_node: BTreeMap::default(),
-            submit_output_retries_by_node: BTreeMap::default(),
-            request_input_retries_by_node: BTreeMap::default(),
-            empty_turn_retries_by_node: BTreeMap::default(),
-            mixed_tool_turn_retries_by_node: BTreeMap::default(),
-            output_truncation_retries_by_node: BTreeMap::default(),
-            auto_continue_streaks_by_node: BTreeMap::default(),
             entrypoint_text: Some("x".repeat(MAX_REVIEW_EVIDENCE_BYTES * 2)),
-            entrypoint_attachments: Vec::new(),
-            interrupted_nodes: BTreeSet::default(),
-            failed_nodes: BTreeMap::default(),
+            ..Default::default()
         };
         let report = RunReport {
             workflow_id: workflow.id.clone(),
@@ -365,29 +343,8 @@ mod tests {
         workflow.nodes.push(node);
         let checkpoint = InteractiveEngineCheckpoint {
             workflow_id: workflow.id.clone(),
-            layer_idx: 0,
-            outputs: BTreeMap::default(),
-            handoffs: BTreeMap::default(),
-            changed_files_by_node: BTreeMap::default(),
-            reads_by_node: BTreeMap::default(),
-            transcripts: BTreeMap::default(),
-            awaiting_nodes: BTreeSet::default(),
-            structured_input_by_node: BTreeMap::default(),
-            plan_mode_source_node_id: None,
-            frozen_change_evidence_packet: None,
-            pending_tool_batches: BTreeMap::default(),
-            retries_by_node: BTreeMap::default(),
-            transient_streaks_by_node: BTreeMap::default(),
-            submit_output_retries_by_node: BTreeMap::default(),
-            request_input_retries_by_node: BTreeMap::default(),
-            empty_turn_retries_by_node: BTreeMap::default(),
-            mixed_tool_turn_retries_by_node: BTreeMap::default(),
-            output_truncation_retries_by_node: BTreeMap::default(),
-            auto_continue_streaks_by_node: BTreeMap::default(),
             entrypoint_text: None,
-            entrypoint_attachments: Vec::new(),
-            interrupted_nodes: BTreeSet::default(),
-            failed_nodes: BTreeMap::default(),
+            ..Default::default()
         };
         let report = RunReport {
             workflow_id: workflow.id.clone(),
