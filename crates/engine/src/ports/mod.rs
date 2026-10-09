@@ -6,4 +6,5 @@ pub use outbound::{
     AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, PartialToolCall,
     ResolvedChatAttachment, StructuredUserInput, ToolAccessPolicy, ToolBatchEffects,
     ToolBatchOutput, ToolPort, UsageReport, UserInputOption, UserInputQuestion,
+    UserInputSelectionMode,
 };

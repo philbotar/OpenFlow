@@ -6,12 +6,8 @@ use serde_json::Value;
 
 use crate::auth::CodexOAuthCredentials;
 
-use super::browser::wait_until_cancelled;
 use super::tokens::exchange_authorization_code;
-use super::{
-    CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient, CodexOAuthError,
-    CODEX_OAUTH_CLIENT_ID,
-};
+use super::{CodexLoginPrompt, CodexOAuthClient, CodexOAuthError, CODEX_OAUTH_CLIENT_ID};
 
 const DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
 
@@ -33,7 +29,6 @@ struct DeviceTokenResponse {
 
 pub(super) async fn login<F>(
     client: &CodexOAuthClient,
-    cancellation: &CodexLoginCancellation,
     publish: &F,
 ) -> Result<CodexOAuthCredentials, CodexOAuthError>
 where
@@ -51,22 +46,19 @@ where
 
     let authorized = tokio::time::timeout(
         client.device_timeout,
-        poll_for_authorization(client, cancellation, &device),
+        poll_for_authorization(client, &device),
     )
     .await
     .map_err(|_| CodexOAuthError::TimedOut)??;
 
-    let exchange = exchange_authorization_code(
+    exchange_authorization_code(
         &client.http,
         &client.endpoints.token,
         &authorized.authorization_code,
         DEVICE_REDIRECT_URI,
         &authorized.code_verifier,
-    );
-    tokio::select! {
-        () = wait_until_cancelled(cancellation) => Err(CodexOAuthError::Cancelled),
-        result = exchange => result,
-    }
+    )
+    .await
 }
 
 async fn request_device_code(
@@ -95,15 +87,11 @@ async fn request_device_code(
 
 async fn poll_for_authorization(
     client: &CodexOAuthClient,
-    cancellation: &CodexLoginCancellation,
     device: &DeviceCodeResponse,
 ) -> Result<DeviceTokenResponse, CodexOAuthError> {
     let interval = std::time::Duration::from_secs(device.interval.max(1));
     loop {
-        tokio::select! {
-            () = wait_until_cancelled(cancellation) => return Err(CodexOAuthError::Cancelled),
-            () = tokio::time::sleep(interval) => {}
-        }
+        tokio::time::sleep(interval).await;
 
         let response = client
             .http

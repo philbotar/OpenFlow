@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::auth::{AuthConfig, CodexOAuthCredentials};
+use crate::auth::CodexOAuthCredentials;
 #[cfg(feature = "bedrock")]
 use crate::client::BedrockConfig;
 use crate::client::OpenAiCompatibleConfig;
@@ -129,7 +129,7 @@ fn build_anthropic(
     anthropic_config: &AnthropicConfig,
     model: &str,
 ) -> Result<RigModel, AgentError> {
-    let (api_key, headers) = rig_auth(config)?;
+    let (api_key, headers) = config.auth.http_auth(&config.provider_label)?;
     let http = AnthropicHttpClient::new(
         rig_http_client(anthropic_config.request_timeout),
         config.debug_output,
@@ -162,7 +162,7 @@ fn build_openai(
     model: &str,
     wire_api: WireApi,
 ) -> Result<RigModel, AgentError> {
-    let (api_key, headers) = rig_auth(config)?;
+    let (api_key, headers) = config.auth.http_auth(&config.provider_label)?;
     let http = OpenAiHttpClient::new(
         rig_http_client(openai_config.request_timeout),
         config.debug_output,
@@ -193,7 +193,7 @@ fn build_openai(
     }
 }
 
-pub(super) fn build_codex(
+pub fn build_codex(
     provider_label: &str,
     base_url: &str,
     model: &str,
@@ -305,7 +305,7 @@ impl RigModel {
         provider_id: &ProviderId,
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
-        let no_tool_calls = outcome::no_tool_calls_policy(request, self.openai_wire_api());
+        let no_tool_calls = outcome::no_tool_calls_policy(self.openai_wire_api());
         let model_name = request.model.clone();
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config)?;
@@ -426,7 +426,7 @@ impl RigModel {
             emit_assistant_deltas_from_outcome(sink, &outcome);
             return Ok(outcome);
         }
-        let no_tool_calls = outcome::no_tool_calls_policy(request, self.openai_wire_api());
+        let no_tool_calls = outcome::no_tool_calls_policy(self.openai_wire_api());
         let model_name = request.model.clone();
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config)?;
@@ -539,11 +539,7 @@ fn completion_request_for(
     openai_config: Option<&OpenAiCompatibleConfig>,
 ) -> Result<CompletionRequest, AgentError> {
     let mut completion_request = convert::to_completion_request(request)?;
-    apply_tool_choice_policy(
-        &mut completion_request,
-        provider_id,
-        request.conversation_mode,
-    );
+    apply_tool_choice_policy(&mut completion_request, request.conversation_mode);
     match model {
         RigModel::Anthropic(_) => {
             claude_thinking::apply(
@@ -591,12 +587,7 @@ fn merge_codex_params(request: &mut CompletionRequest, agent_request: &AgentRequ
     });
 }
 
-fn apply_tool_choice_policy(
-    request: &mut CompletionRequest,
-    provider_id: &ProviderId,
-    conversation_mode: bool,
-) {
-    let _ = provider_id;
+fn apply_tool_choice_policy(request: &mut CompletionRequest, conversation_mode: bool) {
     request.tool_choice = Some(if conversation_mode {
         ToolChoice::Auto
     } else {
@@ -651,53 +642,6 @@ fn merge_openai_params(
         }
         None => Value::Object(params),
     });
-}
-
-fn rig_auth(config: &AiClientConfig) -> Result<(String, HeaderMap), AgentError> {
-    let label = config.provider_label.as_str();
-    match &config.auth {
-        AuthConfig::Bearer { api_key, required } => {
-            let key = extract_api_key(api_key.as_ref(), *required, label)?;
-            Ok((key.unwrap_or_default(), HeaderMap::new()))
-        }
-        AuthConfig::Header {
-            name,
-            api_key,
-            required,
-        } => {
-            let key = extract_api_key(api_key.as_ref(), *required, label)?;
-            let mut headers = HeaderMap::new();
-            if let Some(key) = key {
-                let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
-                    AgentError::Failed(format!("invalid auth header name `{name}`: {e}"))
-                })?;
-                let header_value = HeaderValue::from_str(&key).map_err(|e| {
-                    AgentError::Failed(format!("invalid auth header value for `{name}`: {e}"))
-                })?;
-                headers.insert(header_name, header_value);
-            }
-            Ok((String::new(), headers))
-        }
-        AuthConfig::NoneAllowed => Ok((String::new(), HeaderMap::new())),
-        AuthConfig::AwsCredentials { .. } => Err(AgentError::Failed(format!(
-            "{label} HTTP auth is not configured for rig adapter"
-        ))),
-    }
-}
-
-fn extract_api_key(
-    api_key: Option<&String>,
-    required: bool,
-    label: &str,
-) -> Result<Option<String>, AgentError> {
-    let key = api_key.and_then(|value| {
-        let trimmed = value.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    });
-    if key.is_none() && required {
-        return Err(AgentError::Permanent(format!("{label} API key missing")));
-    }
-    Ok(key)
 }
 
 fn rig_http_client(request_timeout: Duration) -> ReqwestClient {
@@ -794,6 +738,27 @@ mod tests {
 
     fn custom_compatible_config() -> AiClientConfig {
         custom_compatible_config_with_transports(BTreeMap::new())
+    }
+
+    #[cfg(not(feature = "bedrock"))]
+    #[tokio::test]
+    async fn disabled_bedrock_preserves_invoke_and_stream_errors() {
+        let mut config = custom_compatible_config();
+        config.adapter = ProviderAdapterConfig::Bedrock(crate::BedrockConfig {
+            region: "us-east-1".to_string(),
+            aws_profile: None,
+            aws_credential_command: None,
+        });
+        let provider = crate::create_provider(config);
+        for result in [
+            provider.invoke(minimal_request()).await,
+            provider
+                .invoke_stream(minimal_request(), &DiscardStreamSink)
+                .await,
+        ] {
+            assert!(matches!(result, Err(AgentError::Failed(message))
+                if message == "Bedrock support is disabled (enable the `bedrock` feature)"));
+        }
     }
 
     fn custom_compatible_config_with_transports(
@@ -1016,11 +981,7 @@ mod tests {
         let Ok(mut request) = result else {
             return;
         };
-        apply_tool_choice_policy(
-            &mut request,
-            &ProviderId::from("custom_openai_compatible"),
-            false,
-        );
+        apply_tool_choice_policy(&mut request, false);
         assert_eq!(request.tool_choice, Some(ToolChoice::Required));
     }
 
@@ -1034,11 +995,7 @@ mod tests {
             return;
         };
 
-        apply_tool_choice_policy(
-            &mut request,
-            &ProviderId::from("openai"),
-            agent_request.conversation_mode,
-        );
+        apply_tool_choice_policy(&mut request, agent_request.conversation_mode);
 
         assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
     }

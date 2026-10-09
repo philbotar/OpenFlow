@@ -21,6 +21,7 @@ export function SidebarNavButton(props: SidebarNavButtonProps) {
       onClick={() => props.onClick()}
       aria-haspopup={props.ariaHasPopup}
       aria-expanded={props.ariaExpanded}
+      aria-current={props.active ? "page" : undefined}
       data-tour={props.tourId}
       aria-label={
         props.updateAvailable ? `${props.label} (update available)` : props.label

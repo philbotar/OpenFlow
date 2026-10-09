@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MCP_REGISTRY_BASE_URL: &str = "https://registry.modelcontextprotocol.io/v0.1";
@@ -81,17 +80,4 @@ pub struct McpCatalogInput {
 pub enum McpCatalogError {
     #[error("MCP Registry request failed: {0}")]
     Request(String),
-}
-
-#[async_trait]
-pub trait McpCatalog: Send + Sync {
-    async fn search(&self, query: &McpCatalogQuery) -> Result<McpCatalogPage, McpCatalogError>;
-
-    async fn versions(&self, server_name: &str) -> Result<McpCatalogPage, McpCatalogError>;
-
-    async fn exact_version(
-        &self,
-        server_name: &str,
-        version: &str,
-    ) -> Result<McpCatalogServer, McpCatalogError>;
 }

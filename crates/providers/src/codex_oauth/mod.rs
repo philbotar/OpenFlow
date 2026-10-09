@@ -75,12 +75,17 @@ impl CodexOAuthClient {
     where
         F: Fn(CodexLoginPrompt) -> Result<(), String> + Send + Sync,
     {
-        match browser::login(self, cancellation, &publish).await {
-            Ok(credentials) => Ok(credentials),
-            Err(CodexOAuthError::CallbackPortBusy) => {
-                device::login(self, cancellation, &publish).await
+        // ponytail: one cancellation boundary drops any pending browser or device I/O.
+        let login = async {
+            match browser::login(self, &publish).await {
+                Err(CodexOAuthError::CallbackPortBusy) => device::login(self, &publish).await,
+                result => result,
             }
-            Err(error) => Err(error),
+        };
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => Err(CodexOAuthError::Cancelled),
+            result = login => result,
         }
     }
 
@@ -125,6 +130,12 @@ pub struct CodexLoginCancellation {
 }
 
 impl CodexLoginCancellation {
+    async fn cancelled(&self) {
+        while !self.is_cancelled() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
     }
@@ -253,6 +264,114 @@ mod tests {
         clone.cancel();
 
         assert!(cancellation.is_cancelled());
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "loopback cancellation regression")]
+    async fn cancellation_drops_stalled_browser_callback() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::{TcpListener, TcpStream};
+
+        let reserved = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = reserved.local_addr().unwrap();
+        drop(reserved);
+        let client = CodexOAuthClient {
+            callback_port: address.port(),
+            ..CodexOAuthClient::default()
+        };
+        let cancellation = CodexLoginCancellation::default();
+        let (published, mut prompts) = tokio::sync::mpsc::unbounded_channel();
+        let stalled_callback = async {
+            prompts.recv().await.unwrap();
+            let mut socket = TcpStream::connect(address).await.unwrap();
+            socket
+                .write_all(b"GET /auth/callback HTTP/1.1\r\n")
+                .await
+                .unwrap();
+            // Let the callback reader consume the incomplete header before cancellation.
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            cancellation.cancel();
+            std::future::pending::<()>().await;
+            drop(socket);
+        };
+        let result = tokio::select! {
+            result = tokio::time::timeout(Duration::from_secs(2), client.login(&cancellation, |prompt| {
+                published.send(prompt).map_err(|error| error.to_string())
+            })) => result,
+            () = stalled_callback => unreachable!(),
+        };
+        assert!(matches!(result, Ok(Err(CodexOAuthError::Cancelled))));
+        assert!(
+            TcpListener::bind(address).await.is_ok(),
+            "callback port must be released"
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "mock HTTP cancellation regression")]
+    async fn cancellation_drops_stalled_device_requests() {
+        for stalled_path in ["/device/code", "/device/token", "/oauth/token"] {
+            let server = MockServer::start().await;
+            let received = Arc::new(tokio::sync::Notify::new());
+            let signal = received.clone();
+            Mock::given(method("POST"))
+                .and(path(stalled_path))
+                .respond_with(move |_: &wiremock::Request| {
+                    signal.notify_one();
+                    ResponseTemplate::new(200).set_delay(Duration::from_secs(10))
+                })
+                .with_priority(1)
+                .mount(&server)
+                .await;
+            for (path, body) in [
+                (
+                    "/device/code",
+                    serde_json::json!({
+                        "device_auth_id": "device-id", "user_code": "code", "interval": 1
+                    }),
+                ),
+                (
+                    "/device/token",
+                    serde_json::json!({
+                        "authorization_code": "code", "code_verifier": "verifier"
+                    }),
+                ),
+            ] {
+                Mock::given(method("POST"))
+                    .and(wiremock::matchers::path(path))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                    .with_priority(2)
+                    .mount(&server)
+                    .await;
+            }
+            let occupied = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let client = CodexOAuthClient {
+                callback_port: occupied.local_addr().unwrap().port(),
+                endpoints: CodexOAuthEndpoints {
+                    device_user_code: format!("{}/device/code", server.uri()),
+                    device_token: format!("{}/device/token", server.uri()),
+                    token: format!("{}/oauth/token", server.uri()),
+                    ..CodexOAuthEndpoints::default()
+                },
+                ..CodexOAuthClient::default()
+            };
+            let cancellation = CodexLoginCancellation::default();
+            let cancel_pending_request = async {
+                received.notified().await;
+                cancellation.cancel();
+                std::future::pending::<()>().await;
+            };
+            let result = tokio::select! {
+                result = tokio::time::timeout(Duration::from_secs(3), client.login(&cancellation, |_| Ok(()))) => result,
+                () = cancel_pending_request => unreachable!(),
+            };
+            assert!(
+                matches!(result, Ok(Err(CodexOAuthError::Cancelled))),
+                "stalled {stalled_path}: {result:?}"
+            );
+        }
     }
 
     #[tokio::test]

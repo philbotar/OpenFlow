@@ -502,6 +502,7 @@ export interface UserInputQuestion {
   id: string;
   header: string;
   question: string;
+  selectionMode: "single" | "multiple";
   options: UserInputOption[];
 }
 

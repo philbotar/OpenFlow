@@ -1,15 +1,8 @@
 //! `AgentRequest` → rig `CompletionRequest` translation.
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "rig migration: wired when AiClient switches to rig_adapter"
-    )
-)]
 
 use std::collections::BTreeMap;
 
-use crate::mapping::{all_tool_specs, build_node_context, ToolSpec};
+use crate::mapping::{all_tool_specs, build_node_context};
 use crate::rig_adapter::reasoning_convert;
 use base64::Engine as _;
 use engine::{
@@ -88,7 +81,7 @@ pub fn to_completion_request(request: &AgentRequest) -> Result<CompletionRequest
         preamble: Some(request.system_content()),
         chat_history,
         documents: Vec::new(),
-        tools: all_tool_specs(request).into_iter().map(rig_tool).collect(),
+        tools: all_tool_specs(request),
         temperature: None,
         max_tokens: request.max_output_tokens.map(u64::from),
         tool_choice: Some(ToolChoice::Required),
@@ -190,14 +183,6 @@ fn unsupported_attachment_media_type(attachment: &ChatAttachmentRef) -> AgentErr
         "attachment `{}` uses unsupported media type `{}`",
         attachment.file_name, attachment.media_type
     ))
-}
-
-fn rig_tool(spec: ToolSpec) -> rig_core::completion::ToolDefinition {
-    rig_core::completion::ToolDefinition {
-        name: spec.name,
-        description: spec.description,
-        parameters: spec.parameters,
-    }
 }
 
 /// Consume one contiguous run of tool calls/results. Emits a single assistant

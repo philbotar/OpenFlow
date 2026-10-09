@@ -50,9 +50,9 @@ fn block_signature(reasoning: &AgentReasoning) -> Option<&str> {
         AgentReasoningContent::Text {
             signature: None, ..
         }
-        | AgentReasoningContent::Encrypted(_)
+        | AgentReasoningContent::Encrypted { .. }
         | AgentReasoningContent::Redacted { .. }
-        | AgentReasoningContent::Summary(_) => None,
+        | AgentReasoningContent::Summary { .. } => None,
     })
 }
 
@@ -66,8 +66,10 @@ fn display_fragments(reasoning: &AgentReasoning) -> impl Iterator<Item = (u8, &s
         .iter()
         .filter_map(|content| match content {
             AgentReasoningContent::Text { text, .. } => Some((0, text.as_str())),
-            AgentReasoningContent::Summary(text) => Some((1, text.as_str())),
-            AgentReasoningContent::Encrypted(_) | AgentReasoningContent::Redacted { .. } => None,
+            AgentReasoningContent::Summary { text } => Some((1, text.as_str())),
+            AgentReasoningContent::Encrypted { .. } | AgentReasoningContent::Redacted { .. } => {
+                None
+            }
         })
 }
 
@@ -77,11 +79,15 @@ fn rig_content_to_agent(content: &ReasoningContent) -> AgentReasoningContent {
             text: text.clone(),
             signature: signature.clone(),
         },
-        ReasoningContent::Encrypted(data) => AgentReasoningContent::Encrypted(data.clone()),
+        ReasoningContent::Encrypted(data) => {
+            AgentReasoningContent::Encrypted { data: data.clone() }
+        }
         ReasoningContent::Redacted { data } => {
             AgentReasoningContent::Redacted { data: data.clone() }
         }
-        ReasoningContent::Summary(summary) => AgentReasoningContent::Summary(summary.clone()),
+        ReasoningContent::Summary(summary) => AgentReasoningContent::Summary {
+            text: summary.clone(),
+        },
         _ => AgentReasoningContent::Text {
             text: String::new(),
             signature: None,
@@ -95,11 +101,13 @@ fn agent_content_to_rig(content: &AgentReasoningContent) -> ReasoningContent {
             text: text.clone(),
             signature: signature.clone(),
         },
-        AgentReasoningContent::Encrypted(data) => ReasoningContent::Encrypted(data.clone()),
+        AgentReasoningContent::Encrypted { data } => ReasoningContent::Encrypted(data.clone()),
         AgentReasoningContent::Redacted { data } => {
             ReasoningContent::Redacted { data: data.clone() }
         }
-        AgentReasoningContent::Summary(summary) => ReasoningContent::Summary(summary.clone()),
+        AgentReasoningContent::Summary { text: summary } => {
+            ReasoningContent::Summary(summary.clone())
+        }
     }
 }
 

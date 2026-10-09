@@ -2,9 +2,7 @@
 
 use std::fmt;
 
-use super::format::{
-    format_numbered_line, HL_FILE_HASH_EXAMPLES, HL_FILE_HASH_SEP, HL_FILE_PREFIX,
-};
+use super::format::{format_numbered_line, HL_FILE_HASH_SEP, HL_FILE_PREFIX};
 use super::messages::MISMATCH_CONTEXT;
 
 #[derive(Debug, Clone)]
@@ -26,15 +24,6 @@ pub struct MismatchDetails {
     pub file_lines: Vec<String>,
     pub anchor_lines: Vec<u32>,
     pub hash_recognized: Option<bool>,
-}
-
-pub fn format_full_anchor_requirement(raw: Option<&str>) -> String {
-    let received = raw.map(|r| format!(" Received {r:?}.")).unwrap_or_default();
-    format!(
-        "a bare line number from read/search output plus the section header content-hash tag \
-         (for example {HL_FILE_PREFIX}src/foo.ts{HL_FILE_HASH_SEP}{} and line \"160\"){received}",
-        HL_FILE_HASH_EXAMPLES[0]
-    )
 }
 
 fn get_mismatch_display_lines(anchor_lines: &[u32], file_lines: &[String]) -> Vec<u32> {

@@ -8,18 +8,13 @@ use super::input::{Patch, PatchSection};
 use super::messages::{missing_snapshot_tag_message, HEADTAIL_DRIFT_WARNING};
 use super::mismatch::{MismatchDetails, MismatchError};
 use super::recovery::{recovery_to_apply_result, Recovery};
-use super::snapshots::SnapshotStore;
+use super::snapshots::InMemorySnapshotStore;
 use super::types::{ApplyResult, BlockResolver, Cursor, Edit};
+use std::sync::Arc;
 
 use crate::tools::edit::normalize::{
     detect_line_ending, normalize_to_lf, restore_line_endings, strip_bom, LineEnding,
 };
-
-pub struct PatcherOptions<F: HashlineFilesystem, S: SnapshotStore> {
-    pub fs: F,
-    pub snapshots: S,
-    pub block_resolver: Option<Box<BlockResolver>>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatchOp {
@@ -67,21 +62,13 @@ impl PreparedSection {
     }
 }
 
-pub struct Patcher<F: HashlineFilesystem, S: SnapshotStore> {
+pub struct Patcher<F: HashlineFilesystem> {
     pub fs: F,
-    pub snapshots: S,
+    pub snapshots: Arc<InMemorySnapshotStore>,
     pub block_resolver: Option<Box<BlockResolver>>,
 }
 
-impl<F: HashlineFilesystem, S: SnapshotStore> Patcher<F, S> {
-    pub fn new(options: PatcherOptions<F, S>) -> Self {
-        Self {
-            fs: options.fs,
-            snapshots: options.snapshots,
-            block_resolver: options.block_resolver,
-        }
-    }
-
+impl<F: HashlineFilesystem> Patcher<F> {
     pub fn apply(&self, patch: &Patch) -> Result<PatcherApplyResult, String> {
         if patch.sections.len() == 1 {
             let mut section = patch.sections[0].clone();
@@ -391,12 +378,12 @@ mod tests {
     fn make_patcher(
         fs: InMemoryFilesystem,
         snapshots: InMemorySnapshotStore,
-    ) -> Patcher<InMemoryFilesystem, InMemorySnapshotStore> {
-        Patcher::new(PatcherOptions {
+    ) -> Patcher<InMemoryFilesystem> {
+        Patcher {
             fs,
-            snapshots,
+            snapshots: Arc::new(snapshots),
             block_resolver: None,
-        })
+        }
     }
 
     #[test]

@@ -6,7 +6,7 @@ use super::apply::apply_edits;
 use super::messages::{
     RECOVERY_EXTERNAL_WARNING, RECOVERY_SESSION_CHAIN_WARNING, RECOVERY_SESSION_REPLAY_WARNING,
 };
-use super::snapshots::SnapshotStore;
+use super::snapshots::InMemorySnapshotStore;
 use super::types::{Anchor, ApplyResult, Cursor, Edit};
 
 pub struct RecoveryArgs<'a> {
@@ -178,12 +178,12 @@ fn replay_session_chain_on_current(
     })
 }
 
-pub struct Recovery<'a, S: SnapshotStore + ?Sized> {
-    pub store: &'a S,
+pub struct Recovery<'a> {
+    pub store: &'a InMemorySnapshotStore,
 }
 
-impl<'a, S: SnapshotStore + ?Sized> Recovery<'a, S> {
-    pub fn new(store: &'a S) -> Self {
+impl<'a> Recovery<'a> {
+    pub fn new(store: &'a InMemorySnapshotStore) -> Self {
         Self { store }
     }
 

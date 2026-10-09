@@ -6,6 +6,7 @@
     reason = "engine tests use unwrap/expect and panic for concise failure messages"
 )]
 
+use super::recovery::RecoveryCounters;
 use super::{
     checkpoint::CheckpointError, EngineInputError, EngineRunResult, EngineUserMessage,
     InteractiveEngine, PendingToolBatch, RunError, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
@@ -21,7 +22,7 @@ use crate::ports::{
     AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
     AgentTurnOutcome, AgentTurnSuccess, AiPort, PartialToolCall, StructuredUserInput,
     ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort, UserInputOption,
-    UserInputQuestion,
+    UserInputQuestion, UserInputSelectionMode,
 };
 use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
@@ -210,38 +211,66 @@ fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
             attachments: Vec::new(),
         }],
     );
-    engine.transient_streaks_by_node.insert(node_id.clone(), 2);
     engine
+        .recovery
+        .transient_streaks_by_node
+        .insert(node_id.clone(), 2);
+    engine
+        .recovery
         .submit_output_retries_by_node
         .insert(node_id.clone(), 2);
     engine
+        .recovery
         .request_input_retries_by_node
         .insert(node_id.clone(), 2);
-    engine.empty_turn_retries_by_node.insert(node_id.clone(), 2);
     engine
+        .recovery
+        .empty_turn_retries_by_node
+        .insert(node_id.clone(), 2);
+    engine
+        .recovery
         .mixed_tool_turn_retries_by_node
         .insert(node_id.clone(), 2);
     engine
+        .recovery
         .output_truncation_retries_by_node
         .insert(node_id.clone(), 2);
     engine
+        .recovery
         .auto_continue_streaks_by_node
         .insert(node_id.clone(), 2);
 
     engine.retry_node(&node_id).unwrap();
 
     assert_eq!(engine.transcript(&node_id).len(), 1);
-    assert!(!engine.transient_streaks_by_node.contains_key(&node_id));
-    assert!(!engine.submit_output_retries_by_node.contains_key(&node_id));
-    assert!(!engine.request_input_retries_by_node.contains_key(&node_id));
-    assert!(!engine.empty_turn_retries_by_node.contains_key(&node_id));
     assert!(!engine
+        .recovery
+        .transient_streaks_by_node
+        .contains_key(&node_id));
+    assert!(!engine
+        .recovery
+        .submit_output_retries_by_node
+        .contains_key(&node_id));
+    assert!(!engine
+        .recovery
+        .request_input_retries_by_node
+        .contains_key(&node_id));
+    assert!(!engine
+        .recovery
+        .empty_turn_retries_by_node
+        .contains_key(&node_id));
+    assert!(!engine
+        .recovery
         .mixed_tool_turn_retries_by_node
         .contains_key(&node_id));
     assert!(!engine
+        .recovery
         .output_truncation_retries_by_node
         .contains_key(&node_id));
-    assert!(!engine.auto_continue_streaks_by_node.contains_key(&node_id));
+    assert!(!engine
+        .recovery
+        .auto_continue_streaks_by_node
+        .contains_key(&node_id));
     assert_eq!(engine.model_attempt_for_node(&node_id), 2);
 }
 
@@ -268,13 +297,84 @@ fn retry_failed_node_appends_new_human_message() {
 }
 
 #[test]
+fn retry_failed_node_uses_the_latest_runtime_model() {
+    struct RecordingAi {
+        requests: Arc<Mutex<Vec<AgentRequest>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for RecordingAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.requests.lock().expect("requests lock").push(request);
+            Ok(completed(json!({"summary": "recovered"})))
+        }
+    }
+
+    let mut workflow = Workflow::new("wf");
+    let mut agent = node("a");
+    agent.agent.model = "broken-model".to_string();
+    workflow.nodes.push(agent);
+    let node_id = NodeId("a".to_string());
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    engine
+        .failed_nodes
+        .insert(node_id.clone(), "model unavailable".to_string());
+    engine.transcripts.insert(
+        node_id.clone(),
+        vec![AgentTranscriptItem::UserMessage {
+            content: "preserve this context".to_string(),
+            attachments: Vec::new(),
+        }],
+    );
+    let store = new_runtime_config_store();
+    engine.set_runtime_config_store(store.clone());
+    upsert_runtime_patch(
+        &store,
+        node_id.clone(),
+        &NodeRuntimeConfigPatch {
+            model: Some("working-model".to_string()),
+            ..NodeRuntimeConfigPatch::default()
+        },
+    );
+    engine.retry_node(&node_id).unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let ai = RecordingAi {
+        requests: Arc::clone(&requests),
+    };
+
+    block_on(async {
+        assert!(matches!(
+            run_once(&mut engine, &ai, &NoopToolPort).await,
+            EngineRunResult::Completed(_)
+        ));
+    });
+
+    let request = {
+        let requests = requests.lock().expect("requests lock");
+        assert_eq!(requests.len(), 1);
+        requests[0].clone()
+    };
+    assert_eq!(request.model, "working-model");
+    assert!(request.transcript.iter().any(|item| {
+        matches!(
+            item,
+            AgentTranscriptItem::UserMessage { content, .. }
+                if content == "preserve this context"
+        )
+    }));
+}
+
+#[test]
 fn retry_interrupted_node_preserves_conversation() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes.push(node("a"));
     let node_id = NodeId("a".to_string());
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     engine.interrupted_nodes.insert(node_id.clone());
-    engine.transient_streaks_by_node.insert(node_id.clone(), 2);
+    engine
+        .recovery
+        .transient_streaks_by_node
+        .insert(node_id.clone(), 2);
     engine.transcripts.insert(
         node_id.clone(),
         vec![AgentTranscriptItem::AssistantMessage {
@@ -285,7 +385,10 @@ fn retry_interrupted_node_preserves_conversation() {
     engine.retry_node(&node_id).unwrap();
 
     assert_eq!(engine.transcript(&node_id).len(), 1);
-    assert!(!engine.transient_streaks_by_node.contains_key(&node_id));
+    assert!(!engine
+        .recovery
+        .transient_streaks_by_node
+        .contains_key(&node_id));
 }
 
 async fn run_once<A: AiPort, T: ToolPort>(
@@ -1221,9 +1324,11 @@ fn checkpoint_preserves_protocol_retry_budgets() {
     let node_a = NodeId::from("a");
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
     engine
+        .recovery
         .mixed_tool_turn_retries_by_node
         .insert(node_a.clone(), 2);
     engine
+        .recovery
         .output_truncation_retries_by_node
         .insert(node_a.clone(), 1);
 
@@ -1239,11 +1344,17 @@ fn checkpoint_preserves_protocol_retry_budgets() {
 
     let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
     assert_eq!(
-        restored.mixed_tool_turn_retries_by_node.get(&node_a),
+        restored
+            .recovery
+            .mixed_tool_turn_retries_by_node
+            .get(&node_a),
         Some(&2)
     );
     assert_eq!(
-        restored.output_truncation_retries_by_node.get(&node_a),
+        restored
+            .recovery
+            .output_truncation_retries_by_node
+            .get(&node_a),
         Some(&1)
     );
 }
@@ -1934,6 +2045,27 @@ fn checkpoint_rejects_workflow_id_mismatch() {
     }
 }
 
+#[test]
+fn checkpoint_rejects_unknown_nodes_in_every_recovery_map() {
+    let mut workflow = Workflow::new("wf-1");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let checkpoint = serde_json::to_value(engine.prepare_stop_checkpoint()).unwrap();
+    for &field in RecoveryCounters::CHECKPOINT_FIELDS {
+        let mut value = checkpoint.clone();
+        value[field] = json!({"deleted": 1});
+        let restored = InteractiveEngine::from_checkpoint(
+            workflow.clone(),
+            serde_json::from_value(value).unwrap(),
+            None,
+        );
+        assert!(
+            matches!(restored, Err(CheckpointError::StaleNodeIds { missing }) if missing == vec![NodeId::from("deleted")]),
+            "{field} must reject unknown nodes"
+        );
+    }
+}
+
 struct BarrierAi {
     barrier: Arc<tokio::sync::Barrier>,
 }
@@ -2383,6 +2515,7 @@ fn incomplete_write_is_rejected_with_chunked_write_nudge() {
     let node_a = NodeId("a".to_string());
 
     engine
+        .recovery
         .auto_continue_streaks_by_node
         .insert(node_a.clone(), 5);
     engine.test_insert_in_flight(node_a.clone());
@@ -2403,7 +2536,10 @@ fn incomplete_write_is_rejected_with_chunked_write_nudge() {
     );
 
     assert!(engine.pending_tool_batches.is_empty());
-    assert!(!engine.auto_continue_streaks_by_node.contains_key(&node_a));
+    assert!(!engine
+        .recovery
+        .auto_continue_streaks_by_node
+        .contains_key(&node_a));
     let transcript = engine.transcript(&node_a);
     assert!(transcript.iter().any(|item| {
         matches!(
@@ -2631,6 +2767,7 @@ fn structured_question_pauses_and_survives_checkpoint_restore() {
             id: "target_env".to_string(),
             header: "Target".to_string(),
             question: "Which environment should I target?".to_string(),
+            selection_mode: UserInputSelectionMode::Single,
             options: vec![
                 UserInputOption {
                     label: "Staging".to_string(),
@@ -2689,6 +2826,7 @@ fn structured_question_is_not_projected_when_disabled_for_the_node() {
                     id: "continue_chat".to_string(),
                     header: "Continue".to_string(),
                     question: "What would you like to do?".to_string(),
+                    selection_mode: UserInputSelectionMode::Single,
                     options: vec![
                         UserInputOption {
                             label: "Ask something".to_string(),
@@ -2729,6 +2867,7 @@ fn structured_only_request_retries_with_free_text_feedback_when_disabled() {
                     id: "continue_chat".to_string(),
                     header: "Continue".to_string(),
                     question: "What would you like to do?".to_string(),
+                    selection_mode: UserInputSelectionMode::Single,
                     options: vec![
                         UserInputOption {
                             label: "Ask something".to_string(),
@@ -2772,6 +2911,7 @@ fn invalid_structured_question_retries_even_when_prompt_looks_direct() {
                     id: "target_env".to_string(),
                     header: "Header longer than twelve".to_string(),
                     question: "Which environment should I target?".to_string(),
+                    selection_mode: UserInputSelectionMode::Single,
                     options: Vec::new(),
                 }],
             }),
@@ -2837,7 +2977,10 @@ fn narrated_write_without_tool_gets_write_specific_nudge() {
 
     assert!(!engine.awaiting_nodes.contains(&brief));
     assert!(!engine.failed_nodes.contains_key(&brief));
-    assert_eq!(engine.auto_continue_streaks_by_node.get(&brief), Some(&1));
+    assert_eq!(
+        engine.recovery.auto_continue_streaks_by_node.get(&brief),
+        Some(&1)
+    );
     assert!(matches!(
         engine.transcript(&brief).last(),
         Some(AgentTranscriptItem::UserMessage { content, .. })
@@ -2956,14 +3099,20 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let brief = NodeId("brief".to_string());
 
-    engine.empty_turn_retries_by_node.insert(brief.clone(), 2);
     engine
+        .recovery
+        .empty_turn_retries_by_node
+        .insert(brief.clone(), 2);
+    engine
+        .recovery
         .request_input_retries_by_node
         .insert(brief.clone(), 2);
     engine
+        .recovery
         .submit_output_retries_by_node
         .insert(brief.clone(), 2);
     engine
+        .recovery
         .auto_continue_streaks_by_node
         .insert(brief.clone(), 2);
 
@@ -2974,10 +3123,22 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
     );
 
     assert!(engine.awaiting_nodes.contains(&brief));
-    assert!(!engine.empty_turn_retries_by_node.contains_key(&brief));
-    assert!(!engine.request_input_retries_by_node.contains_key(&brief));
-    assert!(!engine.submit_output_retries_by_node.contains_key(&brief));
-    assert!(!engine.auto_continue_streaks_by_node.contains_key(&brief));
+    assert!(!engine
+        .recovery
+        .empty_turn_retries_by_node
+        .contains_key(&brief));
+    assert!(!engine
+        .recovery
+        .request_input_retries_by_node
+        .contains_key(&brief));
+    assert!(!engine
+        .recovery
+        .submit_output_retries_by_node
+        .contains_key(&brief));
+    assert!(!engine
+        .recovery
+        .auto_continue_streaks_by_node
+        .contains_key(&brief));
 
     engine
         .on_human_input(&brief, "Auth and Postgres. What else do you think?")
@@ -3080,7 +3241,7 @@ fn checkpoint_roundtrips_auto_continue_streaks() {
 
     let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
     assert_eq!(
-        restored.auto_continue_streaks_by_node.get(&node_a),
+        restored.recovery.auto_continue_streaks_by_node.get(&node_a),
         Some(&1)
     );
 }

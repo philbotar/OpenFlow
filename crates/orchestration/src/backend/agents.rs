@@ -1,5 +1,5 @@
 use crate::run::prep::provider_reasoning_for_profile;
-use crate::settings::model::{merge_preserved_secrets, AppSettings};
+use crate::settings::model::AppSettings;
 use engine::CallableAgent;
 
 use super::{AgentDefinitionSummary, AppBackend, BackendError};
@@ -23,18 +23,7 @@ impl AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<CallableAgent, BackendError> {
-        let mut merged = settings.clone();
-        merge_preserved_secrets(&mut merged, &self.settings.store().load()?);
-        let mut provider_config = crate::settings::provider::resolve_provider_config(
-            &merged,
-            transient_api_key,
-            self.settings.env(),
-        )?;
-        crate::settings::provider::attach_codex_credential_sink(
-            &mut provider_config,
-            self.settings.store_arc(),
-        );
-        let ai = providers::create_provider(provider_config);
+        let (merged, ai) = self.authoring_provider(settings, transient_api_key)?;
         let profile = merged.active_profile();
         let model = profile
             .default_model

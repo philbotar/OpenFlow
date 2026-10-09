@@ -9,6 +9,75 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::{AppBackend, BackendError, FileEditPreview, ScheduledRunCandidate};
 
+/// Refresh fields that are explicitly mutable while preserving the prepared run snapshot.
+pub(super) fn refresh_runtime_config_from_workflow(
+    current: &Workflow,
+    snapshot: &mut Workflow,
+) -> bool {
+    if current.id != snapshot.id {
+        return false;
+    }
+
+    let mut changed = false;
+    for snapshot_node in &mut snapshot.nodes {
+        let Some(current_node) = current
+            .nodes
+            .iter()
+            .find(|node| node.id == snapshot_node.id)
+        else {
+            continue;
+        };
+        let snapshot_agent = &mut snapshot_node.agent;
+        let current_agent = &current_node.agent;
+        if snapshot_agent.model != current_agent.model {
+            snapshot_agent.model.clone_from(&current_agent.model);
+            changed = true;
+        }
+        if snapshot_agent.reasoning_effort != current_agent.reasoning_effort {
+            snapshot_agent
+                .reasoning_effort
+                .clone_from(&current_agent.reasoning_effort);
+            changed = true;
+        }
+        if snapshot_agent.reasoning_budget_tokens != current_agent.reasoning_budget_tokens {
+            snapshot_agent.reasoning_budget_tokens = current_agent.reasoning_budget_tokens;
+            changed = true;
+        }
+        if snapshot_agent.tools.approval_mode != current_agent.tools.approval_mode {
+            snapshot_agent.tools.approval_mode = current_agent.tools.approval_mode;
+            changed = true;
+        }
+    }
+    if snapshot.settings.fast_mode != current.settings.fast_mode {
+        snapshot.settings.fast_mode = current.settings.fast_mode;
+        changed = true;
+    }
+    changed
+}
+
+/// Defines a pair of `AppBackend` methods that differ only in run targeting:
+/// `$active` addresses the active run (`$run == None`), `$targeted` takes a
+/// leading `run_id: &str` (`$run == Some(run_id)`). Both share `$body`.
+macro_rules! run_scoped_pair {
+    (
+        $(#[$meta:meta])*
+        $active:ident / $targeted:ident ($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty;
+        |$this:ident, $run:ident| $body:expr
+    ) => {
+        $(#[$meta])*
+        pub async fn $active(&self $(, $arg: $ty)*) -> $ret {
+            let ($this, $run): (&Self, Option<&str>) = (self, None);
+            $body
+        }
+
+        $(#[$meta])*
+        pub async fn $targeted(&self, run_id: &str $(, $arg: $ty)*) -> $ret {
+            let ($this, $run): (&Self, Option<&str>) = (self, Some(run_id));
+            $body
+        }
+    };
+}
+
 impl AppBackend {
     pub(super) fn run_roots(&self) -> Result<Vec<RunStoreRoot>, BackendError> {
         let mut roots = vec![RunStoreRoot {
@@ -188,7 +257,7 @@ impl AppBackend {
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String), BackendError> {
-        self.resume_durable_run_with_continuation(run_id, settings, transient_api_key, None)
+        self.resume_durable_run_with_continuation(run_id, settings, transient_api_key, None, None)
             .await
     }
 
@@ -198,6 +267,7 @@ impl AppBackend {
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
         continuation: Option<crate::api::DurableRunContinuationInput>,
+        runtime_workflow: Option<Workflow>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String), BackendError> {
         let roots = self.run_roots()?;
         let (root, mut record) = self
@@ -209,12 +279,22 @@ impl AppBackend {
             .list()?
             .into_iter()
             .find(|chat| chat.run_id.as_deref() == Some(run_id));
-        if let Some(chat) = direct_chat.as_ref() {
-            if super::chat::refresh_execution_workflow_for_chat(chat, &mut record.workflow_snapshot)
-            {
-                record.workflow_hash = workflow_hash(&record.workflow_snapshot);
-                self.run_store.update_record(&root, &record)?;
+        let runtime_config_changed = if let Some(chat) = direct_chat.as_ref() {
+            super::chat::refresh_execution_workflow_for_chat(chat, &mut record.workflow_snapshot)
+        } else if let Some(current) = runtime_workflow.as_ref() {
+            if current.id.to_string() != record.workflow_id {
+                return Err(BackendError::RunWorkflowChanged(
+                    run_id.to_string(),
+                    record.workflow_id.clone(),
+                ));
             }
+            refresh_runtime_config_from_workflow(current, &mut record.workflow_snapshot)
+        } else {
+            false
+        };
+        if runtime_config_changed {
+            record.workflow_hash = workflow_hash(&record.workflow_snapshot);
+            self.run_store.update_record(&root, &record)?;
         }
         let workflow_name = record.workflow_name.clone();
         let mut checkpoint = self
@@ -342,16 +422,9 @@ impl AppBackend {
             .map_err(|error| self.backend_err(error))
     }
 
-    pub async fn stop_run(&self) -> Result<WorkflowRunState, BackendError> {
-        self.runs
-            .stop_run_and_persist(self.run_store.as_ref())
-            .await
-    }
-
-    pub async fn stop_run_for(&self, run_id: &str) -> Result<WorkflowRunState, BackendError> {
-        self.runs
-            .stop_run_for(run_id, self.run_store.as_ref())
-            .await
+    run_scoped_pair! {
+        stop_run / stop_run_for() -> Result<WorkflowRunState, BackendError>;
+        |this, run| this.runs.stop_run_for(run, this.run_store.as_ref()).await
     }
 
     pub async fn stop_all_runs(&self) {
@@ -360,46 +433,17 @@ impl AppBackend {
             .await;
     }
 
-    pub async fn continue_run(
-        &self,
-        workflow: Workflow,
-        entrypoint: Option<String>,
-        settings: &crate::settings::model::AppSettings,
-        transient_api_key: Option<&str>,
-    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        self.runs
-            .continue_run(RunStartParams {
-                workflow,
-                invoked_skill_ids: Vec::new(),
-                entrypoint: entrypoint.map(UserMessageInput::text),
-                execution_cwd: None,
-                run_root: RunStoreRoot {
-                    project_id: None,
-                    root: self.app_runs_root.clone(),
-                },
-                settings,
-                transient_api_key,
-                agent_store: self.agents.store(),
-                skill_catalog: self.settings.skill_catalog(),
-                settings_store: self.settings.store_arc(),
-                run_store: self.run_store.as_ref(),
-                env: self.settings.env(),
-            })
-            .await
-            .map_err(|error| self.backend_err(error))
-    }
-
-    pub async fn continue_run_for(
-        &self,
-        run_id: &str,
-        workflow: Workflow,
-        entrypoint: Option<String>,
-        settings: &crate::settings::model::AppSettings,
-        transient_api_key: Option<&str>,
-    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        self.runs
+    run_scoped_pair! {
+        continue_run / continue_run_for(
+            workflow: Workflow,
+            entrypoint: Option<String>,
+            settings: &crate::settings::model::AppSettings,
+            transient_api_key: Option<&str>,
+        ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError>;
+        |this, run| this
+            .runs
             .continue_run_for(
-                run_id,
+                run,
                 RunStartParams {
                     workflow,
                     invoked_skill_ids: Vec::new(),
@@ -407,73 +451,45 @@ impl AppBackend {
                     execution_cwd: None,
                     run_root: RunStoreRoot {
                         project_id: None,
-                        root: self.app_runs_root.clone(),
+                        root: this.app_runs_root.clone(),
                     },
                     settings,
                     transient_api_key,
-                    agent_store: self.agents.store(),
-                    skill_catalog: self.settings.skill_catalog(),
-                    settings_store: self.settings.store_arc(),
-                    run_store: self.run_store.as_ref(),
-                    env: self.settings.env(),
+                    agent_store: this.agents.store(),
+                    skill_catalog: this.settings.skill_catalog(),
+                    settings_store: this.settings.store_arc(),
+                    run_store: this.run_store.as_ref(),
+                    env: this.settings.env(),
                 },
             )
             .await
-            .map_err(|error| self.backend_err(error))
+            .map_err(|error| this.backend_err(error))
     }
 
-    #[must_use]
-    pub async fn is_run_continuable(&self) -> bool {
-        self.runs.is_run_continuable().await
+    run_scoped_pair! {
+        #[must_use]
+        is_run_continuable / is_run_continuable_for() -> bool;
+        |this, run| this.runs.is_run_continuable_for(run).await
     }
 
-    #[must_use]
-    pub async fn is_run_continuable_for(&self, run_id: &str) -> bool {
-        self.runs.is_run_continuable_for(run_id).await
+    run_scoped_pair! {
+        interrupt_node / interrupt_node_for(node_id: &str) -> Result<WorkflowRunState, BackendError>;
+        |this, run| this.runs.interrupt_node_for(run, node_id).await
     }
 
-    pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
-        self.runs.interrupt_node(node_id).await
+    run_scoped_pair! {
+        retry_node / retry_node_for(node_id: &str) -> Result<WorkflowRunState, BackendError>;
+        |this, run| this.runs.retry_node_for(run, node_id).await
     }
 
-    pub async fn interrupt_node_for(
-        &self,
-        run_id: &str,
-        node_id: &str,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.interrupt_node_for(run_id, node_id).await
-    }
-
-    pub async fn retry_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
-        self.runs.retry_node(node_id).await
-    }
-
-    pub async fn retry_node_for(
-        &self,
-        run_id: &str,
-        node_id: &str,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.retry_node_for(run_id, node_id).await
-    }
-
-    pub async fn update_node_runtime_config(
-        &self,
-        node_id: &str,
-        update: crate::api::NodeRuntimeConfigUpdate,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.runs
-            .update_node_runtime_config(node_id, update.into_patch())
-            .await
-    }
-
-    pub async fn update_node_runtime_config_for(
-        &self,
-        run_id: &str,
-        node_id: &str,
-        update: crate::api::NodeRuntimeConfigUpdate,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.runs
-            .update_node_runtime_config_for(run_id, node_id, update.into_patch())
+    run_scoped_pair! {
+        update_node_runtime_config / update_node_runtime_config_for(
+            node_id: &str,
+            update: crate::api::NodeRuntimeConfigUpdate,
+        ) -> Result<WorkflowRunState, BackendError>;
+        |this, run| this
+            .runs
+            .update_node_runtime_config_for(run, node_id, update.into_patch())
             .await
     }
 
@@ -487,22 +503,12 @@ impl AppBackend {
         self.runs.is_run_active_for(run_id).await
     }
 
-    pub async fn apply_execution_event(
-        &self,
-        event: ExecutionEvent,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.runs
-            .apply_execution_event(event, self.run_store.as_ref())
-            .await
-    }
-
-    pub async fn apply_execution_event_for(
-        &self,
-        run_id: &str,
-        event: ExecutionEvent,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.runs
-            .apply_execution_event_for(run_id, event, self.run_store.as_ref())
+    run_scoped_pair! {
+        apply_execution_event / apply_execution_event_for(event: ExecutionEvent)
+            -> Result<WorkflowRunState, BackendError>;
+        |this, run| this
+            .runs
+            .apply_execution_event_for(run, event, this.run_store.as_ref())
             .await
     }
 
@@ -536,7 +542,7 @@ impl AppBackend {
         invoked_skill_ids: Vec<String>,
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .submit_user_message_with_skill_ids(node_id, message, &invoked_skill_ids)
+            .submit_user_message_with_skill_ids_for(None, node_id, message, &invoked_skill_ids)
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -549,7 +555,12 @@ impl AppBackend {
         invoked_skill_ids: Vec<String>,
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .submit_user_message_with_skill_ids_for(run_id, node_id, message, &invoked_skill_ids)
+            .submit_user_message_with_skill_ids_for(
+                Some(run_id),
+                node_id,
+                message,
+                &invoked_skill_ids,
+            )
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -561,7 +572,7 @@ impl AppBackend {
         reason: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .submit_tool_approval(approval_id, allow, reason)
+            .submit_tool_approval_for(None, approval_id, allow, reason)
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -574,7 +585,7 @@ impl AppBackend {
         reason: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .submit_tool_approval_for(run_id, approval_id, allow, reason)
+            .submit_tool_approval_for(Some(run_id), approval_id, allow, reason)
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -585,7 +596,7 @@ impl AppBackend {
         decision: crate::mcp::client_capabilities::McpClientRequestDecision,
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .resolve_mcp_client_request(request_id, decision)
+            .resolve_mcp_client_request_for(None, request_id, decision)
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -597,7 +608,7 @@ impl AppBackend {
         decision: crate::mcp::client_capabilities::McpClientRequestDecision,
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .resolve_mcp_client_request_for(run_id, request_id, decision)
+            .resolve_mcp_client_request_for(Some(run_id), request_id, decision)
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -625,7 +636,7 @@ impl AppBackend {
         arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
         self.runs
-            .preview_file_edit(approval_id, tool_name, arguments)
+            .preview_file_edit_for(None, approval_id, tool_name, arguments)
             .await
     }
 
@@ -637,12 +648,12 @@ impl AppBackend {
         arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
         self.runs
-            .preview_file_edit_for(run_id, approval_id, tool_name, arguments)
+            .preview_file_edit_for(Some(run_id), approval_id, tool_name, arguments)
             .await
     }
 
     pub async fn git_diff_file(&self, path: String) -> Result<String, BackendError> {
-        self.runs.git_diff_file(path).await
+        self.runs.git_diff_file_for(None, path).await
     }
 
     pub async fn git_diff_file_for(
@@ -650,14 +661,14 @@ impl AppBackend {
         run_id: &str,
         path: String,
     ) -> Result<String, BackendError> {
-        self.runs.git_diff_file_for(run_id, path).await
+        self.runs.git_diff_file_for(Some(run_id), path).await
     }
 
     pub async fn revert_edit_batch(
         &self,
         batch_id: String,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.revert_edit_batch(batch_id).await
+        self.runs.revert_edit_batch_for(None, batch_id).await
     }
 
     pub async fn revert_edit_batch_for(
@@ -665,18 +676,20 @@ impl AppBackend {
         run_id: &str,
         batch_id: String,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.revert_edit_batch_for(run_id, batch_id).await
+        self.runs
+            .revert_edit_batch_for(Some(run_id), batch_id)
+            .await
     }
 
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
-        self.runs.clear_run_trace().await
+        self.runs.clear_run_trace_for(None).await
     }
 
     pub async fn clear_run_trace_for(
         &self,
         run_id: &str,
     ) -> Result<Option<WorkflowRunState>, BackendError> {
-        self.runs.clear_run_trace_for(run_id).await
+        self.runs.clear_run_trace_for(Some(run_id)).await
     }
 
     pub async fn start_scheduled_run(

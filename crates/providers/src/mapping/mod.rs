@@ -3,19 +3,15 @@ use engine::{
     malformed_submit_invalid_json, AgentError, AgentMessageTurn, AgentNeedUserInput,
     AgentReasoning, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
     CompleteSubmitOutputParams, StructuredUserInput, ToolCall, ToolDefinition, UserInputOption,
-    UserInputQuestion, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
+    UserInputQuestion, UserInputSelectionMode, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES,
+    SUBMIT_NODE_OUTPUT_TOOL,
 };
+use rig_core::completion::ToolDefinition as ToolSpec;
 use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = SUBMIT_NODE_OUTPUT_TOOL;
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";
 pub const ASK_USER_QUESTION_TOOL: &str = "openflow_ask_user_question";
-#[derive(Debug, Clone)]
-pub struct ToolSpec {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
 
 pub fn build_node_context(request: &AgentRequest) -> String {
     let input =
@@ -114,7 +110,7 @@ pub fn request_input_tool() -> ToolSpec {
 pub fn ask_user_question_tool() -> ToolSpec {
     ToolSpec {
         name: ASK_USER_QUESTION_TOOL.to_string(),
-        description: "Pause the node with 1-3 structured multiple-choice questions. Use only when the human's answer is required and 2-3 clear choices make the decision easier."
+        description: "Pause the node with 1-3 structured choice questions. Each question must declare whether the human may select one option or multiple options. Use only when the human's answer is required and 2-3 clear choices make the decision easier."
             .to_string(),
         parameters: json!({
             "type": "object",
@@ -143,6 +139,11 @@ pub fn ask_user_question_tool() -> ToolSpec {
                                 "type": "string",
                                 "description": "Single-sentence question shown to the human."
                             },
+                            "selection_mode": {
+                                "type": "string",
+                                "enum": ["single", "multiple"],
+                                "description": "Use single when exactly one option may be selected, or multiple when one or more options may be selected."
+                            },
                             "options": {
                                 "type": "array",
                                 "minItems": 2,
@@ -164,7 +165,7 @@ pub fn ask_user_question_tool() -> ToolSpec {
                                 }
                             }
                         },
-                        "required": ["id", "header", "question", "options"]
+                        "required": ["id", "header", "question", "selection_mode", "options"]
                     }
                 }
             },
@@ -310,6 +311,10 @@ fn parse_structured_user_input(value: &Value) -> StructuredUserInput {
                     id: string_field(question, "id"),
                     header: string_field(question, "header"),
                     question: string_field(question, "question"),
+                    selection_mode: match string_field(question, "selection_mode").as_str() {
+                        "multiple" => UserInputSelectionMode::Multiple,
+                        _ => UserInputSelectionMode::Single,
+                    },
                     options: question
                         .get("options")
                         .and_then(Value::as_array)
@@ -354,8 +359,6 @@ pub struct ResolveToolTurnParams<'a> {
     pub output_schema: Option<&'a Value>,
     pub provider_label: &'a str,
     pub usage: Option<engine::UsageReport>,
-    /// When true, `OpenAI` wire formats strip boilerplate from `assistant_message` on external tool batches.
-    pub filter_assistant_on_external_batch: bool,
 }
 
 /// Shared tail for provider parsers: empty-turn recovery, internal-tool routing, external batch.
@@ -371,7 +374,6 @@ pub fn resolve_tool_turn_outcome(
         output_schema,
         provider_label,
         usage,
-        filter_assistant_on_external_batch,
     } = params;
 
     if tool_calls.is_empty() {
@@ -458,11 +460,7 @@ pub fn resolve_tool_turn_outcome(
         }
     }
 
-    let assistant_message = if filter_assistant_on_external_batch {
-        filter_tool_turn_assistant_message(assistant_message)
-    } else {
-        assistant_message
-    };
+    let assistant_message = filter_tool_turn_assistant_message(assistant_message);
     Ok(attach_usage(
         AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: assistant_message.clone().unwrap_or_default(),
@@ -545,13 +543,11 @@ pub(crate) fn parse_or_recover_tool_arguments(input: &str) -> Result<Value, Stri
 #[must_use]
 #[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) fn malformed_tool_args_marker_value(raw: &str, detail: &str) -> Value {
-    let capped = if raw.len() <= OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES {
-        raw.to_string()
-    } else {
-        raw.chars()
-            .take(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES)
-            .collect()
-    };
+    let mut end = raw.len().min(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES);
+    while !raw.is_char_boundary(end) {
+        end -= 1;
+    }
+    let capped = &raw[..end];
     json!({
         MALFORMED_TOOL_ARGS_MARKER_KEY: {
             "raw": capped,
@@ -606,6 +602,27 @@ fn error_from_malformed_tool_args_marker(
 mod tests {
     use super::*;
     use engine::AgentTranscriptItem;
+
+    #[test]
+    fn malformed_argument_marker_caps_utf8_bytes() {
+        for raw in [
+            "x".repeat(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES + 1),
+            "🦀".repeat(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES / 4 + 1),
+            "é".repeat(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES),
+        ] {
+            let marker = malformed_tool_args_marker_value(&raw, "invalid JSON");
+            let marker = extract_malformed_tool_args_marker(&marker).expect("marker");
+            assert!(marker.raw.len() <= OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES);
+            assert!(marker.raw.len() > OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES - 4);
+            assert!(raw.starts_with(&marker.raw));
+        }
+        let marker = malformed_tool_args_marker_value("short", "invalid JSON");
+        assert_eq!(
+            extract_malformed_tool_args_marker(&marker).unwrap().raw,
+            "short"
+        );
+    }
+
     fn make_tool_call_value(name: &str, arguments: &str) -> Value {
         json!({
             "id": "call-7",
@@ -765,7 +782,7 @@ mod tests {
     fn ask_user_question_parses_structured_questions() {
         let outcome = parse_internal_tool_outcome(
             ASK_USER_QUESTION_TOOL,
-            r#"{"questions":[{"id":"target_env","header":"Target","question":"Which environment should I target?","options":[{"label":"Staging","description":"Deploy to the shared staging environment."},{"label":"Production","description":"Deploy to the live production environment."}]}]}"#,
+            r#"{"questions":[{"id":"target_env","header":"Target","question":"Which environments should I target?","selection_mode":"multiple","options":[{"label":"Staging","description":"Deploy to the shared staging environment."},{"label":"Production","description":"Deploy to the live production environment."}]}]}"#,
             None,
             "test",
             None,
@@ -778,10 +795,14 @@ mod tests {
         };
         assert_eq!(
             input.assistant_message,
-            "Which environment should I target?"
+            "Which environments should I target?"
         );
         let structured = input.structured_input.expect("structured payload");
         assert_eq!(structured.questions[0].id, "target_env");
+        assert_eq!(
+            structured.questions[0].selection_mode,
+            UserInputSelectionMode::Multiple
+        );
         assert_eq!(structured.questions[0].options.len(), 2);
     }
 
@@ -871,6 +892,16 @@ mod tests {
             .is_none());
         assert_eq!(question_schema["properties"]["questions"]["minItems"], 1);
         assert_eq!(question_schema["properties"]["questions"]["maxItems"], 3);
+        assert_eq!(
+            question_schema["properties"]["questions"]["items"]["properties"]["selection_mode"]
+                ["enum"],
+            json!(["single", "multiple"])
+        );
+        assert!(
+            question_schema["properties"]["questions"]["items"]["required"]
+                .as_array()
+                .is_some_and(|required| required.contains(&json!("selection_mode")))
+        );
         assert_eq!(
             question_schema["properties"]["questions"]["items"]["properties"]["options"]
                 ["minItems"],
@@ -1067,7 +1098,6 @@ mod tests {
             output_schema: Some(&schema),
             provider_label: "test",
             usage: None,
-            filter_assistant_on_external_batch: true,
         })
         .unwrap();
         let AgentTurnOutcome::Completed(success) = outcome else {
@@ -1091,7 +1121,6 @@ mod tests {
             output_schema: None,
             provider_label: "test",
             usage: None,
-            filter_assistant_on_external_batch: true,
         })
         .unwrap();
         let AgentTurnOutcome::ToolCalls(batch) = outcome else {
@@ -1125,7 +1154,6 @@ mod tests {
             output_schema: None,
             provider_label: "test",
             usage: None,
-            filter_assistant_on_external_batch: false,
         })
         .expect_err("executable calls are invalid during a control turn");
 
@@ -1160,7 +1188,6 @@ mod tests {
             output_schema: None,
             provider_label: "test",
             usage: None,
-            filter_assistant_on_external_batch: false,
         })
         .expect_err("multiple control calls are invalid");
 

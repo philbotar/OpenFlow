@@ -1,3 +1,6 @@
+use crate::adapters::infrastructure::process::kill_process_group;
+#[cfg(unix)]
+use crate::adapters::infrastructure::process::ProcessGroupKillGuard;
 use crate::mcp::installer::PackageInstallPlan;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -186,54 +189,6 @@ fn sanitize_output(bytes: &[u8]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-#[cfg(unix)]
-struct ProcessGroupKillGuard {
-    pgid: Option<i32>,
-}
-
-#[cfg(unix)]
-impl ProcessGroupKillGuard {
-    fn new(child: &tokio::process::Child) -> Self {
-        Self {
-            pgid: child.id().and_then(|pid| i32::try_from(pid).ok()),
-        }
-    }
-
-    fn disarm(&mut self) {
-        self.pgid = None;
-    }
-}
-
-#[cfg(unix)]
-impl Drop for ProcessGroupKillGuard {
-    fn drop(&mut self) {
-        let Some(pgid) = self.pgid else {
-            return;
-        };
-        use nix::sys::signal::{kill, killpg, Signal};
-        use nix::unistd::Pid;
-        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
-        let _ = kill(Pid::from_raw(-pgid), Signal::SIGKILL);
-    }
-}
-
-#[cfg(unix)]
-async fn kill_process_group(child: &mut tokio::process::Child) {
-    if let Some(pid) = child.id() {
-        use nix::sys::signal::{kill, killpg, Signal};
-        use nix::unistd::Pid;
-        let pgid = i32::try_from(pid).unwrap_or(i32::MAX);
-        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
-        let _ = kill(Pid::from_raw(-pgid), Signal::SIGKILL);
-    }
-    let _ = child.kill().await;
-}
-
-#[cfg(not(unix))]
-async fn kill_process_group(child: &mut tokio::process::Child) {
-    let _ = child.kill().await;
 }
 
 #[cfg(test)]

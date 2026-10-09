@@ -1,3 +1,4 @@
+import { handleMenuKeyDown } from "../../lib/menuKeyboard";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import { isMacOS, ICON_STROKE_WIDTH } from "../../lib/utils";
@@ -74,8 +75,7 @@ function ChatRows() {
       <Show when={hasMore()}>
         <button
           type="button"
-          class="sidebar-nav-button"
-          style={{ color: "var(--text-muted)" }}
+          class="sidebar-nav-button sidebar-history-toggle"
           onClick={() => setShowAll((open) => !open)}
         >
           {showAll() ? "Show less" : "Show more"}
@@ -168,7 +168,7 @@ export function Sidebar() {
       aria-hidden={ctx.leftPanelHidden() && !ctx.isCompactViewport()}
     >
       <SidebarList>
-        <div class="sidebar-new-workflow-menu" ref={newWorkflowMenuAnchor}>
+        <div class="sidebar-new-workflow-menu" ref={newWorkflowMenuAnchor} onKeyDown={handleMenuKeyDown}>
           <SidebarNavButton
             icon="plus"
             label="New workflow"
@@ -412,8 +412,8 @@ export function Sidebar() {
               "sidebar-scroll-thumb--active": scrollActive(),
             }}
             style={{
-              height: `${thumb().height}px`,
-              transform: `translateY(${thumb().top}px)`,
+              "--sidebar-thumb-height": `${thumb().height}px`,
+              "--sidebar-thumb-top": `${thumb().top}px`,
             }}
             aria-hidden="true"
           />

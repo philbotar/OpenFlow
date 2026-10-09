@@ -34,10 +34,7 @@ impl FileSecretStore {
 
     #[must_use]
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(crate::adapters::storage::json_file_store::OPENFLOW_DATA_DIR_SLUG)
-            .join(MCP_SECRET_FILE_NAME)
+        crate::adapters::storage::json_file_store::app_data_dir().join(MCP_SECRET_FILE_NAME)
     }
 
     #[must_use]

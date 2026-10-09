@@ -80,6 +80,21 @@ describe("ProjectFolderRow", () => {
     container.remove();
   });
 
+  test("opens the project menu from the keyboard and dismisses before tabbing onward", () => {
+    dispose = render(() => <ProjectFolderRow {...defaultProps()} />, container);
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    expect(document.activeElement?.textContent?.trim()).toBe("New workflow");
+    document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+    expect(document.activeElement?.textContent?.trim()).toBe("Remove project");
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    document.activeElement!.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(false);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   test("selects project and toggles expand from header click", () => {
     const onSelectProject = vi.fn();
     const onToggleExpand = vi.fn();

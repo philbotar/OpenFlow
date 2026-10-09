@@ -229,7 +229,7 @@ pub(crate) fn fresh_execution_resources(persisted_settings: &AppSettings) -> Exe
 
 pub(super) fn spawn_prepared_run(
     runtime_handle: &tokio::runtime::Handle,
-    mut prepared: PreparedWorkflowRun,
+    prepared: PreparedWorkflowRun,
     input: SpawnRunInput,
     resources: &ExecutionResources,
 ) -> (RunControl, UnboundedReceiver<ExecutionEvent>) {
@@ -245,7 +245,7 @@ pub(super) fn spawn_prepared_run(
     let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
         runtime_handle,
         InteractiveWorkflowRunParams {
-            workflow: prepared.workflow.clone(),
+            workflow: prepared.workflow,
             entrypoint: metadata.entrypoint,
             entrypoint_attachments: metadata.entrypoint_attachments,
             execution_cwd: metadata.execution_cwd.clone(),
@@ -266,12 +266,11 @@ pub(super) fn spawn_prepared_run(
             pending_engine_reverts: resources.pending_engine_reverts.clone(),
             node_interrupts: resources.node_interrupts.clone(),
             context_window_sizes: prepared.context_window_sizes,
-            mcp: prepared.persisted_settings.mcp.clone(),
+            mcp: prepared.persisted_settings.mcp,
             prepared_mcp: prepared
                 .mcp_clients
-                .take()
-                .map(|clients| (clients, std::mem::take(&mut prepared.mcp_issues))),
-            search: prepared.persisted_settings.search.clone(),
+                .map(|clients| (clients, prepared.mcp_issues)),
+            search: prepared.persisted_settings.search,
             runtime_config_store: resources.runtime_config_store.clone(),
             tool_budget: shared_resources.tool_budget(),
             mutation_gate,
@@ -287,52 +286,22 @@ pub(super) fn spawn_prepared_run(
     )
 }
 
-pub(super) struct RunLaunchTail {
-    pub spawn_input: SpawnRunInput,
-    pub resources: ExecutionResources,
-}
-
-/// Shared tail for fresh start, in-session continue, and durable resume launches.
+/// Finish fallible session setup before spawning execution, then install its handles atomically.
 pub(super) async fn finalize_run_launch(
     runtime_handle: &tokio::runtime::Handle,
     session: &Mutex<RunSession>,
     prepared: PreparedWorkflowRun,
-    tail: RunLaunchTail,
+    spawn_input: SpawnRunInput,
+    resources: ExecutionResources,
     configure_session: impl FnOnce(&mut RunSession) -> Result<WorkflowRunState, BackendError>,
 ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+    let mut session = session.lock().await;
+    let initial_state = configure_session(&mut session)?;
     let workflow = prepared.workflow.clone();
     let skill_paths = prepared.skill_paths.clone();
-    let RunLaunchTail {
-        spawn_input,
-        resources,
-    } = tail;
     let metadata = spawn_input.metadata.clone();
-    let (spawned, event_rx) = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
-    let mut session_guard = session.lock().await;
-    let initial_state = configure_session(&mut session_guard)?;
-    attach_execution_handles(
-        &mut session_guard,
-        workflow,
-        metadata,
-        resources,
-        skill_paths,
-        spawned,
-    );
-    Ok((initial_state, event_rx))
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "single session mutation installs one complete run launch atomically"
-)]
-pub(super) fn attach_execution_handles(
-    session: &mut RunSession,
-    workflow: Workflow,
-    metadata: RunLaunchMetadata,
-    resources: ExecutionResources,
-    skill_paths: SkillPaths,
-    control: RunControl,
-) {
+    // ponytail: no await or fallible operation between spawn and handle ownership.
+    let (control, event_rx) = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
     session.workflow = Some(workflow);
     session.skill_paths = skill_paths;
     session.entrypoint = metadata.entrypoint;
@@ -346,6 +315,7 @@ pub(super) fn attach_execution_handles(
         resources,
         control: Some(control),
     });
+    Ok((initial_state, event_rx))
 }
 
 /// Clears session-scoped resources when a run becomes inactive.

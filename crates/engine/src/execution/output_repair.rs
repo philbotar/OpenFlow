@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 /// At most one overseer call per primary invocation.
+#[cfg(test)]
 const MAX_OUTPUT_REPAIR_ATTEMPTS_PER_INVOCATION: u8 = 1;
 
 const OUTPUT_REPAIR_NODE_SUFFIX: &str = "__output_repair";
@@ -133,19 +134,6 @@ where
         if !candidate.is_repairable() {
             return Err(primary_error);
         }
-        // Re-check length before building the overseer request.
-        if candidate.raw_arguments().len() > 64 * 1024 {
-            emit_failed(
-                sink,
-                &request.node_id,
-                "candidate exceeds repair size limit",
-            );
-            return Err(primary_error);
-        }
-        if MAX_OUTPUT_REPAIR_ATTEMPTS_PER_INVOCATION == 0 {
-            return Err(primary_error);
-        }
-
         let model = self
             .policy
             .model

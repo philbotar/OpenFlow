@@ -10,8 +10,8 @@
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
+  gap: var(--space-sm);
+  padding: 5px var(--space-sm);
   border-radius: var(--radius-md);
   background: var(--surface-panel);
   color: var(--text);
@@ -30,14 +30,14 @@
 .app-tooltip-keys {
   display: inline-flex;
   gap: 3px;
-  margin-left: 2px;
+  margin-left: var(--space-2xs);
 }
 
 .app-tooltip-key {
   display: inline-flex;
   min-width: 1.25em;
   justify-content: center;
-  padding: 1px 4px;
+  padding: 1px var(--space-xs);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--surface-muted);

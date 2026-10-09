@@ -125,9 +125,7 @@ export function InspectorPanel() {
                 }
                 model={node().agent.model}
                 onModelChange={(value) =>
-                  ctx.updateCurrentNode((nextNode) => {
-                    nextNode.agent.model = value;
-                  })
+                  void ctx.handleUpdateNodeRuntimeConfig(node().id, { model: value })
                 }
                 requestUserInput={node().agent.requestUserInput ?? false}
                 onRequestUserInputChange={(value) =>

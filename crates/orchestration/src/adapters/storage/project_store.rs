@@ -1,5 +1,5 @@
 use crate::adapters::storage::json_file_store::{
-    read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
+    app_data_dir, read_json_file, write_json_file,
 };
 use crate::project::ports::{Project, ProjectStore};
 use serde::{Deserialize, Serialize};
@@ -25,27 +25,7 @@ impl FileProjectStore {
 
     #[must_use]
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(OPENFLOW_DATA_DIR_SLUG)
-            .join(PROJECTS_FILE_NAME)
-    }
-
-    /// # Errors
-    /// Returns an error if the file cannot be read or parsed.
-    pub fn load(&self) -> io::Result<Vec<Project>> {
-        let stored: StoredProjects =
-            read_json_file(&self.path, "project store JSON invalid")?.unwrap_or_default();
-        Ok(stored.projects)
-    }
-
-    /// # Errors
-    /// Returns an error if the file cannot be serialized or written.
-    pub fn save(&self, projects: &[Project]) -> io::Result<()> {
-        let stored = StoredProjects {
-            projects: projects.to_vec(),
-        };
-        write_json_file(&self.path, &stored, "project store JSON")
+        app_data_dir().join(PROJECTS_FILE_NAME)
     }
 
     #[must_use]
@@ -55,12 +35,21 @@ impl FileProjectStore {
 }
 
 impl ProjectStore for FileProjectStore {
+    /// # Errors
+    /// Returns an error if the file cannot be read or parsed.
     fn load(&self) -> io::Result<Vec<Project>> {
-        FileProjectStore::load(self)
+        let stored: StoredProjects =
+            read_json_file(&self.path, "project store JSON invalid")?.unwrap_or_default();
+        Ok(stored.projects)
     }
 
+    /// # Errors
+    /// Returns an error if the file cannot be serialized or written.
     fn save(&self, projects: &[Project]) -> io::Result<()> {
-        FileProjectStore::save(self, projects)
+        let stored = StoredProjects {
+            projects: projects.to_vec(),
+        };
+        write_json_file(&self.path, &stored, "project store JSON")
     }
 }
 

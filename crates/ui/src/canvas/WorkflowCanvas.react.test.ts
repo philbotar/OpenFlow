@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SubagentStatus, Workflow } from "../lib/types";
 import { createEmptyToolConfig } from "../lib/workflow/testHelpers";
+import { reconcileFlowEdges } from "./workflowCanvasGraph";
 import {
   projectWorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
@@ -153,6 +154,17 @@ describe("WorkflowCanvas adapter helpers", () => {
     const edges = buildFlowEdges(graph, null, true, "dark");
     expect(edges[0].animated).toBe(true);
     expect(edges[0].style).toEqual({ stroke: "#55555c", strokeWidth: 2 });
+  });
+
+  test("refreshes edge and arrow colors when the theme changes without graph changes", () => {
+    const lightEdges = buildFlowEdges(graph, null, false, "light");
+    const darkEdges = buildFlowEdges(graph, null, false, "dark");
+    const next = reconcileFlowEdges(lightEdges, darkEdges);
+    expect(next).not.toBe(lightEdges);
+    expect(next[0].style).toEqual(darkEdges[0].style);
+    expect(next[0].markerEnd).toEqual(darkEdges[0].markerEnd);
+    expect(next[0].source).toBe(lightEdges[0].source);
+    expect(next[0].target).toBe(lightEdges[0].target);
   });
 
   test("graphStructureSignature ignores node positions", () => {

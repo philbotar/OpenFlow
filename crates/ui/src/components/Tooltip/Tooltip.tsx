@@ -1,4 +1,4 @@
-import { Show, createSignal, onCleanup, type JSX } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import { formatShortcutParts, type ShortcutId } from "../../lib/shortcuts";
 import "./Tooltip.css";
@@ -51,6 +51,21 @@ export function Tooltip(props: TooltipProps) {
   };
 
   onCleanup(hide);
+
+  createEffect(() => {
+    if (!open()) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", hide);
+    window.addEventListener("scroll", hide, true);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", hide);
+      window.removeEventListener("scroll", hide, true);
+    });
+  });
 
   const text = () => props.disabledReason ?? props.label;
   const parts = () =>

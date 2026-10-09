@@ -16,10 +16,7 @@ pub struct FileRunCheckpointStore;
 impl FileRunCheckpointStore {
     #[must_use]
     pub fn app_runs_root() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(crate::adapters::storage::json_file_store::OPENFLOW_DATA_DIR_SLUG)
-            .join("runs")
+        crate::adapters::storage::json_file_store::app_data_dir().join("runs")
     }
 }
 

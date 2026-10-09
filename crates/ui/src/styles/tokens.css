@@ -44,8 +44,9 @@
   --base-indigo-500: #6f7cf7;
   --base-indigo-600: #5360d9;
   --base-indigo-soft: rgba(111, 124, 247, 0.18);
-  --base-action-500: var(--base-indigo-500);
-  --base-action-600: var(--base-indigo-600);
+  /* White action labels need the darker existing indigo shade. */
+  --base-action-500: var(--base-indigo-600);
+  --base-action-600: color-mix(in srgb, var(--base-indigo-600) 90%, var(--base-ink-900));
   --base-action-soft: var(--base-indigo-soft);
   --base-green-600: #2f8b63;
   --base-green-soft: #e7f6ee;
@@ -76,7 +77,7 @@
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
   --menu-row-height: 30px;
-  --menu-row-padding-inline: 8px;
+  --menu-row-padding-inline: var(--space-sm);
   --control-size-md: 36px;
   --composer-input-max-rows: 10;
   --composer-send-size: 28px;
@@ -93,13 +94,16 @@
   --topbar-traffic-light-size: 12px;
 
   /* ── Typography ── */
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --text-display-sm: 1.75rem;
   --text-display-sm-weight: 650;
   --text-title-md: 1.05rem;
   --text-title-sm: 0.9375rem;
   --text-body-md: 1rem;
   --text-body-sm: 0.875rem;
+  --text-body-compact: 0.9rem;
   --text-label-sm: 0.8125rem;
+  --text-caption-sm: 0.75rem;
   --text-meta-xs: 0.6875rem;
 
   /* ── Radius ── */
@@ -124,30 +128,40 @@
   --radius-full: 50%;
 
   /* ── Layout / spacing ── */
+  --space-2xs: 2px;
   --space-xs: 4px;
+  --space-between-xs-sm: 6px;
   --space-sm: 8px;
+  --space-between-sm-base: 10px;
+  --space-base: 12px;
+  --space-between-base-md: 14px;
   --space-md: 16px;
+  --space-between-md-lg: 20px;
   --space-lg: 24px;
-  --page-gutter: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --page-gutter: var(--space-lg);
   --page-gutter-compact: 18px;
-  --page-stack-gap: 20px;
-  --card-padding-md: 16px;
-  --card-padding-lg: 24px;
-  --chat-segment-gap: 20px;
-  --chat-item-gap: 16px;
-  --chat-segment-header-pad: 8px;
+  --page-stack-gap: var(--space-between-md-lg);
+  --card-padding-md: var(--space-md);
+  --card-padding-lg: var(--space-lg);
+  --chat-segment-gap: var(--space-between-md-lg);
+  --chat-item-gap: var(--space-md);
+  --chat-segment-header-pad: var(--space-sm);
   --direct-chat-content-width: 760px;
   --direct-chat-horizontal-gutter: 48px;
   --direct-chat-compact-horizontal-gutter: 32px;
   --direct-chat-transcript-top-space: 48px;
   --dock-surface: var(--dock-bg);
   --dock-tab-inset: 12px 14px 14px;
-  --dock-tab-feed-gap: 10px;
+  --dock-tab-feed-gap: var(--space-between-sm-base);
   --dock-tab-card-padding: 12px 14px;
   --dock-tab-card-radius: var(--radius-md);
   --dock-tabs-padding: 3px 8px;
   --dock-tab-button-padding: 3px 6px;
   --dock-icon-action-size: 24px;
+  --toast-width-compact: 200px;
+  --toast-width-expanded: 360px;
 
   /* ── Scrollbars ── */
   --scrollbar-size: 10px;
@@ -162,6 +176,43 @@
   --z-modal: 210;
   --z-toast: 300;
   --z-tooltip: 310;
+  --z-tour: 1000;
+
+  /* Shared interaction and feedback surfaces. Diff text uses distinct
+     foregrounds per theme; warning/error text stays legible on dark surfaces. */
+  --focus-ring: 0 0 0 4px var(--focus);
+  --focus-outline-width: 2px;
+  --focus-outline-offset: 2px;
+  --menu-surface: rgba(255, 255, 255, 0.98);
+  --menu-item-hover: rgba(255, 255, 255, 0.72);
+  --selection-border: rgba(111, 124, 247, 0.22);
+  --selection-surface: rgba(111, 124, 247, 0.08);
+  --text-danger-strong: #9c3946;
+  --text-error: #b91c1c;
+  --text-warning-strong: #b45309;
+  --diff-added: #197a35;
+  --diff-removed: #c73232;
+  --diff-added-surface: rgba(63, 185, 80, 0.15);
+  --diff-removed-surface: rgba(248, 81, 73, 0.15);
+  --validation-warning-surface: rgba(245, 158, 11, 0.1);
+  --validation-warning-border: rgba(245, 158, 11, 0.28);
+  --validation-success-surface: rgba(34, 197, 94, 0.08);
+  --validation-success-border: rgba(34, 197, 94, 0.24);
+  --validation-error-surface: rgba(239, 68, 68, 0.08);
+  --validation-error-border: rgba(239, 68, 68, 0.24);
+  --secondary-action-surface: rgba(255, 255, 255, 0.72);
+  --secondary-action-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  --primary-action-shadow: 0 12px 24px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+  --primary-action-compact-shadow: 0 4px 10px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+
+  /* Execution colors intentionally distinguish queued, active, and waiting work. */
+  --node-status-idle: #b5b2aa;
+  --node-status-queued: #8ea4ff;
+  --node-status-started: #6f7cf7;
+  --node-status-awaiting-input: #d9a233;
+  --node-status-stopped: #8b8f9a;
+  --node-status-interrupted: #d97757;
+  --node-status-running-tool: #38b2ac;
 
   /* ── Legacy bridge (normalize in a follow-up pass) ── */
   --app-bg: var(--surface-ground);
@@ -201,20 +252,23 @@
   --terminal-cursor: var(--text);
   --terminal-selection-bg: var(--focus);
 
-  /*
-   * Phase 1 normalization inventory — defer to follow-up pass:
-   * --chrome-bg, --bar-bg, --dock-bg, --composer-bg, --raised-surface,
-   * --hover-overlay, --sidebar-hover/active, --input-bg, raw rgba literals
-   *
-   * Phase 2 normalization inventory — defer to Phase 3 / wider pass:
-   * conversation surfaces, dock/chat micro-components, inspector blocks,
-   * canvas/node chrome, topbar micro-typography, legacy hardcoded radii
-   * outside route shells and empty states touched in Phase 2
-   */
+  /* Component-specific gradients, execution glows, and layout geometry stay
+     with their owners. Legacy aliases retain their existing consumers. */
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
+  --menu-surface: var(--surface-strong);
+  --menu-item-hover: var(--sidebar-hover);
+  --text-danger-strong: var(--status-danger);
+  --text-error: var(--status-danger);
+  --text-warning-strong: var(--status-warning);
+  --diff-added: #3fb950;
+  --diff-removed: #f85149;
+  --secondary-action-surface: rgba(255, 255, 255, 0.06);
+  --secondary-action-shadow: none;
+  --primary-action-shadow: 0 8px 20px rgba(0, 0, 0, 0.32);
+  --primary-action-compact-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
 
   /* ── Layer 1: base palette (dark) ── */
   --base-sand-50: #181818;

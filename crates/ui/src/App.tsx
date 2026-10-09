@@ -47,23 +47,22 @@ function ScreenRouter() {
 function AppToaster() {
   const ctx = useAppContext();
   const topOffset = () =>
-    "calc((var(--topbar-height) + 16px) / var(--ui-zoom))";
+    "calc((var(--topbar-height) + var(--space-md)) / var(--ui-zoom))";
   const toastWidth = () =>
     ctx.settings().local_diagnostics?.debug_output
-      ? "min(360px, calc(100vw - 32px))"
-      : "min(200px, calc(100vw - 32px))";
+      ? "min(var(--toast-width-expanded), calc(100vw - var(--space-xl)))"
+      : "min(var(--toast-width-compact), calc(100vw - var(--space-xl)))";
 
   return (
     <Toaster
       theme={ctx.resolvedTheme()}
       position="top-right"
-      offset={{ top: topOffset(), right: "16px" }}
+      offset={{ top: topOffset(), right: "var(--space-md)" }}
       visibleToasts={1}
       closeButton
       duration={BANNER_DISMISS_MS}
       style={{
         "--width": toastWidth(),
-        zoom: "var(--ui-zoom)",
       }}
       toastOptions={{
         classNames: {

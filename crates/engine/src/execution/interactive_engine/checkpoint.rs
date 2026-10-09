@@ -1,4 +1,5 @@
-use super::{FrozenChangeEvidencePacket, InteractiveEngine, PendingToolBatch};
+use super::recovery::RecoveryCounters;
+use super::{FrozenChangeEvidencePacket, InteractiveEngine};
 use crate::conversation::{AgentTranscriptItem, ChatAttachmentRef};
 use crate::execution::HandoffArtifact;
 use crate::graph::validation::WorkflowValidationError;
@@ -17,30 +18,6 @@ pub struct CheckpointPendingToolBatch {
     pub requires_approval: bool,
     #[serde(default)]
     pub tool_access_policy: ToolAccessPolicy,
-}
-
-impl From<&PendingToolBatch> for CheckpointPendingToolBatch {
-    fn from(batch: &PendingToolBatch) -> Self {
-        Self {
-            approval_id: batch.approval_id.clone(),
-            node_id: batch.node_id.clone(),
-            tool_calls: batch.tool_calls.clone(),
-            requires_approval: batch.requires_approval,
-            tool_access_policy: batch.tool_access_policy,
-        }
-    }
-}
-
-impl From<&CheckpointPendingToolBatch> for PendingToolBatch {
-    fn from(batch: &CheckpointPendingToolBatch) -> Self {
-        Self {
-            approval_id: batch.approval_id.clone(),
-            node_id: batch.node_id.clone(),
-            tool_calls: batch.tool_calls.clone(),
-            requires_approval: batch.requires_approval,
-            tool_access_policy: batch.tool_access_policy,
-        }
-    }
 }
 
 /// Serializable engine state for in-session resume after user stop.
@@ -117,8 +94,7 @@ fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTre
     );
     ids.extend(checkpoint.interrupted_nodes.iter().cloned());
     ids.extend(checkpoint.failed_nodes.keys().cloned());
-    ids.extend(checkpoint.retries_by_node.keys().cloned());
-    ids.extend(checkpoint.output_truncation_retries_by_node.keys().cloned());
+    RecoveryCounters::extend_node_ids(checkpoint, &mut ids);
     ids.extend(
         checkpoint
             .pending_tool_batches
@@ -182,19 +158,18 @@ impl InteractiveEngine {
             structured_input_by_node: self.structured_input_by_node.clone(),
             plan_mode_source_node_id: self.plan_mode_source_node_id.clone(),
             frozen_change_evidence_packet: self.frozen_change_evidence_packet.clone(),
-            pending_tool_batches: self
-                .pending_tool_batches
-                .iter()
-                .map(|(id, batch)| (id.clone(), CheckpointPendingToolBatch::from(batch)))
-                .collect(),
-            retries_by_node: self.retries_by_node.clone(),
-            transient_streaks_by_node: self.transient_streaks_by_node.clone(),
-            submit_output_retries_by_node: self.submit_output_retries_by_node.clone(),
-            request_input_retries_by_node: self.request_input_retries_by_node.clone(),
-            empty_turn_retries_by_node: self.empty_turn_retries_by_node.clone(),
-            mixed_tool_turn_retries_by_node: self.mixed_tool_turn_retries_by_node.clone(),
-            output_truncation_retries_by_node: self.output_truncation_retries_by_node.clone(),
-            auto_continue_streaks_by_node: self.auto_continue_streaks_by_node.clone(),
+            pending_tool_batches: self.pending_tool_batches.clone(),
+            retries_by_node: self.recovery.retries_by_node.clone(),
+            transient_streaks_by_node: self.recovery.transient_streaks_by_node.clone(),
+            submit_output_retries_by_node: self.recovery.submit_output_retries_by_node.clone(),
+            request_input_retries_by_node: self.recovery.request_input_retries_by_node.clone(),
+            empty_turn_retries_by_node: self.recovery.empty_turn_retries_by_node.clone(),
+            mixed_tool_turn_retries_by_node: self.recovery.mixed_tool_turn_retries_by_node.clone(),
+            output_truncation_retries_by_node: self
+                .recovery
+                .output_truncation_retries_by_node
+                .clone(),
+            auto_continue_streaks_by_node: self.recovery.auto_continue_streaks_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
             entrypoint_attachments: self.entrypoint_attachments.clone(),
             interrupted_nodes: self.interrupted_nodes.clone(),
@@ -230,10 +205,11 @@ impl InteractiveEngine {
     /// Returns an error when the workflow fails validation or ids do not match.
     pub fn from_checkpoint(
         workflow: Workflow,
-        checkpoint: InteractiveEngineCheckpoint,
+        mut checkpoint: InteractiveEngineCheckpoint,
         project_repository_root: Option<String>,
     ) -> Result<Self, CheckpointError> {
         validate_checkpoint_against_workflow(&workflow, &checkpoint)?;
+        let recovery = RecoveryCounters::take_from(&mut checkpoint);
 
         let plan_mode_source_node_id = checkpoint.plan_mode_source_node_id.clone().or_else(|| {
             workflow
@@ -272,20 +248,9 @@ impl InteractiveEngine {
             plan_mode_source_node_id,
             frozen_change_evidence_packet: checkpoint.frozen_change_evidence_packet,
             in_flight_tools: BTreeSet::new(),
-            pending_tool_batches: checkpoint
-                .pending_tool_batches
-                .iter()
-                .map(|(id, batch)| (id.clone(), PendingToolBatch::from(batch)))
-                .collect(),
-            retries_by_node: checkpoint.retries_by_node,
-            transient_streaks_by_node: checkpoint.transient_streaks_by_node,
+            pending_tool_batches: checkpoint.pending_tool_batches,
+            recovery,
             retry_after_by_node: BTreeMap::new(),
-            submit_output_retries_by_node: checkpoint.submit_output_retries_by_node,
-            request_input_retries_by_node: checkpoint.request_input_retries_by_node,
-            empty_turn_retries_by_node: checkpoint.empty_turn_retries_by_node,
-            mixed_tool_turn_retries_by_node: checkpoint.mixed_tool_turn_retries_by_node,
-            output_truncation_retries_by_node: checkpoint.output_truncation_retries_by_node,
-            auto_continue_streaks_by_node: checkpoint.auto_continue_streaks_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
             entrypoint_attachments: checkpoint.entrypoint_attachments,
             project_repository_root,

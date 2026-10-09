@@ -1,3 +1,5 @@
+use engine::AgentError;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -49,13 +51,51 @@ impl fmt::Debug for CodexOAuthCredentials {
 }
 
 impl AuthConfig {
-    #[must_use]
-    pub const fn requires_key(&self) -> bool {
+    pub(crate) fn http_auth(&self, label: &str) -> Result<(String, HeaderMap), AgentError> {
         match self {
-            Self::Bearer { required, .. } | Self::Header { required, .. } => *required,
-            Self::NoneAllowed | Self::AwsCredentials { .. } => false,
+            Self::Bearer { api_key, required } => {
+                let key = extract_api_key(api_key.as_ref(), *required, label)?;
+                Ok((key.unwrap_or_default(), HeaderMap::new()))
+            }
+            Self::Header {
+                name,
+                api_key,
+                required,
+            } => {
+                let key = extract_api_key(api_key.as_ref(), *required, label)?;
+                let mut headers = HeaderMap::new();
+                if let Some(key) = key {
+                    let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+                        AgentError::Failed(format!("invalid auth header name `{name}`: {e}"))
+                    })?;
+                    let header_value = HeaderValue::from_str(&key).map_err(|e| {
+                        AgentError::Failed(format!("invalid auth header value for `{name}`: {e}"))
+                    })?;
+                    headers.insert(header_name, header_value);
+                }
+                Ok((String::new(), headers))
+            }
+            Self::NoneAllowed => Ok((String::new(), HeaderMap::new())),
+            Self::AwsCredentials { .. } => Err(AgentError::Failed(format!(
+                "{label} HTTP auth is not configured for rig adapter"
+            ))),
         }
     }
+}
+
+fn extract_api_key(
+    api_key: Option<&String>,
+    required: bool,
+    label: &str,
+) -> Result<Option<String>, AgentError> {
+    let key = api_key.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
+    if key.is_none() && required {
+        return Err(AgentError::Permanent(format!("{label} API key missing")));
+    }
+    Ok(key)
 }
 
 #[cfg(test)]

@@ -18,6 +18,108 @@ use tempfile::TempDir;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+#[tokio::test]
+async fn headless_missing_input_joins_execution_task() {
+    struct WaitingAi {
+        _lifetime: Arc<()>,
+    }
+    #[async_trait]
+    impl AiPort for WaitingAi {
+        async fn invoke(&self, _: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".into(),
+                assistant_message: "Need a decision".into(),
+                structured_input: None,
+                reasoning: Vec::new(),
+            }))
+        }
+    }
+    let dir = TempDir::new().unwrap();
+    let lifetime = Arc::new(());
+    let mut workflow = Workflow::new("Headless cleanup");
+    let mut node = engine::Node::agent("wait", 0.0, 0.0);
+    node.id = NodeId::from("wait");
+    node.agent.model = "test-model".into();
+    node.agent.auto_start = true;
+    node.agent.request_user_input = true;
+    workflow.nodes.push(node);
+    let result = timeout(
+        Duration::from_secs(5),
+        run_workflow_headless(
+            workflow,
+            None,
+            WaitingAi {
+                _lifetime: Arc::clone(&lifetime),
+            },
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            Some(dir.path().to_path_buf()),
+            None,
+        ),
+    )
+    .await
+    .expect("headless failure returns promptly");
+    assert!(
+        matches!(&result, Err(WorkflowExecutionError::MissingManualInput(id)) if id == "wait"),
+        "unexpected result: {result:?}"
+    );
+    assert_eq!(
+        Arc::strong_count(&lifetime),
+        1,
+        "provider task must be joined"
+    );
+}
+
+#[tokio::test]
+async fn dropping_headless_runner_aborts_provider_task() {
+    struct PendingAi {
+        started: Arc<tokio::sync::Notify>,
+        dropped: Arc<tokio::sync::Notify>,
+    }
+    impl Drop for PendingAi {
+        fn drop(&mut self) {
+            self.dropped.notify_one();
+        }
+    }
+    #[async_trait]
+    impl AiPort for PendingAi {
+        async fn invoke(&self, _: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.started.notify_one();
+            std::future::pending().await
+        }
+    }
+    let dir = TempDir::new().unwrap();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let dropped = Arc::new(tokio::sync::Notify::new());
+    let mut workflow = Workflow::new("Dropped headless runner");
+    let mut node = engine::Node::agent("wait", 0.0, 0.0);
+    node.agent.model = "test-model".into();
+    node.agent.auto_start = true;
+    workflow.nodes.push(node);
+    let runner = tokio::spawn(run_workflow_headless(
+        workflow,
+        None,
+        PendingAi {
+            started: Arc::clone(&started),
+            dropped: Arc::clone(&dropped),
+        },
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        Some(dir.path().to_path_buf()),
+        None,
+    ));
+    timeout(Duration::from_secs(5), started.notified())
+        .await
+        .expect("provider starts");
+    runner.abort();
+    assert!(runner.await.unwrap_err().is_cancelled());
+    timeout(Duration::from_secs(5), dropped.notified())
+        .await
+        .expect("dropping runner releases provider task");
+}
+
 fn sample_agent_request() -> AgentRequest {
     AgentRequest {
         workflow_id: "wf-1".into(),
@@ -791,6 +893,7 @@ fn record_user_input_restores_thinking_status() {
                     id: "target_env".to_string(),
                     header: "Target".to_string(),
                     question: "Which environment?".to_string(),
+                    selection_mode: engine::UserInputSelectionMode::Single,
                     options: vec![
                         engine::UserInputOption {
                             label: "Staging".to_string(),

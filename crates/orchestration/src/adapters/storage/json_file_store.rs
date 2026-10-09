@@ -4,12 +4,20 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 pub const OPENFLOW_DATA_DIR_SLUG: &str = "openflow";
 
-/// Write `content` atomically via a sibling `.tmp` file.
+/// App-managed data directory (`<local data dir>/openflow`).
+#[must_use]
+pub fn app_data_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(OPENFLOW_DATA_DIR_SLUG)
+}
+
+/// Write `content` atomically via a sibling temp file, creating parent directories.
 ///
 /// # Errors
 /// Returns an error if the parent directory or file cannot be written.
@@ -17,19 +25,56 @@ pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
-    {
-        let mut file = fs::File::create(&tmp)?;
-        file.write_all(content.as_bytes())?;
-        file.sync_all()?;
-    }
-    fs::rename(&tmp, path)?;
-    if let Some(parent) = path.parent() {
-        if let Ok(dir) = fs::File::open(parent) {
-            let _ = dir.sync_all();
+    atomic_write_bytes(path, content.as_bytes())
+}
+
+/// Replace `path` with `content` in one rename, keeping an existing file's permissions.
+///
+/// The parent directory must already exist. The temp file is removed on failure.
+///
+/// # Errors
+/// Returns an error if the target has no parent or file name, or the write fails.
+pub fn atomic_write_bytes(path: &Path, content: &[u8]) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "write target has no parent directory",
+        )
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "write target has no file name")
+    })?;
+    let temporary = parent.join(format!(
+        ".{}.openflow-{}.tmp",
+        file_name.to_string_lossy(),
+        Uuid::new_v4()
+    ));
+    let original_permissions = fs::metadata(path)
+        .ok()
+        .map(|metadata| metadata.permissions());
+
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        file.write_all(content)?;
+        if let Some(permissions) = original_permissions {
+            file.set_permissions(permissions)?;
         }
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)?;
+        if let Ok(directory) = fs::File::open(parent) {
+            let _ = directory.sync_all();
+        }
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    Ok(())
+    result
 }
 
 fn invalid_data(context: &str, error: impl std::fmt::Display) -> io::Error {

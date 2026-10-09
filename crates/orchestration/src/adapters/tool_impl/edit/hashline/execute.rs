@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::fs::{HashlineFilesystem, WriteResult};
 use super::input::Patch;
-use super::patcher::{PatchOp, Patcher, PatcherOptions};
+use super::patcher::{PatchOp, Patcher};
 use super::snapshots::InMemorySnapshotStore;
 use super::types::SplitOptions;
 use crate::lsp::{append_writethrough_to_output, LspSettings};
@@ -110,11 +110,11 @@ pub fn execute_hashline(
 
     let io = EditIo::new(cwd).with_ledger(ledger).with_lsp_settings(lsp);
     let fs = EditHashlineFs::new(io);
-    let patcher = Patcher::new(PatcherOptions {
+    let patcher = Patcher {
         fs,
         snapshots,
         block_resolver: None,
-    });
+    };
 
     let applied = patcher.apply(&patch).map_err(ToolError::failed)?;
     let writethrough = patcher.fs.take_writethrough();

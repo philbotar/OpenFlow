@@ -40,6 +40,94 @@ fn coordinator(_dir: &Path) -> RunCoordinator {
     RunCoordinator::new(tokio::runtime::Handle::current())
 }
 
+#[tokio::test]
+async fn rejected_launch_drops_provider_without_spawning_execution() {
+    struct UnusedAi {
+        _lifetime: Arc<()>,
+    }
+
+    #[async_trait::async_trait]
+    impl engine::AiPort for UnusedAi {
+        async fn invoke(
+            &self,
+            _: engine::AgentRequest,
+        ) -> Result<engine::AgentTurnOutcome, engine::AgentError> {
+            panic!("rejected launch must not invoke a provider");
+        }
+    }
+
+    let dir = tempdir().unwrap();
+    let lifetime = Arc::new(());
+    let settings = AppSettings::default();
+    let coordinator = coordinator(dir.path());
+    let prepared = super::session::PreparedWorkflowRun {
+        workflow: default_workflow("Rejected launch"),
+        ai: Box::new(UnusedAi {
+            _lifetime: Arc::clone(&lifetime),
+        }),
+        agent_snapshots: BTreeMap::new(),
+        persisted_settings: settings.clone(),
+        context_window_sizes: BTreeMap::new(),
+        skill_paths: Default::default(),
+        mcp_clients: None,
+        mcp_issues: Vec::new(),
+    };
+    let result = super::session::finalize_run_launch(
+        &coordinator.runtime_handle,
+        &coordinator.session,
+        prepared,
+        super::session::SpawnRunInput {
+            metadata: super::session::RunLaunchMetadata {
+                entrypoint: None,
+                entrypoint_attachments: Vec::new(),
+                execution_cwd: dir.path().to_path_buf(),
+                artifact_root: dir.path().join("artifacts"),
+                attachment_root: dir.path().join("attachments"),
+            },
+            project_id: None,
+            attachment_store: Arc::clone(&coordinator.attachment_store),
+            resume_checkpoint: None,
+            resume_continuation: None,
+            shared_resources: Arc::clone(&coordinator.shared_resources),
+            mutation_gate: None,
+        },
+        fresh_execution_resources(&settings),
+        |_| Err(BackendError::NoContinuableRun),
+    )
+    .await;
+    assert!(matches!(result, Err(BackendError::NoContinuableRun)));
+    assert_eq!(Arc::strong_count(&lifetime), 1);
+    assert!(coordinator.session.lock().await.active.is_none());
+}
+
+#[tokio::test]
+async fn durable_resume_status_failure_does_not_activate_session() {
+    let stores = local_stores();
+    let coordinator = coordinator(stores.dir.path());
+    let workflow = default_workflow("Missing durable record");
+    let record = run_record(stores.dir.path(), &workflow, "missing-record");
+    let checkpoint = durable_checkpoint(&workflow, WorkflowRunState::idle_for_workflow(&workflow));
+    // The loaded record is no longer on disk when the resume status is persisted.
+    let result = coordinator
+        .resume_durable_run(DurableResumeParams {
+            run_id: "missing-record",
+            root: stores.run_root.clone(),
+            record,
+            checkpoint,
+            settings: &stores.settings,
+            transient_api_key: None,
+            agent_store: &stores.agent_store,
+            skill_catalog: &FileSkillCatalog,
+            settings_store: stores.settings_store.clone(),
+            run_store: &stores.run_store,
+            env: &stores.env,
+        })
+        .await;
+    assert!(result.is_err());
+    assert!(!coordinator.is_run_active().await);
+    assert!(coordinator.session.lock().await.active.is_none());
+}
+
 fn test_env() -> ProviderEnv {
     ProviderEnv::from_pairs([("OPENAI_API_KEY", "test-openai-key")])
 }

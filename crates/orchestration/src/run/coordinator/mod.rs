@@ -45,8 +45,8 @@ use session::{
     apply_user_stop_to_session, clear_artifact_root, finalize_run_launch, finish_run_session,
     fresh_execution_resources, prepare_workflow_run, require_action_tx, require_active_run_state,
     require_node_mut, require_run_state, require_run_state_mut, require_workflow_mut,
-    resolve_mcp_context_for_run, ExecutionResources, RunControl, RunLaunchMetadata, RunLaunchTail,
-    RunSession, SpawnRunInput, TerminationMode,
+    resolve_mcp_context_for_run, ExecutionResources, RunControl, RunLaunchMetadata, RunSession,
+    SpawnRunInput, TerminationMode,
 };
 
 pub struct RunCoordinator {
@@ -279,24 +279,22 @@ impl RunCoordinator {
             &self.runtime_handle,
             &self.session,
             prepared,
-            RunLaunchTail {
-                spawn_input: SpawnRunInput {
-                    metadata: RunLaunchMetadata {
-                        entrypoint: entrypoint_text,
-                        entrypoint_attachments,
-                        execution_cwd: resolved_cwd,
-                        artifact_root,
-                        attachment_root,
-                    },
-                    project_id: run_root.project_id.clone(),
-                    attachment_store: Arc::clone(&self.attachment_store),
-                    resume_checkpoint: None,
-                    resume_continuation: None,
-                    shared_resources: Arc::clone(&self.shared_resources),
-                    mutation_gate,
+            SpawnRunInput {
+                metadata: RunLaunchMetadata {
+                    entrypoint: entrypoint_text,
+                    entrypoint_attachments,
+                    execution_cwd: resolved_cwd,
+                    artifact_root,
+                    attachment_root,
                 },
-                resources,
+                project_id: run_root.project_id.clone(),
+                attachment_store: Arc::clone(&self.attachment_store),
+                resume_checkpoint: None,
+                resume_continuation: None,
+                shared_resources: Arc::clone(&self.shared_resources),
+                mutation_gate,
             },
+            resources,
             |session| {
                 session.run_id = Some(run_id.clone());
                 session.run_root = Some(run_root);
@@ -442,24 +440,22 @@ impl RunCoordinator {
             &self.runtime_handle,
             &self.session,
             prepared,
-            RunLaunchTail {
-                spawn_input: SpawnRunInput {
-                    metadata: RunLaunchMetadata {
-                        entrypoint: entrypoint_text,
-                        entrypoint_attachments,
-                        execution_cwd,
-                        artifact_root,
-                        attachment_root,
-                    },
-                    project_id: project_id.clone(),
-                    attachment_store: Arc::clone(&self.attachment_store),
-                    resume_checkpoint: Some(checkpoint),
-                    resume_continuation: None,
-                    shared_resources: Arc::clone(&self.shared_resources),
-                    mutation_gate: mutation_gate.clone(),
+            SpawnRunInput {
+                metadata: RunLaunchMetadata {
+                    entrypoint: entrypoint_text,
+                    entrypoint_attachments,
+                    execution_cwd,
+                    artifact_root,
+                    attachment_root,
                 },
-                resources,
+                project_id: project_id.clone(),
+                attachment_store: Arc::clone(&self.attachment_store),
+                resume_checkpoint: Some(checkpoint),
+                resume_continuation: None,
+                shared_resources: Arc::clone(&self.shared_resources),
+                mutation_gate: mutation_gate.clone(),
             },
+            resources,
             |session| {
                 let run_id = session.run_id.clone();
                 let run_state = session
@@ -894,25 +890,29 @@ impl RunCoordinator {
             &self.runtime_handle,
             &self.session,
             prepared,
-            RunLaunchTail {
-                spawn_input: SpawnRunInput {
-                    metadata: RunLaunchMetadata {
-                        entrypoint: None,
-                        entrypoint_attachments: Vec::new(),
-                        execution_cwd: execution_cwd.clone(),
-                        artifact_root,
-                        attachment_root: attachment_root.clone(),
-                    },
-                    project_id: project_id.clone(),
-                    attachment_store: Arc::clone(&self.attachment_store),
-                    resume_checkpoint: Some(engine_checkpoint),
-                    resume_continuation,
-                    shared_resources: Arc::clone(&self.shared_resources),
-                    mutation_gate,
+            SpawnRunInput {
+                metadata: RunLaunchMetadata {
+                    entrypoint: None,
+                    entrypoint_attachments: Vec::new(),
+                    execution_cwd: execution_cwd.clone(),
+                    artifact_root,
+                    attachment_root: attachment_root.clone(),
                 },
-                resources,
+                project_id: project_id.clone(),
+                attachment_store: Arc::clone(&self.attachment_store),
+                resume_checkpoint: Some(engine_checkpoint),
+                resume_continuation,
+                shared_resources: Arc::clone(&self.shared_resources),
+                mutation_gate,
             },
+            resources,
             |session| {
+                params.run_store.update_status(
+                    &run_root,
+                    &run_id,
+                    RunStatus::Running,
+                    Utc::now().timestamp_millis(),
+                )?;
                 session.run_state = Some(resumed_state.clone());
                 session.run_id = Some(run_id.clone());
                 session.run_root = Some(run_root.clone());
@@ -934,12 +934,7 @@ impl RunCoordinator {
                 return Err(error);
             }
         };
-        params.run_store.update_status(
-            &run_root,
-            &run_id,
-            RunStatus::Running,
-            Utc::now().timestamp_millis(),
-        )?;
+
         Ok((state, event_rx))
     }
 

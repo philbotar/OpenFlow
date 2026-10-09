@@ -19,8 +19,9 @@ desktop → AppBackend (backend/mod.rs)
             ├── AgentLibrary         saved CallableAgent definitions
             ├── ProjectRegistry      folder-scoped projects
             ├── SettingsFacade       settings, keys, skills
-            └── RunCoordinator       active run session
-                    └── run/execution/   InteractiveEngine host (ONLY place)
+            └── RunRegistry          addressed run sessions
+                    └── RunCoordinator   one session per run
+                            └── run/execution/   InteractiveEngine host (ONLY place)
 ```
 
 ### Hexagonal layout
@@ -36,7 +37,7 @@ orchestration/src/
 ├── adapters/
 │   ├── storage/        File*Store impls
 │   ├── tool_impl/      edit, grep, bash, …
-│   └── infrastructure/ lsp, git
+│   └── infrastructure/ lsp, git, process-group cleanup
 └── backend/mod.rs      composition root — wires domains + adapters
 ```
 
@@ -89,7 +90,7 @@ orchestration/src/
 | Workflow merge / project assign | `workflow/catalog.rs`, `adapters/storage/*_workflow_store.rs` |
 | Saved agents | `agent.rs`, `adapters/storage/agent_store.rs` |
 | Direct chats | `chat.rs`, `adapters/storage/chat_store.rs` |
-| Run start, input, approval | `run/coordinator.rs`, `run/execution/` |
+| Run start, input, approval | `run/registry.rs`, `run/coordinator/`, `run/execution/` |
 | UI run snapshot fields | `run/state.rs` + engine telemetry if needed |
 | New builtin tool | `adapters/tool_impl/` + `tool/registry.rs`; tier in `engine/tools/config.rs`; update `NODE_RUNTIME_PREAMBLE` |
 | Tool execution wiring | `run/execution/tool_port.rs` |
@@ -113,6 +114,17 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 9. **Node handoffs** — `AiInvocationAdapter` validates and materializes `HANDOFF.md` or `HANDOFF.json` before emitting completion; run state and checkpoints retain the immutable manifest.
 
 ### Persistence (quick reference)
+
+Run launch completes fallible session setup and durable status writes before spawning execution.
+The coordinator installs execution handles without an intervening await. The headless runner owns
+its task: error returns cancel and join it; dropping the runner cancels and aborts it.
+
+`RunRegistry` resolves explicit IDs and the legacy latest-run target in one place. An unknown
+explicit ID returns `RunNotFound`; it never falls back to another run. Keep `AppBackend` IPC-facing
+method signatures stable when changing registry internals.
+
+Hashline editing shares a concrete `InMemorySnapshotStore`. One mutex protects versions and path
+recency together, including eviction. Add a trait only when a consumer needs interchangeable impls.
 
 | Store | Path |
 | --- | --- |
@@ -146,14 +158,6 @@ cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 `bedrock` is off by default here (no AWS SDK). Desktop enables it for the app.
 
 Use inline `impl AiPort` stubs. Live AI: `STEP_WORKFLOW_LIVE_AI=1` (see `docs/contributing/testing-workflows.md`).
-
-## Change checklist
-
-1. Domain folder free of adapter imports?
-2. Engine constructed only in `run/execution/`?
-3. New I/O behind a port trait in `{entity}/ports.rs`?
-4. `./scripts/check-architecture.sh` passes?
-5. Run `./scripts/verify.sh` after changes.
 
 ## Related docs
 

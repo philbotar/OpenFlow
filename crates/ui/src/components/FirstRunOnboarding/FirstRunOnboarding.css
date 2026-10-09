@@ -1,7 +1,7 @@
 .of-tour-layer {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-tour);
   pointer-events: none;
 }
 
@@ -47,7 +47,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-between-sm-base);
   color: var(--text-muted);
   font-size: var(--text-meta-xs);
   font-weight: 650;
@@ -56,7 +56,7 @@
 }
 
 .of-tour-tooltip h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-sm);
   font-size: var(--text-title-md);
   letter-spacing: -0.02em;
 }
@@ -72,21 +72,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-base);
   margin-top: 18px;
 }
 
 .of-tour-step-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .of-tour-skip,
 .of-tour-back,
 .of-tour-next {
   min-height: 32px;
-  padding: 7px 12px;
+  padding: 7px var(--space-base);
   border-radius: var(--radius-md);
   font-size: var(--text-label-sm);
   font-weight: 600;

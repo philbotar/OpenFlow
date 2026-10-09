@@ -1,3 +1,4 @@
+import { handleMenuKeyDown } from "../../lib/menuKeyboard";
 import Ellipsis from "lucide-solid/icons/ellipsis";
 import FolderClosed from "lucide-solid/icons/folder-closed";
 import FolderOpen from "lucide-solid/icons/folder-open";
@@ -99,7 +100,7 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
             {props.project.name}
           </span>
         </button>
-        <div class="project-folder-menu-anchor" ref={menuAnchor}>
+        <div class="project-folder-menu-anchor" ref={menuAnchor} onKeyDown={handleMenuKeyDown}>
           <Tooltip label={`Project options for ${props.project.name}`}>
             <button
               type="button"

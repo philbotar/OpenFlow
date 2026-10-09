@@ -156,6 +156,49 @@ fn empty_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
     }
 }
 
+#[test]
+fn durable_resume_refreshes_runtime_fields_without_replacing_the_run_snapshot() {
+    let mut snapshot = default_workflow("Durable runtime refresh");
+    snapshot.nodes[0].agent.model = "broken-model".to_string();
+    snapshot.nodes[0].agent.system_prompt = "Pinned run prompt".to_string();
+    snapshot.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    let pinned_label = snapshot.nodes[0].label.clone();
+
+    let mut current = snapshot.clone();
+    current.nodes[0].label = "Edited label".to_string();
+    current.nodes[0].agent.model = "working-model".to_string();
+    current.nodes[0].agent.system_prompt = "Edited workflow prompt".to_string();
+    current.nodes[0].agent.reasoning_effort = Some("high".to_string());
+    current.nodes[0].agent.reasoning_budget_tokens = Some(32_000);
+    current.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    current.settings.fast_mode = true;
+
+    assert!(super::runs::refresh_runtime_config_from_workflow(
+        &current,
+        &mut snapshot,
+    ));
+    assert_eq!(snapshot.nodes[0].label, pinned_label);
+    assert_eq!(snapshot.nodes[0].agent.system_prompt, "Pinned run prompt");
+    assert_eq!(snapshot.nodes[0].agent.model, "working-model");
+    assert_eq!(
+        snapshot.nodes[0].agent.reasoning_effort.as_deref(),
+        Some("high")
+    );
+    assert_eq!(
+        snapshot.nodes[0].agent.reasoning_budget_tokens,
+        Some(32_000)
+    );
+    assert_eq!(
+        snapshot.nodes[0].agent.tools.approval_mode,
+        Some(ApprovalMode::Yolo)
+    );
+    assert!(snapshot.settings.fast_mode);
+    assert!(!super::runs::refresh_runtime_config_from_workflow(
+        &current,
+        &mut snapshot,
+    ));
+}
+
 #[cfg_attr(miri, ignore)]
 #[test]
 fn file_change_diff_loader_requires_run_projection_membership() {

@@ -53,4 +53,22 @@ describe("WorkflowListRow", () => {
       .click();
     expect(onDelete).toHaveBeenCalledTimes(1);
   });
+
+  test("navigates menu items from the keyboard and restores focus on Escape", () => {
+    dispose = render(() => <WorkflowListRow title="Release flow" active={false}
+      editing={false} onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()}
+      editSlot={<input />} />, container);
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+    const key = (name: string) => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+    trigger.focus();
+    key("ArrowDown");
+    expect(document.activeElement?.textContent?.trim()).toBe("Rename");
+    key("ArrowDown");
+    expect(document.activeElement?.textContent?.trim()).toBe("Delete workflow");
+    key("ArrowDown");
+    expect(document.activeElement?.textContent?.trim()).toBe("Rename");
+    key("Escape");
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
 });

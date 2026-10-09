@@ -90,11 +90,6 @@ const fn is_true(value: &bool) -> bool {
 pub enum ToolDecision {
     AutoAllow,
     Prompt,
-    #[allow(
-        dead_code,
-        reason = "matched in completion; reserved for future deny policy"
-    )]
-    Deny,
 }
 
 /// Host-owned plan artifact writer; Planning-only (not available in Execution).

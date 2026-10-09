@@ -378,6 +378,7 @@ export function useRunSession(params: UseRunSessionParams) {
           invokedSkillIds: [...(submission.invokedSkills ?? [])],
           attachmentSourcePaths: [...message.attachmentSourcePaths],
         },
+        workflow,
       );
       await beginSynchronizedRunSession(resumed);
       params.clearChatSubmission(draftNodeId);
@@ -532,6 +533,8 @@ export function useRunSession(params: UseRunSessionParams) {
         runId,
         params.settings(),
         params.activeProviderKeyInput() || null,
+        undefined,
+        workflow,
       );
       setReplayRunId(null);
       await beginSynchronizedRunSession(nextRunState);
@@ -620,6 +623,9 @@ export function useRunSession(params: UseRunSessionParams) {
       if (update.approvalMode !== undefined) {
         node.agent.tools.approvalMode = update.approvalMode;
       }
+      if (update.model !== undefined) {
+        node.agent.model = update.model;
+      }
       if (update.reasoningEffort !== undefined) {
         node.agent.reasoning_effort = update.reasoningEffort;
         node.agent.reasoningEffort = update.reasoningEffort;
@@ -631,6 +637,10 @@ export function useRunSession(params: UseRunSessionParams) {
       if (update.reasoningBudgetTokens !== undefined) {
         node.agent.reasoning_budget_tokens = update.reasoningBudgetTokens;
         node.agent.reasoningBudgetTokens = update.reasoningBudgetTokens;
+      }
+      if (update.fastMode !== undefined) {
+        draft.settings.fast_mode = update.fastMode;
+        draft.settings.fastMode = update.fastMode;
       }
     });
     const runId = selectedRunId();

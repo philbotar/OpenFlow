@@ -95,11 +95,13 @@ pub fn complete_submit_output(
         }
     };
 
-    if let Err(detail) = validate_output_against_schema(&args.output, &schema) {
+    let validator = jsonschema::validator_for(&schema)
+        .map_err(|error| AgentError::Permanent(format!("invalid output schema: {error}")))?;
+    if let Err(error) = validator.validate(&args.output) {
         return Err(malformed_with_candidate(
             provider_label,
             raw_arguments,
-            detail,
+            error.to_string(),
             OutputRepairFailureKind::SchemaViolation,
             &schema,
             tool_call_id,
@@ -289,18 +291,6 @@ fn salvage_assistant_message_into_output(
     json!({ "content": trimmed })
 }
 
-fn validate_output_against_schema(output: &Value, schema: &Value) -> Result<(), String> {
-    // ponytail: authored schemas may be incomplete; skip when the meta-schema rejects them.
-    // Upgrade: surface a permanent authoring error once workflow validation checks schemas.
-    let Ok(validator) = jsonschema::validator_for(schema) else {
-        return Ok(());
-    };
-    match validator.validate(output) {
-        Ok(()) => Ok(()),
-        Err(error) => Err(sanitize_validation_detail(error.to_string())),
-    }
-}
-
 fn sanitize_validation_detail(detail: String) -> String {
     const MAX: usize = 512;
     if detail.chars().count() <= MAX {
@@ -315,12 +305,11 @@ fn is_truncated_finish_reason(finish_reason: Option<&str>) -> bool {
 }
 
 fn cap_raw_arguments(raw: &str) -> String {
-    if raw.len() <= OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES {
-        return raw.to_string();
+    let mut end = raw.len().min(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES);
+    while !raw.is_char_boundary(end) {
+        end -= 1;
     }
-    raw.chars()
-        .take(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES)
-        .collect()
+    raw[..end].to_string()
 }
 
 #[allow(
@@ -368,6 +357,42 @@ mod tests {
             "properties": { "summary": { "type": "string" } },
             "required": ["summary"]
         })
+    }
+
+    #[test]
+    fn invalid_schema_fails_permanently() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"summary": {"type": "not-a-json-schema-type"}}
+        });
+        let err = complete_submit_output(CompleteSubmitOutputParams {
+            decoded: json!({"output": {"summary": "done"}}),
+            raw_arguments: r#"{"output":{"summary":"done"}}"#,
+            output_schema: Some(&schema),
+            assistant_message: None,
+            provider_label: "test",
+            tool_call_id: None,
+            finish_reason: None,
+            usage: None,
+        })
+        .expect_err("invalid schema must not accept output");
+        assert!(matches!(err, AgentError::Permanent(_)));
+        assert!(!err.is_repairable_submit_output());
+    }
+
+    #[test]
+    fn raw_arguments_cap_counts_bytes_at_utf8_boundaries() {
+        for prefix in ["", "a", "ab", "abc"] {
+            let raw = format!(
+                "{prefix}{}",
+                "🦀".repeat(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES / 4 + 1)
+            );
+            let capped = cap_raw_arguments(&raw);
+            assert!(capped.len() <= OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES);
+            assert!(capped.len() > OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES - 4);
+            assert!(raw.starts_with(&capped));
+        }
+        assert_eq!(cap_raw_arguments("short"), "short");
     }
 
     #[test]
