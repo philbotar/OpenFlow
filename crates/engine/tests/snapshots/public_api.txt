@@ -6375,6 +6375,8 @@ pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports:
 impl core::cmp::Eq for engine::ports::outbound::AgentTurnSuccess
 impl core::cmp::PartialEq for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::eq(&self, &engine::ports::outbound::AgentTurnSuccess) -> bool
+impl core::default::Default for engine::ports::outbound::AgentTurnSuccess
+pub fn engine::ports::outbound::AgentTurnSuccess::default() -> engine::ports::outbound::AgentTurnSuccess
 impl core::fmt::Debug for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentTurnSuccess
@@ -7401,6 +7403,8 @@ pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports:
 impl core::cmp::Eq for engine::ports::outbound::AgentTurnSuccess
 impl core::cmp::PartialEq for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::eq(&self, &engine::ports::outbound::AgentTurnSuccess) -> bool
+impl core::default::Default for engine::ports::outbound::AgentTurnSuccess
+pub fn engine::ports::outbound::AgentTurnSuccess::default() -> engine::ports::outbound::AgentTurnSuccess
 impl core::fmt::Debug for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentTurnSuccess
@@ -11029,6 +11033,8 @@ pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports:
 impl core::cmp::Eq for engine::ports::outbound::AgentTurnSuccess
 impl core::cmp::PartialEq for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::eq(&self, &engine::ports::outbound::AgentTurnSuccess) -> bool
+impl core::default::Default for engine::ports::outbound::AgentTurnSuccess
+pub fn engine::ports::outbound::AgentTurnSuccess::default() -> engine::ports::outbound::AgentTurnSuccess
 impl core::fmt::Debug for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentTurnSuccess

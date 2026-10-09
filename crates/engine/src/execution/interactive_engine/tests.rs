@@ -509,12 +509,9 @@ impl AiPort for CompleteAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         self.captured.lock().expect("lock").push(request);
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.output.clone(),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -774,16 +771,13 @@ fn plan_mode_checkpoint_pins_source_and_packet_when_workflow_settings_change() {
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({
                 "scope": "only this change",
                 "planArtifact": "artifact:sealed-plan",
                 "planArtifactSha256": "deadbeef"
             }),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     );
     let checkpoint = engine.prepare_stop_checkpoint();
@@ -864,12 +858,9 @@ fn checkpoint_rejects_tampered_frozen_change_evidence_packet() {
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     );
     let mut checkpoint = engine.prepare_stop_checkpoint();
@@ -901,12 +892,9 @@ fn checkpoint_rejects_packet_from_a_node_other_than_the_pinned_source() {
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     );
     let mut checkpoint = engine.prepare_stop_checkpoint();
@@ -1034,12 +1022,9 @@ fn plan_source_cannot_complete_before_an_approved_seal_succeeds() {
     engine.test_deliver_ai(
         &planner_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({ "scope": "not approved" }),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     );
 
@@ -1567,12 +1552,9 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
             usage: None,
         })),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     ]);
 
@@ -1642,12 +1624,9 @@ fn yolo_mode_skips_tool_approval() {
             usage: None,
         })),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     ]);
 
@@ -1695,12 +1674,9 @@ fn runtime_approval_patch_applies_before_tool_decision() {
     );
 
     let ai = ScriptedAi::new(vec![Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-        handoff: None,
         output: json!({"summary": "ok"}),
         raw_text: "{}".to_string(),
-        assistant_message: None,
-        reasoning: Vec::new(),
-        usage: None,
+        ..Default::default()
     }))]);
     block_on(async {
         assert!(
@@ -1721,12 +1697,9 @@ fn misrouted_completion_is_rejected() {
     engine.on_ai_complete(
         &NodeId::from("other"),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "wrong"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })),
     );
 
@@ -1816,9 +1789,7 @@ fn checkpoint_roundtrip_preserves_node_handoff() {
             handoff: Some(handoff.clone()),
             output: json!({"summary": "done"}),
             raw_text: String::new(),
-            assistant_message: None,
-            reasoning: vec![],
-            usage: None,
+            ..Default::default()
         })),
     );
 
@@ -1890,12 +1861,9 @@ impl AiPort for BarrierAi {
         // Completes only when both nodes' invocations are in flight simultaneously.
         self.barrier.wait().await;
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({ "node": request.node_id.0 }),
             raw_text: String::new(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -1932,12 +1900,9 @@ impl AiPort for ToolOverlapAi {
             // Held open until node a's tool batch reaches the same barrier.
             self.barrier.wait().await;
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "node": "b" }),
                 raw_text: String::new(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }));
         }
         let has_tool_result = request
@@ -1946,12 +1911,9 @@ impl AiPort for ToolOverlapAi {
             .any(|item| matches!(item, AgentTranscriptItem::ToolResult { .. }));
         if has_tool_result {
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "node": "a" }),
                 raw_text: String::new(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }));
         }
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
@@ -2089,12 +2051,9 @@ fn tool_batch_effects_are_recorded_on_engine() {
                 )],
             })),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "ok": true }),
                 raw_text: String::new(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         ]);
         let cancel = CancellationToken::new();

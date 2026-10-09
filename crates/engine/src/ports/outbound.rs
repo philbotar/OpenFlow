@@ -89,7 +89,7 @@ pub struct UsageReport {
     pub cache_creation_input_tokens: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentTurnSuccess {
     pub handoff: Option<crate::execution::HandoffArtifact>,
     pub output: Value,

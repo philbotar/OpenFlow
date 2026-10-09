@@ -164,11 +164,8 @@ async fn adapter_emits_provider_usage_with_context_window() {
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
                 usage: Some(engine::UsageReport {
                     prompt_tokens: 10_000,
                     completion_tokens: 2_400,
@@ -176,6 +173,7 @@ async fn adapter_emits_provider_usage_with_context_window() {
                     cached_input_tokens: 8_000,
                     cache_creation_input_tokens: 1_000,
                 }),
+                ..Default::default()
             }))
         }
     }
@@ -234,14 +232,12 @@ async fn adapter_materializes_markdown_handoff_before_returning_completion() {
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "markdown": "# Handoff\n\n## Summary\nDone.\n\n## Risks\nNone.\n"
                 }),
                 raw_text: "{}".to_string(),
                 assistant_message: Some("Research complete.".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -305,12 +301,9 @@ async fn adapter_rejects_markdown_handoff_missing_template_heading() {
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "markdown": "# Handoff\n\n## Summary\nDone.\n" }),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -988,12 +981,9 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let mut calls = self.calls.lock();
@@ -1017,12 +1007,9 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1063,12 +1050,9 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let mut calls = self.calls.lock();
@@ -1095,12 +1079,9 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
             });
             assert!(saw_error, "model should see not_found tool error");
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "recovered"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1627,12 +1608,9 @@ async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
                 self.calls.fetch_add(1, Ordering::SeqCst);
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1873,12 +1851,9 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
         ) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -1893,12 +1868,9 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
                 "retry request should include the new user message"
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1974,12 +1946,9 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
         ) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -2004,12 +1973,9 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
                 "next model request must include the live user message"
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2087,12 +2053,9 @@ async fn headless_retries_transient_node_error() {
                 return Err(AgentError::Transient("timeout".to_string()));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2235,12 +2198,9 @@ fn question_then_complete(request: &AgentRequest) -> AgentTurnOutcome {
         })
     } else {
         AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "done"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })
     }
 }
@@ -2556,12 +2516,9 @@ async fn stopped_run_continuation_retries_node_with_message() {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "resumed"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2682,12 +2639,9 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2822,12 +2776,9 @@ async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
                 model: "repair-m".into(),
             });
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".into(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2944,7 +2895,6 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
         steps: StdMutex::new(vec![
             Err(primary_err),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "repaired_arguments": {
                         "output": { "summary": "repaired" }
@@ -2952,8 +2902,7 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         ]),
         captured: Arc::new(StdMutex::new(Vec::new())),

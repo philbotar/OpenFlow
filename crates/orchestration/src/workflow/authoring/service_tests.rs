@@ -20,12 +20,10 @@ struct MockAuthoringAi {
 impl AiPort for MockAuthoringAi {
     async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -40,12 +38,10 @@ impl AiPort for CapturingPromptAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         *self.system_messages.lock().expect("system messages lock") = request.system_messages;
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -235,19 +231,12 @@ impl AiPort for ProposalThenToolsAi {
             .iter()
             .any(|tool| tool.name == "openflow_set_workflow_meta"));
         match call {
-            0 if self.first_completed => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({
+            0 if self.first_completed => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output: json!({
                     "assistantMessage": "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
-                }),
-                raw_text: String::new(),
-                assistant_message: Some(
+                }), raw_text: String::new(), assistant_message: Some(
                     "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
                         .to_string(),
-                ),
-                reasoning: Vec::new(),
-                usage: None,
-            })),
+                ), ..Default::default() })),
             0 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
                 raw_text: "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
                     .to_string(),
@@ -263,14 +252,7 @@ impl AiPort for ProposalThenToolsAi {
                 reasoning: Vec::new(),
                 usage: None,
             })),
-            2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({ "assistantMessage": "Proposed a workflow for review." }),
-                raw_text: String::new(),
-                assistant_message: Some("Proposed a workflow for review.".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
-            })),
+            2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output: json!({ "assistantMessage": "Proposed a workflow for review." }), raw_text: String::new(), assistant_message: Some("Proposed a workflow for review.".to_string()), ..Default::default() })),
             _ => panic!("unexpected proposal authoring invoke count {call}"),
         }
     }
@@ -455,12 +437,10 @@ impl AiPort for ProjectReadToolsAi {
                 );
                 let output = single_node_draft("Repo-aware Flow", "root", "Root");
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: output.clone(),
                     raw_text: output.to_string(),
                     assistant_message: Some("Built a repo-aware workflow.".to_string()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             _ => panic!("unexpected project authoring invoke count {call}"),
@@ -576,12 +556,10 @@ impl AiPort for IncrementalAuthoringAi {
                     "expected authoring tools on request"
                 );
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({ "assistantMessage": "Built a two-step workflow." }),
                     raw_text: String::new(),
                     assistant_message: Some("Built a two-step workflow.".to_string()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             _ => panic!("unexpected authoring invoke count {call}"),
@@ -669,12 +647,10 @@ impl AiPort for MixedToolTurnRetryAi {
                 }))
             }
             2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "assistantMessage": "Built a one-step workflow." }),
                 raw_text: String::new(),
                 assistant_message: Some("Built a one-step workflow.".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
             _ => panic!("unexpected authoring invoke count {call}"),
         }
@@ -760,12 +736,10 @@ impl AiPort for MultiTurnMockAi {
             single_node_draft("Draft v2", "root", "Root Updated")
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Updated draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -873,12 +847,10 @@ impl AiPort for ClarificationThenDraftAi {
             }))
         } else {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1021,12 +993,10 @@ impl AiPort for MalformedSubmitThenDraftAi {
             "expected malformed-submit feedback in transcript"
         );
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.draft_response.clone(),
             raw_text: self.draft_response.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -1049,12 +1019,10 @@ async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
                 ));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1210,12 +1178,10 @@ impl AiPort for InvalidDraftThenValidAi {
             single_node_draft("Demo", "root", "Root")
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }

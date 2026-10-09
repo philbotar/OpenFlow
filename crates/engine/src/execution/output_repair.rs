@@ -398,7 +398,6 @@ mod tests {
 
     fn good_repair_outcome() -> AgentTurnOutcome {
         AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({
                 "repaired_arguments": {
                     "output": { "summary": "fixed" },
@@ -407,8 +406,7 @@ mod tests {
             }),
             raw_text: "{}".into(),
             assistant_message: Some("overseer prose".into()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })
     }
 
@@ -524,12 +522,9 @@ mod tests {
         let inner = ScriptedInner::new(vec![
             Err(primary),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"not_repaired": true}),
                 raw_text: "{}".into(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         ]);
         let port = RepairingAiPort::new(inner, OutputRepairPolicy::default());

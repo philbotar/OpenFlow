@@ -288,7 +288,6 @@ mod tests {
             assert!(request.available_tools.is_empty());
             assert!(request.system_messages[0].contains("reusable OpenFlow saved agent"));
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "name": "Research Reviewer",
                     "systemPrompt": "You review research with a skeptical eye.",
@@ -296,9 +295,7 @@ mod tests {
                     "outputSchemaJson": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"findings\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"findings\"]}"
                 }),
                 raw_text: String::new(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }

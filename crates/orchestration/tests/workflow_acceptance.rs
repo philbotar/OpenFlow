@@ -140,24 +140,19 @@ async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             if request.node_id == "research" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({
                         "markdown": "# Handoff\n\n## Summary\nVerified ORCHID-91.\n"
                     }),
                     raw_text: "{}".to_string(),
                     assistant_message: Some("Research complete.".to_string()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
 
@@ -175,12 +170,9 @@ async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
             if let Some(content) = read_result {
                 assert!(content.contains("Verified ORCHID-91."));
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"summary": "consumed ORCHID-91 handoff"}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
 
@@ -231,12 +223,9 @@ async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
             self.requests.lock().push(request.clone());
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             match &*request.node_id {
@@ -259,25 +248,20 @@ async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
                         })
                         .unwrap();
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                        handoff: None,
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: Some("Locked. Advancing.".to_string()),
-                        reasoning: Vec::new(),
-                        usage: None,
+                        ..Default::default()
                     }))
                 }
                 "final" => {
                     assert_eq!(request.input["upstream"][0]["node_id"], "human-review");
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                        handoff: None,
                         output: json!({
                             "summary": request.input["upstream"][0]["output"]["summary"]
                         }),
                         raw_text: "{}".to_string(),
-                        assistant_message: None,
-                        reasoning: Vec::new(),
-                        usage: None,
+                        ..Default::default()
                     }))
                 }
                 _ => unreachable!(),
@@ -351,12 +335,9 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
                         })
                         .expect("second answer");
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                        handoff: None,
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
-                        assistant_message: None,
-                        reasoning: Vec::new(),
-                        usage: None,
+                        ..Default::default()
                     }))
                 }
             }
@@ -417,12 +398,9 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let call_number = {
@@ -456,12 +434,9 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "tool verified ORCHID-91"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -523,12 +498,9 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let call_number = {
@@ -555,12 +527,9 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "draft saved ORCHID-91"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -629,12 +598,9 @@ impl AiPort for CheckpointWriteToolAi {
         use std::sync::atomic::Ordering;
         if request.node_id == "__post_run_review" {
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"suggestions": []}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }));
         }
         let call_number = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
@@ -657,12 +623,9 @@ impl AiPort for CheckpointWriteToolAi {
             .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
         assert!(saw_tool_result);
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "draft saved ORCHID-91"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -817,12 +780,9 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let n = {
@@ -848,12 +808,9 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 engine::AgentTranscriptItem::ToolResult { result } if result.is_error
             )));
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok after tool error"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -899,12 +856,9 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let n = {
@@ -951,12 +905,9 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 result.content
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok after search path error"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1031,16 +982,13 @@ impl AiPort for OutputRepairAcceptanceAi {
         if node_id.ends_with("__output_repair") {
             if self.invalid_repair {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"not_repaired": true}),
                     raw_text: "{}".into(),
                     assistant_message: Some("overseer prose".into()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "repaired_arguments": {
                         "output": { "summary": "FIXED-REPAIR" }
@@ -1048,8 +996,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }));
         }
 
@@ -1078,12 +1025,9 @@ impl AiPort for OutputRepairAcceptanceAi {
                     ));
                 }
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"summary": "should-not-reach-without-repair"}),
                     raw_text: "{}".into(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             "down" => {
@@ -1094,7 +1038,6 @@ impl AiPort for OutputRepairAcceptanceAi {
                     "downstream must receive repaired root output"
                 );
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({
                         "summary": format!(
                             "down saw {}",
@@ -1102,18 +1045,13 @@ impl AiPort for OutputRepairAcceptanceAi {
                         )
                     }),
                     raw_text: "{}".into(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             other => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": format!("unexpected {other}")}),
                 raw_text: "{}".into(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         }
     }
