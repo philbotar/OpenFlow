@@ -419,6 +419,7 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
     assert!(user_messages(&requests[1])
         .iter()
         .any(|m| m.contains("mixed harness and executable tools") && m.contains("write")));
+    drop(requests);
 }
 
 #[tokio::test]
@@ -450,6 +451,7 @@ async fn output_truncation_retries_with_small_write_feedback() {
     assert!(feedback.contains("smaller"));
     assert!(!feedback.contains("secret partial"));
     assert!(!feedback.contains("docs/large.md"));
+    drop(requests);
 }
 
 #[test]

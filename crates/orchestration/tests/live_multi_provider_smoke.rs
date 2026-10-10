@@ -272,7 +272,6 @@ fn assert_provider_output(
     Ok(())
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "manual only: run ./scripts/smoke-live-multi-provider.sh"]
 async fn saved_profiles_complete_one_mixed_provider_workflow() {

@@ -71,7 +71,6 @@ async fn run_ab_variant(forward_upstream_reads: bool, cwd: PathBuf) -> AbReport 
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn downstream_input_includes_upstream_read_outline() {
     let dir = TempDir::new().expect("tempdir");
@@ -108,7 +107,6 @@ async fn downstream_input_includes_upstream_read_outline() {
         .is_some_and(|outline| outline.contains("pub fn hello")));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn ab_harness_reports_redundant_read_drop_with_identical_outputs() {
     let dir = TempDir::new().expect("tempdir");
@@ -133,7 +131,6 @@ async fn ab_harness_reports_redundant_read_drop_with_identical_outputs() {
     assert_eq!(treatment.redundant_reads, 0);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn downstream_raw_read_still_dispatched_when_bytes_needed() {
     let dir = TempDir::new().expect("tempdir");

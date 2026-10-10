@@ -677,7 +677,6 @@ mod tests {
         ));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_opens_materialized_run_handoff() {
         let dir = tempfile::tempdir().unwrap();
@@ -757,8 +756,6 @@ mod tests {
             .contains("only one todo may be in_progress"));
     }
 
-    // ponytail: ToolRunner::new builds reqwest→aws-lc (FFI Miri rejects); also spawns subprocess
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn web_search_runs_fake_binary_with_injected_env() {
         use std::os::unix::fs::PermissionsExt;

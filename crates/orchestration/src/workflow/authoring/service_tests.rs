@@ -46,7 +46,6 @@ impl AiPort for CapturingPromptAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_materializes_valid_draft() {
     let ai = MockAuthoringAi {
@@ -144,7 +143,6 @@ impl AiPort for CapturingRuntimeAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_applies_authoring_runtime_config() {
     let ai = CapturingRuntimeAi {
@@ -186,7 +184,6 @@ async fn send_turn_applies_authoring_runtime_config() {
     assert!(request.fast_mode);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_keeps_informational_questions_in_chat() {
     let service = WorkflowAuthoringService::new();
@@ -285,13 +282,11 @@ async fn assert_proposal_text_requires_a_real_draft(first_completed: bool) {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 3);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submitted_proposal_text_is_retried_until_a_real_draft_exists() {
     assert_proposal_text_requires_a_real_draft(true).await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn plain_proposal_text_is_retried_until_a_real_draft_exists() {
     assert_proposal_text_requires_a_real_draft(false).await;
@@ -334,7 +329,6 @@ fn only_direct_workflow_change_requests_enable_authoring_tools() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn project_authoring_uses_project_specific_preamble() {
     let project_dir = tempfile::tempdir().expect("project tempdir");
@@ -448,7 +442,6 @@ impl AiPort for ProjectReadToolsAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn project_authoring_exposes_and_executes_read_tools() {
     let project_dir = tempfile::tempdir().expect("project tempdir");
@@ -567,7 +560,6 @@ impl AiPort for IncrementalAuthoringAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_builds_draft_via_incremental_authoring_tools() {
     let ai = IncrementalAuthoringAi {
@@ -657,7 +649,6 @@ impl AiPort for MixedToolTurnRetryAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_mixed_tool_turn_and_materializes_draft() {
     let ai = MixedToolTurnRetryAi {
@@ -744,7 +735,6 @@ impl AiPort for MultiTurnMockAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_preserves_session_for_follow_up_messages() {
     let ai = MultiTurnMockAi {
@@ -784,7 +774,6 @@ async fn send_turn_preserves_session_for_follow_up_messages() {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_accepts_flat_draft_fields_in_output() {
     let ai = MockAuthoringAi {
@@ -856,7 +845,6 @@ impl AiPort for ClarificationThenDraftAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_returns_clarification_for_the_next_user_turn() {
     let draft_response = json!({
@@ -935,7 +923,6 @@ impl AiPort for AlwaysClarifyAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_returns_assistant_message_when_model_requests_clarification() {
     let ai = AlwaysClarifyAi;
@@ -1001,7 +988,6 @@ impl AiPort for MalformedSubmitThenDraftAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
     struct MissingSubmitThenDraftAi {
@@ -1080,7 +1066,6 @@ async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_malformed_submit_output_and_materializes_draft() {
     let draft_response = json!({
@@ -1186,7 +1171,6 @@ impl AiPort for InvalidDraftThenValidAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_invalid_draft_until_it_converges() {
     let ai = InvalidDraftThenValidAi {

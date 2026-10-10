@@ -289,7 +289,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn stopping_terminal_kills_foreground_command_descendants() {
         use nix::sys::signal::{kill, killpg, Signal};

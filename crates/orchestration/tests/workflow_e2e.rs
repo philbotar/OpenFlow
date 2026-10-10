@@ -12,7 +12,6 @@ use support::{
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn happy_path_linear_workflow() {
     let ai = MockAiStack::from_invocation_order([
@@ -40,7 +39,6 @@ async fn happy_path_linear_workflow() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn branch_join_completes_with_scripted_stack() {
     let ai = MockAiStack::from_invocation_order([
@@ -65,7 +63,6 @@ async fn branch_join_completes_with_scripted_stack() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn transient_then_success_auto_retries() {
     let ai = MockAiStack::from_invocation_order([
@@ -99,7 +96,6 @@ async fn transient_then_success_auto_retries() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn permanent_failure_surfaces_missing_retry() {
     let ai = MockAiStack::from_invocation_order([MockTurn::permanent("boom")]);
@@ -114,7 +110,6 @@ async fn permanent_failure_surfaces_missing_retry() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn exhausted_stack_fails_cleanly() {
     let ai = MockAiStack::empty();
@@ -126,7 +121,6 @@ async fn exhausted_stack_fails_cleanly() {
     assert!(matches!(error, WorkflowExecutionError::MissingRetry(node_id) if node_id.0 == "first"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn invalid_output_schema_completes_without_panic() {
     let ai = MockAiStack::from_invocation_order([MockTurn::ok_json(json!({"wrong_field": "x"}))]);
@@ -141,7 +135,6 @@ async fn invalid_output_schema_completes_without_panic() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn unanswered_node_question_surfaces_typed_error() {
     let ai = MockAiStack::from_invocation_order([MockTurn::NeedsUserInput {
@@ -168,7 +161,6 @@ async fn unanswered_node_question_surfaces_typed_error() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn missing_approval_surfaces_typed_error() {
     let ai = MockAiStack::from_invocation_order([MockTurn::tool_read("README.md")]);
@@ -183,7 +175,6 @@ async fn missing_approval_surfaces_typed_error() {
     assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn interrupt_during_slow_tool_emits_node_interrupted() {
     let temp = TempDir::new().expect("tempdir");

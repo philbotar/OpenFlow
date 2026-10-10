@@ -152,7 +152,6 @@ API key precedence: transient input → stored `ProviderProfile.api_key` → env
 ./scripts/check-fast.sh orchestration
 cargo nextest run -p orchestration
 cargo nextest run -p orchestration --test workflow_acceptance --no-capture
-./scripts/miri.sh   # nightly Miri (orchestration + engine; see docs/contributing/testing-workflows.md)
 ```
 
 `bedrock` is off by default here (no AWS SDK). Desktop enables it for the app.

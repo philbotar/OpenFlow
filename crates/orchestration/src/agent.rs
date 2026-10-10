@@ -300,7 +300,6 @@ mod tests {
         }
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn create_with_ai_materializes_and_persists_agent() {
         let store = MemoryAgentStore::default();
@@ -324,7 +323,6 @@ mod tests {
         assert_eq!(store.load().expect("load agents"), vec![agent]);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn create_with_ai_rejects_empty_description_before_invocation() {
         let library = AgentLibrary::new(Box::new(MemoryAgentStore::default()));

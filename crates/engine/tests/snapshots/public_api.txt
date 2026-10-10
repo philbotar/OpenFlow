@@ -3857,8 +3857,8 @@ pub fn engine::graph::workflow::EdgeId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl core::hash::Hash for engine::graph::workflow::EdgeId
 pub fn engine::graph::workflow::EdgeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::EdgeId
-impl core::ops::deref::Deref for engine::graph::workflow::EdgeId
-pub type engine::graph::workflow::EdgeId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::EdgeId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::EdgeId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::EdgeId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::EdgeId
 pub fn engine::graph::workflow::EdgeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -4143,8 +4143,8 @@ pub fn engine::graph::workflow::NodeId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl core::hash::Hash for engine::graph::workflow::NodeId
 pub fn engine::graph::workflow::NodeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::NodeId
-impl core::ops::deref::Deref for engine::graph::workflow::NodeId
-pub type engine::graph::workflow::NodeId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::NodeId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::NodeId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::NodeId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::NodeId
 pub fn engine::graph::workflow::NodeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -4417,8 +4417,8 @@ pub fn engine::graph::workflow::WorkflowId::fmt(&self, &mut core::fmt::Formatter
 impl core::hash::Hash for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::WorkflowId
-impl core::ops::deref::Deref for engine::graph::workflow::WorkflowId
-pub type engine::graph::workflow::WorkflowId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::WorkflowId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::WorkflowId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::WorkflowId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -5054,8 +5054,8 @@ pub fn engine::graph::workflow::EdgeId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl core::hash::Hash for engine::graph::workflow::EdgeId
 pub fn engine::graph::workflow::EdgeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::EdgeId
-impl core::ops::deref::Deref for engine::graph::workflow::EdgeId
-pub type engine::graph::workflow::EdgeId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::EdgeId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::EdgeId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::EdgeId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::EdgeId
 pub fn engine::graph::workflow::EdgeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -5340,8 +5340,8 @@ pub fn engine::graph::workflow::NodeId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl core::hash::Hash for engine::graph::workflow::NodeId
 pub fn engine::graph::workflow::NodeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::NodeId
-impl core::ops::deref::Deref for engine::graph::workflow::NodeId
-pub type engine::graph::workflow::NodeId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::NodeId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::NodeId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::NodeId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::NodeId
 pub fn engine::graph::workflow::NodeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -5665,8 +5665,8 @@ pub fn engine::graph::workflow::WorkflowId::fmt(&self, &mut core::fmt::Formatter
 impl core::hash::Hash for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::WorkflowId
-impl core::ops::deref::Deref for engine::graph::workflow::WorkflowId
-pub type engine::graph::workflow::WorkflowId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::WorkflowId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::WorkflowId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::WorkflowId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -11359,8 +11359,8 @@ pub fn engine::graph::workflow::EdgeId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl core::hash::Hash for engine::graph::workflow::EdgeId
 pub fn engine::graph::workflow::EdgeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::EdgeId
-impl core::ops::deref::Deref for engine::graph::workflow::EdgeId
-pub type engine::graph::workflow::EdgeId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::EdgeId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::EdgeId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::EdgeId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::EdgeId
 pub fn engine::graph::workflow::EdgeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -12212,8 +12212,8 @@ pub fn engine::graph::workflow::NodeId::fmt(&self, &mut core::fmt::Formatter<'_>
 impl core::hash::Hash for engine::graph::workflow::NodeId
 pub fn engine::graph::workflow::NodeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::NodeId
-impl core::ops::deref::Deref for engine::graph::workflow::NodeId
-pub type engine::graph::workflow::NodeId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::NodeId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::NodeId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::NodeId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::NodeId
 pub fn engine::graph::workflow::NodeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
@@ -13870,8 +13870,8 @@ pub fn engine::graph::workflow::WorkflowId::fmt(&self, &mut core::fmt::Formatter
 impl core::hash::Hash for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for engine::graph::workflow::WorkflowId
-impl core::ops::deref::Deref for engine::graph::workflow::WorkflowId
-pub type engine::graph::workflow::WorkflowId::Target = str
+impl core::ops::deref::Deref for engine::graph::workflow::WorkflowId where alloc::string::String: core::ops::deref::Deref
+pub type engine::graph::workflow::WorkflowId::Target = <alloc::string::String as core::ops::deref::Deref>::Target
 pub fn engine::graph::workflow::WorkflowId::deref(&self) -> &Self::Target
 impl serde_core::ser::Serialize for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer

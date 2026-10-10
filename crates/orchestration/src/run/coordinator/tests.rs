@@ -347,7 +347,6 @@ fn workflow_hash_detects_changed_workflow_for_resume_guard() {
 
 // ── read-only queries ────────────────────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn get_run_state_and_current_run_id_reflect_session() {
     let dir = tempdir().expect("tempdir");
@@ -374,7 +373,6 @@ async fn get_run_state_and_current_run_id_reflect_session() {
     assert!(coordinator.is_run_active().await);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn is_run_continuable_requires_stopped_run_with_checkpoint() {
     let dir = tempdir().expect("tempdir");
@@ -399,7 +397,6 @@ async fn is_run_continuable_requires_stopped_run_with_checkpoint() {
 
 // ── stop / clear ─────────────────────────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_run_is_idempotent_when_inactive() {
     let dir = tempdir().expect("tempdir");
@@ -415,7 +412,6 @@ async fn stop_run_is_idempotent_when_inactive() {
     assert!(!snapshot.active);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_run_aborts_orphaned_active_session_without_handle() {
     let dir = tempdir().expect("tempdir");
@@ -432,7 +428,6 @@ async fn stop_run_aborts_orphaned_active_session_without_handle() {
     assert!(!stopped.active);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn clear_run_trace_preserves_chat_and_outputs() {
     let dir = tempdir().expect("tempdir");
@@ -469,7 +464,6 @@ async fn clear_run_trace_preserves_chat_and_outputs() {
     assert!(cleared.outputs.contains_key(&node_id_for_assert));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn clear_run_trace_rejects_an_active_run() {
     let dir = tempdir().expect("tempdir");
@@ -492,7 +486,6 @@ async fn clear_run_trace_rejects_an_active_run() {
     assert!(coordinator.is_run_active().await);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn aborted_event_preserves_user_stopped_checkpoint_for_continue() {
     let dir = tempdir().expect("tempdir");
@@ -524,7 +517,6 @@ async fn aborted_event_preserves_user_stopped_checkpoint_for_continue() {
     assert!(coordinator.is_run_continuable().await);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_run_persists_user_stopped_checkpoint_before_returning() {
     let dir = tempdir().expect("tempdir");
@@ -574,7 +566,6 @@ async fn stop_run_persists_user_stopped_checkpoint_before_returning() {
     assert_eq!(checkpoint.reason, RunCheckpointReason::UserStopped);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn checkpoint_waits_for_pause_projection_before_persisting() {
     let dir = tempdir().expect("tempdir");
@@ -666,7 +657,6 @@ async fn checkpoint_waits_for_pause_projection_before_persisting() {
 
 // ── replay / list ────────────────────────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn replay_run_returns_inactive_projection_without_pending_actions() {
     let dir = tempdir().expect("tempdir");
@@ -699,7 +689,6 @@ async fn replay_run_returns_inactive_projection_without_pending_actions() {
     assert!(replay.pending_approvals.is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn replay_run_errors_when_run_or_checkpoint_missing() {
     let dir = tempdir().expect("tempdir");
@@ -724,7 +713,6 @@ async fn replay_run_errors_when_run_or_checkpoint_missing() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn list_runs_delegates_to_store() {
     let dir = tempdir().expect("tempdir");
@@ -745,7 +733,6 @@ async fn list_runs_delegates_to_store() {
 
 // ── start / continue / durable resume ────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_spawns_active_session_and_persists_record() {
     let stores = local_stores();
@@ -777,7 +764,6 @@ async fn start_run_spawns_active_session_and_persists_record() {
     assert!(!stopped.active);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_persists_natural_language_name_from_entrypoint() {
     let stores = local_stores();
@@ -805,7 +791,6 @@ async fn start_run_persists_natural_language_name_from_entrypoint() {
     coordinator.stop_run().await.expect("stop run");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_resolves_task_prompt_skill_into_durable_workflow_snapshot() {
     let mut stores = local_stores();
@@ -843,7 +828,6 @@ async fn start_run_resolves_task_prompt_skill_into_durable_workflow_snapshot() {
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_persists_mcp_context_resolution_once_in_durable_workflow_snapshot() {
     let stores = local_stores();
@@ -888,7 +872,6 @@ async fn start_run_persists_mcp_context_resolution_once_in_durable_workflow_snap
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_applies_chat_skill_ids_to_root_system_prompt() {
     let mut stores = local_stores();
@@ -919,7 +902,6 @@ async fn start_run_applies_chat_skill_ids_to_root_system_prompt() {
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_ingests_entrypoint_attachment_into_projection_and_checkpoint() {
     let stores = local_stores();
@@ -964,7 +946,6 @@ async fn start_run_ingests_entrypoint_attachment_into_projection_and_checkpoint(
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn start_run_rejects_unknown_task_prompt_skill() {
     let stores = local_stores();
@@ -983,7 +964,6 @@ async fn start_run_rejects_unknown_task_prompt_skill() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn continue_run_resumes_from_in_session_checkpoint() {
     let stores = local_stores();
@@ -1024,7 +1004,6 @@ async fn continue_run_resumes_from_in_session_checkpoint() {
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn continue_run_rejects_active_or_missing_checkpoint() {
     let stores = local_stores();
@@ -1075,7 +1054,6 @@ async fn continue_run_rejects_active_or_missing_checkpoint() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resume_durable_run_uses_recorded_workflow_snapshot() {
     let stores = local_stores();
@@ -1111,7 +1089,6 @@ async fn resume_durable_run_uses_recorded_workflow_snapshot() {
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resume_durable_run_restores_active_session() {
     let stores = local_stores();
@@ -1155,7 +1132,6 @@ async fn resume_durable_run_restores_active_session() {
     let _ = coordinator.stop_run().await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resume_durable_run_with_continuation_projects_user_message() {
     let stores = local_stores();
@@ -1222,7 +1198,6 @@ async fn resume_durable_run_with_continuation_projects_user_message() {
 
 // ── interaction ──────────────────────────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_user_input_appends_chat_and_sends_action() {
     let dir = tempdir().expect("tempdir");
@@ -1279,7 +1254,6 @@ async fn submit_user_input_appends_chat_and_sends_action() {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_user_input_retries_failed_node_with_new_message() {
     let dir = tempdir().expect("tempdir");
@@ -1317,7 +1291,6 @@ async fn submit_user_input_retries_failed_node_with_new_message() {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_user_input_accepts_active_conversation_node() {
     let dir = tempdir().expect("tempdir");
@@ -1352,7 +1325,6 @@ async fn submit_user_input_accepts_active_conversation_node() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_user_message_copies_attachment_and_sends_same_ref_atomically() {
     let dir = tempdir().expect("tempdir");
@@ -1409,7 +1381,6 @@ async fn submit_user_message_copies_attachment_and_sends_same_ref_atomically() {
         .exists());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_user_input_validates_awaiting_node() {
     let dir = tempdir().expect("tempdir");
@@ -1430,7 +1401,6 @@ async fn submit_user_input_validates_awaiting_node() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_tool_approval_sends_resolve_action() {
     let dir = tempdir().expect("tempdir");
@@ -1470,7 +1440,6 @@ async fn submit_tool_approval_sends_resolve_action() {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submit_tool_approval_rejects_unknown_id() {
     let dir = tempdir().expect("tempdir");
@@ -1491,7 +1460,6 @@ async fn submit_tool_approval_rejects_unknown_id() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resolve_mcp_client_request_rejects_stale_id_then_sends_matching_action() {
     let dir = tempdir().expect("tempdir");
@@ -1548,7 +1516,6 @@ async fn resolve_mcp_client_request_rejects_stale_id_then_sends_matching_action(
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn interrupt_node_cancels_registered_token() {
     let dir = tempdir().expect("tempdir");
@@ -1582,7 +1549,6 @@ async fn interrupt_node_cancels_registered_token() {
     assert!(token.is_cancelled());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn interrupt_node_rejects_non_running_nodes() {
     let dir = tempdir().expect("tempdir");
@@ -1600,7 +1566,6 @@ async fn interrupt_node_rejects_non_running_nodes() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn retry_node_sends_action_for_failed_node() {
     let dir = tempdir().expect("tempdir");
@@ -1629,7 +1594,6 @@ async fn retry_node_sends_action_for_failed_node() {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn retry_node_rejects_non_failed_nodes() {
     let dir = tempdir().expect("tempdir");
@@ -1649,7 +1613,6 @@ async fn retry_node_rejects_non_failed_nodes() {
 
 // ── execution events ────────────────────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn apply_execution_event_ignores_events_after_run_stopped() {
     let dir = tempdir().expect("tempdir");
@@ -1681,7 +1644,6 @@ async fn apply_execution_event_ignores_events_after_run_stopped() {
     assert!(snapshot.run_trace.is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn apply_execution_event_finishes_session_on_run_complete() {
     let dir = tempdir().expect("tempdir");
@@ -1705,7 +1667,6 @@ async fn apply_execution_event_finishes_session_on_run_complete() {
 
 // ── edit / git helpers ───────────────────────────────────────────────────────
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn git_diff_file_requires_execution_cwd() {
     let dir = tempdir().expect("tempdir");
@@ -1726,7 +1687,6 @@ async fn git_diff_file_requires_execution_cwd() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn preview_file_edit_rejects_mismatched_tool_name() {
     let dir = tempdir().expect("tempdir");
@@ -1757,7 +1717,6 @@ async fn preview_file_edit_rejects_mismatched_tool_name() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn revert_edit_batch_requires_known_batch() {
     let dir = tempdir().expect("tempdir");

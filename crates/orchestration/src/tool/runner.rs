@@ -550,7 +550,6 @@ mod tests {
         })
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_file_selector_returns_numbered_lines() {
         let dir = tempfile::tempdir().unwrap();
@@ -571,7 +570,6 @@ mod tests {
         assert!(record.result.content.contains("3:c"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_file_without_selector_announces_truncation() {
         let dir = tempfile::tempdir().unwrap();
@@ -600,7 +598,6 @@ mod tests {
             .contains("use :{start}-{end} or :raw to read more"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn search_finds_matching_lines() {
         let dir = tempfile::tempdir().unwrap();
@@ -620,7 +617,6 @@ mod tests {
         assert!(record.result.content.contains("note.txt:2:beta"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn write_creates_file_under_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -663,7 +659,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn edit_replaces_text_in_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -693,7 +688,6 @@ mod tests {
         assert_eq!(record.file_changes[0].op, engine::FileChangeOp::Update);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn write_rejects_path_outside_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -712,7 +706,6 @@ mod tests {
         assert!(error.to_string().contains("path escapes execution folder"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn write_rejects_no_op_overwrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -736,7 +729,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn edit_rejects_path_outside_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -759,7 +751,6 @@ mod tests {
         assert!(error.to_string().contains("path escapes execution folder"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn apply_patch_creates_file_under_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -796,7 +787,6 @@ mod tests {
         }
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn repeated_read_across_nodes_serves_cached_content_with_provenance() {
         let dir = tempfile::tempdir().unwrap();
@@ -819,7 +809,6 @@ mod tests {
         assert_eq!(second.result.tool_call_id, "call-2");
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn repeated_read_in_same_conversation_omits_content() {
         let dir = tempfile::tempdir().unwrap();
@@ -839,7 +828,6 @@ mod tests {
         assert!(!second.result.content.contains("alpha"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_cache_invalidated_when_file_changes() {
         let dir = tempfile::tempdir().unwrap();
@@ -858,7 +846,6 @@ mod tests {
         assert!(second.result.content.contains("2:gamma"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn search_cache_invalidated_by_write_tool() {
         let dir = tempfile::tempdir().unwrap();
@@ -899,7 +886,6 @@ mod tests {
         assert!(after_write.result.content.contains("other.txt"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bump_cache_epoch_invalidates_search_entries() {
         let dir = tempfile::tempdir().unwrap();
@@ -924,7 +910,6 @@ mod tests {
         assert!(!after_bump.result.content.contains("[cached]"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_artifact_round_trip_and_unknown_id() {
         let dir = tempfile::tempdir().unwrap();
@@ -961,7 +946,6 @@ mod tests {
             .contains("artifacts only live for the current run"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn plan_draft_write_edit_and_seal_stay_out_of_the_repository() {
         let dir = tempfile::tempdir().unwrap();
@@ -1034,7 +1018,6 @@ mod tests {
         assert_eq!(read.result.content, markdown);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_without_context_bypasses_cache() {
         let dir = tempfile::tempdir().unwrap();
@@ -1051,7 +1034,6 @@ mod tests {
         assert!(!second.result.content.contains("[cached]"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn partial_apply_patch_returns_file_changes_without_ledger_leak() {
         let dir = tempfile::tempdir().unwrap();
@@ -1106,7 +1088,6 @@ mod tests {
         assert_eq!(write_record.file_changes[0].path, "after.txt");
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn external_tool_result_preserves_error_status() {
         let dir = tempfile::tempdir().unwrap();
@@ -1126,7 +1107,6 @@ mod tests {
         assert!(record.result.is_error);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn mcp_execute_without_clients_returns_error() {
         let dir = tempfile::tempdir().unwrap();

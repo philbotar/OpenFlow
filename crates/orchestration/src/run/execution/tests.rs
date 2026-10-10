@@ -147,7 +147,6 @@ fn sample_agent_request() -> AgentRequest {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_emits_provider_usage_with_context_window() {
     struct UsageAi;
@@ -215,7 +214,6 @@ async fn adapter_emits_provider_usage_with_context_window() {
     assert_eq!(max_context_tokens, Some(200_000));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_materializes_markdown_handoff_before_returning_completion() {
     struct MarkdownAi;
@@ -284,7 +282,6 @@ async fn adapter_materializes_markdown_handoff_before_returning_completion() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_rejects_markdown_handoff_missing_template_heading() {
     struct IncompleteMarkdownAi;
@@ -347,7 +344,6 @@ async fn adapter_rejects_markdown_handoff_missing_template_heading() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     struct StreamingNeedsInputAi;
@@ -416,7 +412,6 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_does_not_repeat_streamed_prefix_in_input_request() {
     struct StreamingRepeatedAnswerAi;
@@ -965,7 +960,6 @@ fn reducer_tracks_tool_approval_and_completion() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
     #[derive(Clone, Default)]
@@ -1034,7 +1028,6 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
     assert!(!snapshot.tool_calls_by_node[&NodeId("first".to_string())].is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_survives_permanent_tool_failure_and_completes() {
     #[derive(Clone, Default)]
@@ -1114,7 +1107,6 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     #[derive(Clone)]
@@ -1593,7 +1585,6 @@ where
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
     #[derive(Clone)]
@@ -1679,7 +1670,6 @@ async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
     assert!(saw_skip_warning, "the skipped MCP server must be visible");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn interrupt_during_slow_tool_emits_node_interrupted() {
     #[derive(Clone)]
@@ -1753,7 +1743,6 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
     #[derive(Clone)]
@@ -1830,7 +1819,6 @@ async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn new_message_retries_failed_node_with_message_in_transcript() {
     #[derive(Clone, Default)]
@@ -1919,7 +1907,6 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
     assert!(finished, "expected run to finish after retry input");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn new_message_during_tool_execution_reaches_next_model_turn() {
     #[derive(Clone, Default)]
@@ -2023,7 +2010,6 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
     assert!(finished, "expected run to finish after live input");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_retries_transient_node_error() {
     #[derive(Clone)]
@@ -2081,7 +2067,6 @@ async fn headless_retries_transient_node_error() {
     assert_eq!(snapshot.report.outputs.len(), 1);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_exhausted_transient_retries_returns_missing_retry() {
     #[derive(Clone)]
@@ -2130,7 +2115,6 @@ async fn headless_exhausted_transient_retries_returns_missing_retry() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
     #[derive(Clone)]
@@ -2251,7 +2235,6 @@ where
     (params, checkpoint_sink)
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_then_continue_restores_awaiting_input() {
     #[derive(Clone)]
@@ -2348,7 +2331,6 @@ async fn stop_then_continue_restores_awaiting_input() {
     assert!(saw_awaiting_again, "expected awaiting input after continue");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stale_input_is_ignored_and_run_continues() {
     #[derive(Clone)]
@@ -2415,7 +2397,6 @@ async fn stale_input_is_ignored_and_run_continues() {
     assert!(finished, "expected run to finish after valid input");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn completed_run_includes_post_run_suggestions() {
     #[derive(Clone)]
@@ -2483,7 +2464,6 @@ async fn completed_run_includes_post_run_suggestions() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stopped_run_continuation_retries_node_with_message() {
     #[derive(Clone)]
@@ -2608,7 +2588,6 @@ fn write_tool_workflow() -> Workflow {
     workflow
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
     #[derive(Clone)]
@@ -2751,7 +2730,6 @@ fn output_repair_policy_from_workflow_trims_blank_and_keeps_model() {
         .is_none());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
     struct RepairStreamAi;
@@ -2852,7 +2830,6 @@ fn reducer_output_repair_events_do_not_set_last_error() {
     assert!(state.run_trace[1].message.contains("repair failed"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed() {
     use std::sync::Mutex as StdMutex;
@@ -2966,7 +2943,6 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
     assert_eq!(requests[2].node_id, NodeId::from("__post_run_review"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_failed_repair_preserves_retryable_error_path() {
     use std::sync::Mutex as StdMutex;

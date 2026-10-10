@@ -291,7 +291,6 @@ mod tests {
         assert!(output.contains("needle"));
     }
 
-    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn find_respects_gitignore() {
         let dir = tempfile::tempdir().expect("tempdir");
