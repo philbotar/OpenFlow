@@ -19,7 +19,6 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
                 task_prompt: "Complete the configured handoff for this node.".to_string(),
-                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -29,18 +28,7 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["summary"]
                 }),
                 handoff: HandoffSpec::markdown_default(),
-                auto_start: true,
-                tools: AgentNodeConfig::default().tools,
-                callable_agents: Vec::new(),
-                allow_all_callable_agents: false,
-                reasoning_effort: None,
-                reasoning_budget_tokens: None,
-                provider_id: None,
-                request_user_input: false,
-                conversation_mode: false,
-                mcp_resources: Vec::new(),
-                mcp_prompts: Vec::new(),
-                mcp_context_snapshots: Vec::new(),
+                ..AgentNodeConfig::default()
             },
             HashSet::new(),
         ),
@@ -51,7 +39,6 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a code reviewer. Analyze code for bugs, style issues, security problems, and performance concerns. Be thorough and specific.".to_string(),
                 task_prompt: "Review the provided code and return findings as a structured object with severity ratings.".to_string(),
-                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -76,24 +63,9 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["findings"]
                 }),
                 handoff: HandoffSpec::Json,
-                auto_start: true,
-                tools: AgentNodeConfig::default().tools,
-                callable_agents: Vec::new(),
-                allow_all_callable_agents: false,
-                reasoning_effort: None,
-                reasoning_budget_tokens: None,
-                provider_id: None,
-                request_user_input: false,
-                conversation_mode: false,
-                mcp_resources: Vec::new(),
-                mcp_prompts: Vec::new(),
-                mcp_context_snapshots: Vec::new(),
+                ..AgentNodeConfig::default()
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("output_schema".to_string());
-                locked
-            },
+            HashSet::from(["output_schema".to_string()]),
         ),
         Template::with_id(
             "builtin.document-summarizer",
@@ -102,7 +74,6 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a document summarizer. Extract the most important information and present it clearly. Include key takeaways, action items, and a concise executive summary.".to_string(),
                 task_prompt: "Summarize the input and return a structured digest.".to_string(),
-                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -120,24 +91,9 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["executive_summary", "key_points"]
                 }),
                 handoff: HandoffSpec::Json,
-                auto_start: true,
-                tools: AgentNodeConfig::default().tools,
-                callable_agents: Vec::new(),
-                allow_all_callable_agents: false,
-                reasoning_effort: None,
-                reasoning_budget_tokens: None,
-                provider_id: None,
-                request_user_input: false,
-                conversation_mode: false,
-                mcp_resources: Vec::new(),
-                mcp_prompts: Vec::new(),
-                mcp_context_snapshots: Vec::new(),
+                ..AgentNodeConfig::default()
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("output_schema".to_string());
-                locked
-            },
+            HashSet::from(["output_schema".to_string()]),
         ),
         Template::with_id(
             "builtin.classifier",
@@ -146,7 +102,6 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a classifier. Determine which category the input belongs to and provide a confidence score. If none fit, use 'other'.".to_string(),
                 task_prompt: "Classify the input and return the result.".to_string(),
-                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -158,24 +113,9 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["category", "confidence"]
                 }),
                 handoff: HandoffSpec::Json,
-                auto_start: true,
-                tools: AgentNodeConfig::default().tools,
-                callable_agents: Vec::new(),
-                allow_all_callable_agents: false,
-                reasoning_effort: None,
-                reasoning_budget_tokens: None,
-                provider_id: None,
-                request_user_input: false,
-                conversation_mode: false,
-                mcp_resources: Vec::new(),
-                mcp_prompts: Vec::new(),
-                mcp_context_snapshots: Vec::new(),
+                ..AgentNodeConfig::default()
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("output_schema".to_string());
-                locked
-            },
+            HashSet::from(["output_schema".to_string()]),
         ),
         Template::with_id(
             "builtin.manual-start-node",
@@ -184,7 +124,6 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a reviewer agent. Inspect the available context, then use openflow_request_user_input when an explicit human decision is required.".to_string(),
                 task_prompt: "Review the upstream output, ask for approval when needed, then return your assessment.".to_string(),
-                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -195,18 +134,8 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["approved"]
                 }),
                 handoff: HandoffSpec::Json,
-                auto_start: true,
-                tools: AgentNodeConfig::default().tools,
-                callable_agents: Vec::new(),
-                allow_all_callable_agents: false,
-                reasoning_effort: None,
-                reasoning_budget_tokens: None,
-                provider_id: None,
                 request_user_input: true,
-                conversation_mode: false,
-                mcp_resources: Vec::new(),
-                mcp_prompts: Vec::new(),
-                mcp_context_snapshots: Vec::new(),
+                ..AgentNodeConfig::default()
             },
             HashSet::new(),
         ),

@@ -96,11 +96,15 @@ where
     }
 
     let mut choice: Vec<_> = stream.choice.into_iter().collect();
-    if !streamed_assistant_text.is_empty() {
-        let (text_parts, _reasoning, tool_calls) = outcome::partition_choice(choice.clone());
-        if tool_calls.is_empty() && text_parts.is_empty() {
-            choice.push(AssistantContent::text(streamed_assistant_text));
-        }
+    if !streamed_assistant_text.is_empty()
+        && !choice.iter().any(|item| {
+            matches!(
+                item,
+                AssistantContent::Text(_) | AssistantContent::ToolCall(_)
+            )
+        })
+    {
+        choice.push(AssistantContent::text(streamed_assistant_text));
     }
     let usage = stream
         .response

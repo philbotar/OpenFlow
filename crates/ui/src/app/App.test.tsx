@@ -1096,6 +1096,26 @@ describe("workflow authoring chat layout", () => {
     }
   });
 
+  test("navigates the new workflow menu by keyboard without creating a workflow", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+    try {
+      const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="New workflow"]')!;
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      expect(document.activeElement?.textContent?.trim()).toBe("Create new workflow");
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+      expect(document.activeElement?.textContent?.trim()).toBe("Create with AI");
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      expect(container.querySelector('[aria-label="New workflow options"]')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+      expect(apiMocks.createWorkflow).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
+  });
+
   test("keeps an AI workflow draft available after navigating away", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
@@ -2589,6 +2609,49 @@ describe("App workflow structural editing", () => {
       dispose();
     }
   });
+
+  test("applies an inspector model change to a failed active node", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const failedState = makeAwaitingRunState(workflow);
+    failedState.awaitingNodeId = null;
+    failedState.awaitingNodeIds = [];
+    failedState.statusByNode[workflow.nodes[0].id] = "failed";
+    const payload = makeBootstrapPayload([workflow]);
+    payload.settings = {
+      ...SETTINGS,
+      providers: {
+        ...SETTINGS.providers,
+        openai: {
+          ...SETTINGS.providers.openai,
+          known_models: ["gpt-4.1-mini", "gpt-5"],
+        },
+      },
+    };
+    payload.runState = failedState;
+    apiMocks.updateNodeRuntimeConfig.mockResolvedValue(failedState);
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      await openInspector(container);
+      const modelSelect = Array.from(container.querySelectorAll("label span"))
+        .find((element) => element.textContent === "Model")
+        ?.parentElement?.querySelector(".text-select-trigger") as HTMLButtonElement;
+      modelSelect.click();
+      const nextModel = Array.from(document.querySelectorAll(".text-select-option")).find(
+        (element) => element.textContent === "gpt-5",
+      ) as HTMLButtonElement;
+      nextModel.click();
+      await flush();
+
+      expect(apiMocks.updateNodeRuntimeConfig).toHaveBeenCalledWith(
+        "workflow-1-run",
+        workflow.nodes[0].id,
+        { model: "gpt-5" },
+      );
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe("App settings persistence", () => {
@@ -3295,6 +3358,7 @@ describe("Global chat layout", () => {
           invokedSkillIds: [],
           attachmentSourcePaths: [],
         },
+        workflow,
       );
       expect(apiMocks.submitUserInput).not.toHaveBeenCalled();
     } finally {
@@ -4863,6 +4927,7 @@ describe("Ad-hoc chats", () => {
             id: "target_env",
             header: "Target",
             question: "Which environment should I target?",
+            selectionMode: "single",
             options: [
               {
                 label: "Staging",

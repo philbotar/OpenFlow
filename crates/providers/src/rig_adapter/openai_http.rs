@@ -58,8 +58,7 @@ impl HttpClientExt for OpenAiHttpClient {
         U: From<Bytes> + Send + 'static,
     {
         strip_empty_bearer_auth(&mut request);
-        let request =
-            relax_openai_responses_tools(promote_openai_prompt_cache(request.map(Into::into)));
+        let request = prepare_openai_request(request.map(Into::into));
         let response = self.inner.send::<Bytes, Bytes>(request);
         let debug_output = self.debug_output;
         let provider_label = self.provider_label.clone();
@@ -96,11 +95,9 @@ impl HttpClientExt for OpenAiHttpClient {
     {
         // Streaming recovery of SSE argument fragments is deferred (slice 2 scope).
         strip_empty_bearer_auth(&mut request);
-        let response =
-            self.inner
-                .send_streaming(relax_openai_responses_tools(promote_openai_prompt_cache(
-                    request.map(Into::into),
-                )));
+        let response = self
+            .inner
+            .send_streaming(prepare_openai_request(request.map(Into::into)));
         async move { response.await.map(normalize_openai_streaming_response) }
     }
 }
@@ -116,12 +113,15 @@ fn strip_empty_bearer_auth<T>(request: &mut Request<T>) {
     }
 }
 
-fn relax_openai_responses_tools(mut request: Request<Bytes>) -> Request<Bytes> {
+fn prepare_openai_request(mut request: Request<Bytes>) -> Request<Bytes> {
     let original = request.body().clone();
     let Ok(mut value) = serde_json::from_slice::<Value>(&original) else {
         return request;
     };
-    if !crate::rig_adapter::openai_tool_schema::relax_incompatible_responses_tools(&mut value) {
+    // Both wire adjustments must run, including when cache promotion succeeds.
+    let changed = promote_openai_prompt_cache(&mut value)
+        | crate::rig_adapter::openai_tool_schema::relax_incompatible_responses_tools(&mut value);
+    if !changed {
         return request;
     }
     *request.body_mut() = serde_json::to_vec(&value).map_or(original, Bytes::from);
@@ -133,22 +133,23 @@ fn relax_openai_responses_tools(mut request: Request<Bytes>) -> Request<Bytes> {
 /// `Rig 0.39` deserializes `additional_params` into a closed struct, dropping
 /// newer fields such as `prompt_cache_key` and `prompt_cache_options`.
 #[must_use]
-fn promote_openai_prompt_cache(mut request: Request<Bytes>) -> Request<Bytes> {
-    let original = request.body().clone();
-    let Ok(mut value) = serde_json::from_slice::<Value>(&original) else {
-        return request;
-    };
+fn promote_openai_prompt_cache(value: &mut Value) -> bool {
     let Some(root) = value.as_object_mut() else {
-        return request;
+        return false;
     };
 
     let (cache_key, explicit, metadata_is_empty) = {
         let Some(metadata) = root.get_mut("metadata").and_then(Value::as_object_mut) else {
-            return request;
+            return false;
         };
-        let cache_key = metadata
-            .remove(OPENAI_RESPONSES_CACHE_KEY_METADATA)
-            .and_then(|value| value.as_str().map(ToOwned::to_owned));
+        let Some(cache_key) = metadata
+            .get(OPENAI_RESPONSES_CACHE_KEY_METADATA)
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+        else {
+            return false;
+        };
+        metadata.remove(OPENAI_RESPONSES_CACHE_KEY_METADATA);
         let explicit = metadata
             .remove(OPENAI_RESPONSES_CACHE_MODE_METADATA)
             .and_then(|value| value.as_str().map(ToOwned::to_owned))
@@ -156,9 +157,6 @@ fn promote_openai_prompt_cache(mut request: Request<Bytes>) -> Request<Bytes> {
         (cache_key, explicit, metadata.is_empty())
     };
 
-    let Some(cache_key) = cache_key else {
-        return request;
-    };
     if metadata_is_empty {
         root.remove("metadata");
     }
@@ -171,8 +169,7 @@ fn promote_openai_prompt_cache(mut request: Request<Bytes>) -> Request<Bytes> {
         );
     }
 
-    *request.body_mut() = serde_json::to_vec(&value).map_or(original, Bytes::from);
-    request
+    true
 }
 
 fn mark_responses_stable_system_prefix(root: &mut serde_json::Map<String, Value>) -> bool {
@@ -416,6 +413,43 @@ mod tests {
     use super::*;
     use crate::mapping::{extract_malformed_tool_args_marker, MALFORMED_TOOL_ARGS_MARKER_KEY};
     use serde_json::json;
+
+    #[test]
+    fn request_applies_cache_and_schema_adjustments_together() {
+        let schema = json!({"type": "object", "additionalProperties": true});
+        let body = json!({
+            "metadata": { (OPENAI_RESPONSES_CACHE_KEY_METADATA): "workflow:node", "custom": "keep" },
+            "tools": [{"type": "function", "strict": true, "parameters": schema}]
+        });
+        let request = Request::new(Bytes::from(body.to_string()));
+        let adjusted = prepare_openai_request(request);
+        let body: Value = serde_json::from_slice(adjusted.body()).unwrap();
+        assert_eq!(body["prompt_cache_key"], "workflow:node");
+        assert_eq!(body["metadata"], json!({"custom": "keep"}));
+        assert_eq!(body["tools"][0]["strict"], false);
+        assert_eq!(body["tools"][0]["parameters"], schema);
+    }
+
+    #[test]
+    fn schema_adjustment_preserves_metadata_without_a_valid_cache_key() {
+        for metadata in [
+            json!({(OPENAI_RESPONSES_CACHE_MODE_METADATA): "explicit"}),
+            json!({(OPENAI_RESPONSES_CACHE_KEY_METADATA): 12, (OPENAI_RESPONSES_CACHE_MODE_METADATA): "explicit"}),
+        ] {
+            let body = json!({
+                "metadata": metadata,
+                "tools": [{"type": "function", "strict": true, "parameters": {"type": "object"}}]
+            });
+            let adjusted = prepare_openai_request(Request::new(Bytes::from(body.to_string())));
+            let body: Value = serde_json::from_slice(adjusted.body()).unwrap();
+            assert_eq!(body["metadata"], metadata);
+            assert_eq!(body["tools"][0]["strict"], false);
+            assert!(body.get("prompt_cache_key").is_none());
+        }
+        let malformed = Bytes::from("{invalid");
+        let adjusted = prepare_openai_request(Request::new(malformed.clone()));
+        assert_eq!(adjusted.body(), &malformed);
+    }
 
     #[test]
     fn chat_trailing_comma_repairs_without_marker() {

@@ -3,7 +3,6 @@ use crate::{
     AiClientConfig, AnthropicConfig, AuthConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
 };
 use engine::AgentError;
-use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 
@@ -115,49 +114,16 @@ fn apply_auth(
     auth: &AuthConfig,
     provider_label: &str,
 ) -> Result<RequestBuilder, AgentError> {
-    match auth {
-        AuthConfig::Bearer { api_key, required } => {
-            let key = trimmed_key(api_key.as_deref());
-            if key.is_none() && *required {
-                return Err(AgentError::Permanent(format!(
-                    "{provider_label} API key missing"
-                )));
-            }
-            if let Some(value) = key {
-                Ok(request.bearer_auth(value))
-            } else {
-                Ok(request)
-            }
-        }
-        AuthConfig::Header {
-            name,
-            api_key,
-            required,
-        } => {
-            let key = trimmed_key(api_key.as_deref());
-            if key.is_none() && *required {
-                return Err(AgentError::Permanent(format!(
-                    "{provider_label} API key missing"
-                )));
-            }
-            let Some(key) = key else {
-                return Ok(request);
-            };
-            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
-                AgentError::Failed(format!("invalid auth header name `{name}`: {error}"))
-            })?;
-            let header_value = HeaderValue::from_str(key).map_err(|error| {
-                AgentError::Failed(format!("invalid auth header value for `{name}`: {error}"))
-            })?;
-            Ok(request.header(header_name, header_value))
-        }
-        AuthConfig::NoneAllowed => Ok(request),
-        AuthConfig::AwsCredentials { .. } => Err(AgentError::Failed(
+    if matches!(auth, AuthConfig::AwsCredentials { .. }) {
+        return Err(AgentError::Failed(
             "AWS credentials cannot authenticate an HTTP model list".to_string(),
-        )),
+        ));
     }
-}
-
-fn trimmed_key(key: Option<&str>) -> Option<&str> {
-    key.map(str::trim).filter(|value| !value.is_empty())
+    let (key, headers) = auth.http_auth(provider_label)?;
+    let request = request.headers(headers);
+    Ok(if key.is_empty() {
+        request
+    } else {
+        request.bearer_auth(key)
+    })
 }

@@ -89,7 +89,7 @@ pub struct UsageReport {
     pub cache_creation_input_tokens: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentTurnSuccess {
     pub handoff: Option<crate::execution::HandoffArtifact>,
     pub output: Value,
@@ -115,12 +115,22 @@ pub struct UserInputOption {
     pub description: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UserInputSelectionMode {
+    #[default]
+    Single,
+    Multiple,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInputQuestion {
     pub id: String,
     pub header: String,
     pub question: String,
+    #[serde(default)]
+    pub selection_mode: UserInputSelectionMode,
     pub options: Vec<UserInputOption>,
 }
 
@@ -519,8 +529,8 @@ pub fn emit_assistant_deltas_from_outcome(sink: &dyn AiStreamSink, outcome: &Age
         for content in &block.content {
             let display = match content {
                 crate::conversation::AgentReasoningContent::Text { text, .. }
-                | crate::conversation::AgentReasoningContent::Summary(text) => Some(text),
-                crate::conversation::AgentReasoningContent::Encrypted(_)
+                | crate::conversation::AgentReasoningContent::Summary { text } => Some(text),
+                crate::conversation::AgentReasoningContent::Encrypted { .. }
                 | crate::conversation::AgentReasoningContent::Redacted { .. } => None,
             };
             if let Some(content) = display.filter(|value| !value.is_empty()) {
@@ -647,8 +657,12 @@ mod tests {
                         text: "Inspecting inputs. ".to_string(),
                         signature: None,
                     },
-                    AgentReasoningContent::Summary("Choosing the next action.".to_string()),
-                    AgentReasoningContent::Encrypted("opaque".to_string()),
+                    AgentReasoningContent::Summary {
+                        text: "Choosing the next action.".to_string(),
+                    },
+                    AgentReasoningContent::Encrypted {
+                        data: "opaque".to_string(),
+                    },
                 ],
             }],
             usage: None,
@@ -711,5 +725,27 @@ mod tests {
             Some("openflow_submit_node_output, write")
         );
         assert!(!AgentError::Failed("unrelated".to_string()).is_malformed_submit_output());
+    }
+
+    #[test]
+    fn user_input_question_defaults_legacy_payloads_to_single_selection() {
+        let decoded = serde_json::from_value::<UserInputQuestion>(serde_json::json!({
+            "id": "target_env",
+            "header": "Target",
+            "question": "Which environment?",
+            "options": [
+                { "label": "Staging", "description": "Use staging." },
+                { "label": "Production", "description": "Use production." }
+            ]
+        }));
+
+        assert!(matches!(
+            decoded.as_ref(),
+            Ok(question) if question.selection_mode == UserInputSelectionMode::Single
+        ));
+        assert!(matches!(
+            decoded.and_then(serde_json::to_value),
+            Ok(value) if value["selectionMode"] == "single"
+        ));
     }
 }

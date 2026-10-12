@@ -88,4 +88,13 @@ describe("Tooltip", () => {
     trigger.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
     expect(document.querySelector(".app-tooltip")).toBeNull();
   });
+
+  test.each(["Escape", "scroll", "resize"])("dismisses on %s without moving the pointer", (action) => {
+    dispose = render(() => <Tooltip label="Inspector"><button>Inspector</button></Tooltip>, container);
+    container.querySelector("button")!.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    vi.advanceTimersByTime(400);
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+    window.dispatchEvent(action === "Escape" ? new KeyboardEvent("keydown", { key: "Escape" }) : new Event(action));
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  });
 });

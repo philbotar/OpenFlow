@@ -1,5 +1,5 @@
 use crate::adapters::storage::json_file_store::{
-    read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
+    app_data_dir, read_json_file, write_json_file,
 };
 use crate::agent::AgentStore;
 use engine::CallableAgent;
@@ -26,27 +26,7 @@ impl FileAgentStore {
 
     #[must_use]
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(OPENFLOW_DATA_DIR_SLUG)
-            .join(AGENTS_FILE_NAME)
-    }
-
-    /// # Errors
-    /// Returns an error if the file cannot be read or parsed.
-    pub fn load(&self) -> io::Result<Vec<CallableAgent>> {
-        let stored: StoredAgents =
-            read_json_file(&self.path, "agent store JSON invalid")?.unwrap_or_default();
-        Ok(stored.agents)
-    }
-
-    /// # Errors
-    /// Returns an error if the file cannot be serialized or written.
-    pub fn save(&self, agents: &[CallableAgent]) -> io::Result<()> {
-        let stored = StoredAgents {
-            agents: agents.to_vec(),
-        };
-        write_json_file(&self.path, &stored, "agent store JSON")
+        app_data_dir().join(AGENTS_FILE_NAME)
     }
 
     #[must_use]
@@ -56,12 +36,21 @@ impl FileAgentStore {
 }
 
 impl AgentStore for FileAgentStore {
+    /// # Errors
+    /// Returns an error if the file cannot be read or parsed.
     fn load(&self) -> io::Result<Vec<CallableAgent>> {
-        FileAgentStore::load(self)
+        let stored: StoredAgents =
+            read_json_file(&self.path, "agent store JSON invalid")?.unwrap_or_default();
+        Ok(stored.agents)
     }
 
+    /// # Errors
+    /// Returns an error if the file cannot be serialized or written.
     fn save(&self, agents: &[CallableAgent]) -> io::Result<()> {
-        FileAgentStore::save(self, agents)
+        let stored = StoredAgents {
+            agents: agents.to_vec(),
+        };
+        write_json_file(&self.path, &stored, "agent store JSON")
     }
 }
 

@@ -995,7 +995,6 @@ mod tests {
         }
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_only_planning_host_allows_only_run_plan_draft_mutation() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1030,36 +1029,24 @@ mod tests {
             crate::run::resources::SharedRunResources::default().tool_budget(),
         );
         let calls = vec![
-            ToolCall {
-                id: "plan-draft".to_string(),
-                provider_call_id: None,
-                name: "write".to_string(),
-                arguments: serde_json::json!({
+            ToolCall::new(
+                "plan-draft",
+                "write",
+                serde_json::json!({
                     "path": engine::PLAN_DRAFT_PATH,
                     "content": "# Plan\n"
                 }),
-            },
-            ToolCall {
-                id: "write".to_string(),
-                provider_call_id: None,
-                name: "write".to_string(),
-                arguments: serde_json::json!({
+            ),
+            ToolCall::new(
+                "write",
+                "write",
+                serde_json::json!({
                     "path": "docs/blocked.md",
                     "content": "no"
                 }),
-            },
-            ToolCall {
-                id: "mcp".to_string(),
-                provider_call_id: None,
-                name: "mcp_7_example_tool".to_string(),
-                arguments: serde_json::json!({}),
-            },
-            ToolCall {
-                id: "subagent".to_string(),
-                provider_call_id: None,
-                name: CALL_SUBAGENT_TOOL.to_string(),
-                arguments: serde_json::json!({}),
-            },
+            ),
+            ToolCall::new("mcp", "mcp_7_example_tool", serde_json::json!({})),
+            ToolCall::new("subagent", CALL_SUBAGENT_TOOL, serde_json::json!({})),
         ];
 
         let output = port
@@ -1092,7 +1079,6 @@ mod tests {
         assert!(dir.path().join("artifacts/PLAN.md").exists());
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn planning_host_rejects_plan_mutation_and_seal_from_non_source_node() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1140,12 +1126,11 @@ mod tests {
                             "content": "# Unauthorized plan\n"
                         }),
                     ),
-                    ToolCall {
-                        id: "seal".to_string(),
-                        provider_call_id: None,
-                        name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                        arguments: serde_json::json!({}),
-                    },
+                    ToolCall::new(
+                        "seal",
+                        engine::WRITE_PLAN_ARTIFACT_TOOL,
+                        serde_json::json!({}),
+                    ),
                 ],
                 ToolAccessPolicy::Planning,
             )
@@ -1419,8 +1404,6 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    // #[tokio::test] needs the OS I/O driver (kqueue/epoll); Miri cannot emulate it.
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn permits_for_disjoint_paths_do_not_contend() {
         let locks = ExclusiveLocks::default();
@@ -1435,7 +1418,6 @@ mod tests {
         drop(b);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn permits_for_same_path_serialize() {
         let locks = ExclusiveLocks::default();
@@ -1456,7 +1438,6 @@ mod tests {
         drop(b);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn empty_key_list_acquires_nothing() {
         let locks = ExclusiveLocks::default();

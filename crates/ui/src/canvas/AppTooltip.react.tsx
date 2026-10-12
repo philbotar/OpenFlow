@@ -76,6 +76,21 @@ export function AppTooltip({
 
   useEffect(() => () => hide(), [hide]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", hide);
+    window.addEventListener("scroll", hide, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", hide);
+      window.removeEventListener("scroll", hide, true);
+    };
+  }, [hide, open]);
+
   const parts = shortcutId ? formatShortcutParts(shortcutId) : [];
 
   return (

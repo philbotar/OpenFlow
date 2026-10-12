@@ -551,12 +551,14 @@ export function resumeDurableRun(
   settings: AppSettings,
   transientApiKey: string | null = null,
   continuation?: DurableRunContinuationInput,
+  runtimeWorkflow?: Workflow,
 ) {
   return invoke<WorkflowRunState>("resume_durable_run", {
     runId,
     settings,
     transientApiKey,
     ...(continuation ? { continuation } : {}),
+    ...(runtimeWorkflow ? { runtimeWorkflow } : {}),
   });
 }
 

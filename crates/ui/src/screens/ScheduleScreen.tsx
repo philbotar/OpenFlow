@@ -130,6 +130,7 @@ function ScheduleRow(props: { workflow: Workflow }) {
         <button
           type="button"
           classList={{ active: draft().preset === "timed" }}
+          aria-pressed={draft().preset === "timed"}
           onClick={() => setPreset("timed")}
         >
           At time
@@ -137,6 +138,7 @@ function ScheduleRow(props: { workflow: Workflow }) {
         <button
           type="button"
           classList={{ active: draft().preset === "interval" }}
+          aria-pressed={draft().preset === "interval"}
           onClick={() => setPreset("interval")}
         >
           Repeat
@@ -169,6 +171,7 @@ function ScheduleRow(props: { workflow: Workflow }) {
           <span class="schedule-interval-label">Every</span>
           <input
             class="text-input schedule-interval-value"
+            aria-label="Repeat interval value"
             type="number"
             min={1}
             max={intervalValueMax(draft().intervalUnit)}

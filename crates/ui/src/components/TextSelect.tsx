@@ -96,8 +96,15 @@ export function TextSelect(props: TextSelectProps) {
     const triggerRight = rect.right / positionScale;
     const triggerTop = rect.top / positionScale;
     const triggerBottom = rect.bottom / positionScale;
-    const menuWidthPx = Math.max(trigger.offsetWidth, MENU_MIN_WIDTH_PX);
+    const menuWidthPx = Math.min(
+      Math.max(trigger.offsetWidth, MENU_MIN_WIDTH_PX),
+      Math.max(0, viewportWidth / positionScale - MENU_GAP_PX * 2),
+    );
     const width = `${menuWidthPx}px`;
+    const clampLeft = (left: number) => Math.max(
+      viewportLeft / positionScale + MENU_GAP_PX,
+      Math.min(left, viewportRight / positionScale - menuWidthPx - MENU_GAP_PX),
+    );
     const availableAbove = Math.max(0, rect.top - viewportTop);
     const availableBelow = Math.max(0, viewportBottom - rect.bottom);
     const rawMenuHeight =
@@ -152,7 +159,9 @@ export function TextSelect(props: TextSelectProps) {
       setResolvedMenuPlacement(placement);
       setMenuStyle({
         top: `${top}px`,
-        left: `${placement === "left" ? triggerLeft - MENU_GAP_PX : triggerRight + MENU_GAP_PX}px`,
+        left: `${placement === "left"
+          ? clampLeft(triggerLeft - MENU_GAP_PX - menuWidthPx) + menuWidthPx
+          : clampLeft(triggerRight + MENU_GAP_PX)}px`,
         width,
         "max-height": constrainedMaxHeight,
         transform: placement === "left" ? "translateX(-100%)" : "none",
@@ -170,7 +179,7 @@ export function TextSelect(props: TextSelectProps) {
     if (placement === "above") {
       setMenuStyle({
         top: `${triggerTop - MENU_GAP_PX}px`,
-        left: `${triggerLeft}px`,
+        left: `${clampLeft(triggerLeft)}px`,
         width,
         "max-height": constrainedMaxHeight,
         transform: "translateY(-100%)",
@@ -179,7 +188,7 @@ export function TextSelect(props: TextSelectProps) {
     }
     setMenuStyle({
       top: `${triggerBottom + MENU_GAP_PX}px`,
-      left: `${triggerLeft}px`,
+      left: `${clampLeft(triggerLeft)}px`,
       width,
       "max-height": constrainedMaxHeight,
       transform: "none",
@@ -214,16 +223,50 @@ export function TextSelect(props: TextSelectProps) {
   };
 
   const selectValue = (value: string) => {
+    if (props.disabled) return;
     props.onChange?.({ currentTarget: { value } });
     close();
+    triggerRef?.focus();
+  };
+
+  const focusOption = (index: number) => {
+    const options = menuRef?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    if (!options?.length) return;
+    options[Math.max(0, Math.min(index, options.length - 1))]?.focus();
+  };
+
+  const onMenuKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      triggerRef?.focus();
+      close();
+      return;
+    }
+    const options = Array.from(menuRef?.querySelectorAll('[role="option"]') ?? []);
+    const index = options.indexOf(document.activeElement!);
+    const next = event.key === "Home" ? 0
+      : event.key === "End" ? options.length - 1
+      : event.key === "ArrowDown" ? index + 1
+      : event.key === "ArrowUp" ? index - 1 : undefined;
+    if (next !== undefined) {
+      event.preventDefault();
+      focusOption(next);
+    }
   };
 
   onCleanup(clearHoverClose);
 
   createEffect(() => {
+    if (props.disabled) close();
+  });
+
+  createEffect(() => {
     if (!open()) return;
 
-    const onDocumentMouseDown = (event: MouseEvent) => {
+    const onOutsideInteraction = (event: Event) => {
       const root = rootRef;
       const menu = menuRef;
       const target = event.target;
@@ -254,11 +297,13 @@ export function TextSelect(props: TextSelectProps) {
 
     const onDismiss = () => close();
 
-    document.addEventListener("mousedown", onDocumentMouseDown);
+    document.addEventListener("mousedown", onOutsideInteraction);
+    document.addEventListener("focusin", onOutsideInteraction);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onDismiss);
     onCleanup(() => {
-      document.removeEventListener("mousedown", onDocumentMouseDown);
+      document.removeEventListener("mousedown", onOutsideInteraction);
+      document.removeEventListener("focusin", onOutsideInteraction);
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onDismiss);
     });
@@ -281,6 +326,7 @@ export function TextSelect(props: TextSelectProps) {
       role="listbox"
       aria-label={props["aria-label"]}
       style={menuStyle()}
+      onKeyDown={onMenuKeyDown}
       onMouseEnter={() => {
         if (!props.openOnHover) return;
         menuHovered = true;
@@ -301,6 +347,7 @@ export function TextSelect(props: TextSelectProps) {
               classList={{ "is-selected": option.value === props.value }}
               role="option"
               aria-selected={option.value === props.value}
+              tabIndex={-1}
               title={option.label}
               onMouseDown={(event) => {
                 if (props.portalMenu) {
@@ -348,9 +395,12 @@ export function TextSelect(props: TextSelectProps) {
         onClick={() => (open() ? close() : openMenu())}
         onKeyDown={(event) => {
           if (props.disabled) return;
-          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openMenu();
+            queueMicrotask(() => {
+              if (open()) focusOption(Math.max(0, props.options.findIndex((option) => option.value === props.value)));
+            });
           }
           if (event.key === "Escape") {
             close();

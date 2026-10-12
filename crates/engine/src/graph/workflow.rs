@@ -10,45 +10,21 @@ use crate::tools::NodeToolConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::fmt;
-use std::ops::Deref;
 use std::time::Duration;
 use uuid::Uuid;
 
 macro_rules! string_id {
-    ($name:ident) => {
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-        pub struct $name(pub String);
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.0.fmt(f)
-            }
-        }
-
-        impl Deref for $name {
-            type Target = str;
-
-            fn deref(&self) -> &Self::Target {
-                &self.0
-            }
-        }
-
-        impl From<String> for $name {
-            fn from(s: String) -> Self {
-                $name(s)
-            }
-        }
+    ($(#[$meta:meta])* $name:ident) => {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+            derive_more::Display, derive_more::Deref, derive_more::From, derive_more::Into,
+        )]
+        $(#[$meta])*
+        pub struct $name(#[deref(forward)] pub String);
 
         impl From<&str> for $name {
             fn from(s: &str) -> Self {
                 $name(s.to_string())
-            }
-        }
-
-        impl From<$name> for String {
-            fn from(id: $name) -> Self {
-                id.0
             }
         }
 
@@ -74,7 +50,10 @@ macro_rules! string_id {
 
 string_id!(NodeId);
 string_id!(EdgeId);
-string_id!(WorkflowId);
+string_id!(
+    #[derive(Default)]
+    WorkflowId
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RetryPolicy {

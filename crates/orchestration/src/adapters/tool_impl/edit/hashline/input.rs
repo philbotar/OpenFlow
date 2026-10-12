@@ -6,12 +6,10 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use super::apply::apply_edits;
-use super::block::{resolve_block_edits, OnUnresolved, ResolveBlockEditsOptions};
 use super::format::{HL_FILE_HASH_LENGTH, HL_FILE_HASH_SEP, HL_FILE_PREFIX};
 use super::parser::{parse_patch, ParseResult};
 use super::tokenizer::Tokenizer;
-use super::types::{ApplyResult, BlockResolver, Edit, SplitOptions};
+use super::types::{Edit, SplitOptions};
 
 static TOKENIZER: OnceLock<Tokenizer> = OnceLock::new();
 
@@ -358,31 +356,6 @@ impl PatchSection {
             }
         }
         Ok(lines.into_iter().collect())
-    }
-
-    pub fn apply_to(
-        &mut self,
-        text: &str,
-        block_resolver: Option<&BlockResolver>,
-    ) -> Result<ApplyResult, String> {
-        let path = self.path.clone();
-        let parsed = self.parse()?;
-        let resolved = resolve_block_edits(
-            &parsed.edits,
-            text,
-            &path,
-            block_resolver,
-            ResolveBlockEditsOptions {
-                on_unresolved: OnUnresolved::Throw,
-            },
-        )?;
-        let mut result = apply_edits(text, &resolved)?;
-        if !parsed.warnings.is_empty() {
-            let mut merged = parsed.warnings.clone();
-            merged.append(&mut result.warnings);
-            result.warnings = merged;
-        }
-        Ok(result)
     }
 }
 

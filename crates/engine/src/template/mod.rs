@@ -1,5 +1,4 @@
 pub mod builtins;
-pub mod store;
 
 use crate::graph::{AgentNodeConfig, Node, NodeId, NodeKind, NodePosition};
 use serde::{Deserialize, Serialize};
@@ -7,7 +6,6 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 pub use builtins::default_templates;
-pub use store::{TemplateStore, TemplateStoreError};
 
 /// A reusable, parameterized node definition with default configuration and locked fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

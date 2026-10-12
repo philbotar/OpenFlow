@@ -94,3 +94,63 @@ async fn sends_bearer_auth_when_model_listing_has_a_key() {
         "Bearer secret-key"
     );
 }
+
+#[tokio::test]
+async fn custom_header_discovery_trims_keys_without_adding_bearer_auth() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": []})))
+        .mount(&server)
+        .await;
+    list_remote_models(&config(
+        server.uri(),
+        AuthConfig::Header {
+            name: "x-api-key".to_string(),
+            api_key: Some("  test-key  ".to_string()),
+            required: true,
+        },
+    ))
+    .await
+    .unwrap();
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].headers["x-api-key"], "test-key");
+    assert!(!requests[0].headers.contains_key("authorization"));
+}
+
+#[tokio::test]
+async fn invalid_discovery_auth_fails_before_http() {
+    let server = MockServer::start().await;
+    for auth in [
+        AuthConfig::Bearer {
+            api_key: Some("  ".to_string()),
+            required: true,
+        },
+        AuthConfig::Header {
+            name: "x-api-key".to_string(),
+            api_key: None,
+            required: true,
+        },
+        AuthConfig::Header {
+            name: "invalid header".to_string(),
+            api_key: Some("key".to_string()),
+            required: true,
+        },
+        AuthConfig::Header {
+            name: "x-api-key".to_string(),
+            api_key: Some("key\nvalue".to_string()),
+            required: true,
+        },
+    ] {
+        let error = list_remote_models(&config(server.uri(), auth))
+            .await
+            .unwrap_err();
+        assert!(!error.is_retryable());
+        assert!(matches!(
+            error,
+            engine::AgentError::Permanent(_) | engine::AgentError::Failed(_)
+        ));
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

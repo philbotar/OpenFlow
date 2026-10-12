@@ -157,27 +157,19 @@ impl RunRegistry {
             .set_active(run_id, run_state.active);
     }
 
-    pub async fn coordinator_for(&self, run_id: &str) -> Result<Arc<RunCoordinator>, BackendError> {
-        self.state
-            .read()
-            .await
-            .sessions
-            .get(run_id)
-            .map(|entry| Arc::clone(&entry.coordinator))
-            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))
-    }
-
-    async fn latest_coordinator(&self) -> Result<Arc<RunCoordinator>, BackendError> {
+    async fn resolve_coordinator(
+        &self,
+        run_id: Option<&str>,
+    ) -> Result<Arc<RunCoordinator>, BackendError> {
         let state = self.state.read().await;
-        let run_id = state
-            .latest_run_id
-            .as_ref()
+        let run_id = run_id
+            .or(state.latest_run_id.as_deref())
             .ok_or(BackendError::NoActiveRun)?;
         state
             .sessions
             .get(run_id)
             .map(|entry| Arc::clone(&entry.coordinator))
-            .ok_or_else(|| BackendError::RunNotFound(run_id.clone()))
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))
     }
 
     /// Start and register a fresh independent session.
@@ -269,11 +261,11 @@ impl RunRegistry {
 
     pub async fn stop_run_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
         let run_state = self
-            .coordinator_for(run_id)
+            .resolve_coordinator(run_id)
             .await?
             .stop_run_and_persist(run_store)
             .await?;
@@ -283,12 +275,12 @@ impl RunRegistry {
 
     pub async fn apply_execution_event_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         event: ExecutionEvent,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
         let run_state = self
-            .coordinator_for(run_id)
+            .resolve_coordinator(run_id)
             .await?
             .apply_execution_event(event, run_store)
             .await?;
@@ -298,121 +290,64 @@ impl RunRegistry {
 
     #[must_use]
     pub async fn is_run_active_for(&self, run_id: &str) -> bool {
-        match self.coordinator_for(run_id).await {
+        match self.resolve_coordinator(Some(run_id)).await {
             Ok(coordinator) => coordinator.is_run_active().await,
             Err(_) => false,
         }
     }
 
-    pub async fn stop_run_and_persist(
-        &self,
-        run_store: &dyn RunCheckpointStore,
-    ) -> Result<WorkflowRunState, BackendError> {
-        let run_state = self
-            .latest_coordinator()
-            .await?
-            .stop_run_and_persist(run_store)
-            .await?;
-        self.record_run_state(&run_state).await;
-        Ok(run_state)
-    }
-
-    pub async fn continue_run(
-        &self,
-        params: RunStartParams<'_>,
-    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        let workflow_id = params.workflow.id.to_string();
-        let start_gate = self.workflow_start_gate(&workflow_id);
-        let _start_guard = start_gate.lock().await;
-        self.ensure_workflow_inactive(&workflow_id).await?;
-        let coordinator = self.latest_coordinator().await?;
-        let result = coordinator.continue_run(params).await?;
-        self.register(coordinator, &result.0).await?;
-        Ok(result)
-    }
-
     pub async fn continue_run_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         params: RunStartParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         let workflow_id = params.workflow.id.to_string();
         let start_gate = self.workflow_start_gate(&workflow_id);
         let _start_guard = start_gate.lock().await;
         self.ensure_workflow_inactive(&workflow_id).await?;
-        let coordinator = self.coordinator_for(run_id).await?;
+        let coordinator = self.resolve_coordinator(run_id).await?;
         let result = coordinator.continue_run(params).await?;
         self.register(coordinator, &result.0).await?;
         Ok(result)
     }
 
     #[must_use]
-    pub async fn is_run_continuable(&self) -> bool {
-        match self.latest_coordinator().await {
+    pub async fn is_run_continuable_for(&self, run_id: Option<&str>) -> bool {
+        match self.resolve_coordinator(run_id).await {
             Ok(coordinator) => coordinator.is_run_continuable().await,
             Err(_) => false,
         }
-    }
-
-    #[must_use]
-    pub async fn is_run_continuable_for(&self, run_id: &str) -> bool {
-        match self.coordinator_for(run_id).await {
-            Ok(coordinator) => coordinator.is_run_continuable().await,
-            Err(_) => false,
-        }
-    }
-
-    pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .interrupt_node(node_id)
-            .await
     }
 
     pub async fn interrupt_node_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         node_id: &str,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .interrupt_node(node_id)
             .await
     }
 
-    pub async fn retry_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator().await?.retry_node(node_id).await
-    }
-
     pub async fn retry_node_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         node_id: &str,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .retry_node(node_id)
             .await
     }
 
-    pub async fn update_node_runtime_config(
-        &self,
-        node_id: &str,
-        patch: NodeRuntimeConfigPatch,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .update_node_runtime_config(node_id, patch)
-            .await
-    }
-
     pub async fn update_node_runtime_config_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         node_id: &str,
         patch: NodeRuntimeConfigPatch,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .update_node_runtime_config(node_id, patch)
             .await
@@ -423,88 +358,39 @@ impl RunRegistry {
         !self.active_run_states().await.is_empty()
     }
 
-    pub async fn apply_execution_event(
-        &self,
-        event: ExecutionEvent,
-        run_store: &dyn RunCheckpointStore,
-    ) -> Result<WorkflowRunState, BackendError> {
-        let run_state = self
-            .latest_coordinator()
-            .await?
-            .apply_execution_event(event, run_store)
-            .await?;
-        self.record_run_state(&run_state).await;
-        Ok(run_state)
-    }
-
-    pub async fn submit_user_message_with_skill_ids(
-        &self,
-        node_id: &str,
-        message: UserMessageInput,
-        skill_ids: &[String],
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .submit_user_message_with_skill_ids(node_id, message, skill_ids)
-            .await
-    }
-
     pub async fn submit_user_message_with_skill_ids_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         node_id: &str,
         message: UserMessageInput,
         skill_ids: &[String],
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .submit_user_message_with_skill_ids(node_id, message, skill_ids)
-            .await
-    }
-
-    pub async fn submit_tool_approval(
-        &self,
-        approval_id: &str,
-        allow: bool,
-        reason: Option<String>,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .submit_tool_approval(approval_id, allow, reason)
             .await
     }
 
     pub async fn submit_tool_approval_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         approval_id: &str,
         allow: bool,
         reason: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .submit_tool_approval(approval_id, allow, reason)
             .await
     }
 
-    pub async fn resolve_mcp_client_request(
-        &self,
-        request_id: &str,
-        decision: McpClientRequestDecision,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .resolve_mcp_client_request(request_id, decision)
-            .await
-    }
-
     pub async fn resolve_mcp_client_request_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         request_id: &str,
         decision: McpClientRequestDecision,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .resolve_mcp_client_request(request_id, decision)
             .await
@@ -512,7 +398,7 @@ impl RunRegistry {
 
     #[must_use]
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
-        let coordinator = self.latest_coordinator().await.ok()?;
+        let coordinator = self.resolve_coordinator(None).await.ok()?;
         coordinator.get_run_state().await
     }
 
@@ -521,76 +407,49 @@ impl RunRegistry {
         self.state.read().await.latest_run_id.clone()
     }
 
-    pub async fn preview_file_edit(
-        &self,
-        approval_id: &str,
-        tool_name: String,
-        arguments: serde_json::Value,
-    ) -> Result<FileEditPreview, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .preview_file_edit(approval_id, tool_name, arguments)
-            .await
-    }
-
     pub async fn preview_file_edit_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         approval_id: &str,
         tool_name: String,
         arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .preview_file_edit(approval_id, tool_name, arguments)
             .await
-    }
-
-    pub async fn git_diff_file(&self, path: String) -> Result<String, BackendError> {
-        self.latest_coordinator().await?.git_diff_file(path).await
     }
 
     pub async fn git_diff_file_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         path: String,
     ) -> Result<String, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .git_diff_file(path)
             .await
     }
 
-    pub async fn revert_edit_batch(
-        &self,
-        batch_id: String,
-    ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
-            .await?
-            .revert_edit_batch(batch_id)
-            .await
-    }
-
     pub async fn revert_edit_batch_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
         batch_id: String,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        self.resolve_coordinator(run_id)
             .await?
             .revert_edit_batch(batch_id)
             .await
-    }
-
-    pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
-        self.latest_coordinator().await?.clear_run_trace().await
     }
 
     pub async fn clear_run_trace_for(
         &self,
-        run_id: &str,
+        run_id: Option<&str>,
     ) -> Result<Option<WorkflowRunState>, BackendError> {
-        self.coordinator_for(run_id).await?.clear_run_trace().await
+        self.resolve_coordinator(run_id)
+            .await?
+            .clear_run_trace()
+            .await
     }
 
     pub async fn stop_all_and_persist(&self, run_store: &dyn RunCheckpointStore) {
@@ -648,6 +507,31 @@ mod tests {
             tokio::runtime::Handle::current(),
             Arc::new(FileRunAttachmentStore::default()),
         )
+    }
+
+    #[tokio::test]
+    async fn run_target_resolution_preserves_explicit_and_latest_selection() {
+        let registry = registry();
+        assert!(matches!(
+            registry.resolve_coordinator(None).await,
+            Err(BackendError::NoActiveRun)
+        ));
+        for run_id in ["first", "latest"] {
+            let workflow = Workflow::new(run_id);
+            let mut state = WorkflowRunState::running_for_workflow(&workflow);
+            state.run_id = Some(run_id.into());
+            let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+            registry.test_seed_session(workflow, state, action_tx).await;
+        }
+        let first = registry.resolve_coordinator(Some("first")).await.unwrap();
+        let latest = registry.resolve_coordinator(Some("latest")).await.unwrap();
+        let default = registry.resolve_coordinator(None).await.unwrap();
+        assert!(Arc::ptr_eq(&latest, &default));
+        assert!(!Arc::ptr_eq(&first, &default));
+        assert!(matches!(
+            registry.resolve_coordinator(Some("missing")).await,
+            Err(BackendError::RunNotFound(id)) if id == "missing"
+        ));
     }
 
     #[tokio::test]

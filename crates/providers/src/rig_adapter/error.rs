@@ -1,13 +1,5 @@
 //! rig `CompletionError` → `AgentError` with retryability classification.
 
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "rig migration: wired when AiClient switches to rig_adapter"
-    )
-)]
-
 use crate::http_errors::classify_http_status;
 use crate::rig_adapter::outcome::EMPTY_TURN_ERROR;
 use engine::AgentError;
@@ -24,8 +16,7 @@ pub fn classify_status(status: u16, body: &str, label: &str) -> AgentError {
 /// status mapper. Matching the prefix avoids treating arbitrary response text
 /// that happens to mention 401 as an authentication failure.
 #[must_use]
-#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
-pub(crate) fn is_unauthorized(error: &AgentError, label: &str) -> bool {
+pub fn is_unauthorized(error: &AgentError, label: &str) -> bool {
     let AgentError::Permanent(message) = error else {
         return false;
     };

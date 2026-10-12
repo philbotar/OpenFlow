@@ -4,7 +4,7 @@ use crate::adapters::mcp::{
     MCP_REGISTRY_PREVIEW_LABEL,
 };
 use crate::api::{McpInstallPreview, McpInstallResult, McpInstallResultState};
-use crate::mcp::catalog::{McpCatalog, McpCatalogPackage, McpCatalogPage, McpCatalogQuery};
+use crate::mcp::catalog::{McpCatalogPackage, McpCatalogPage, McpCatalogQuery};
 use crate::mcp::installer::{
     installed_connection, package_install_plan, record_install_success, rollback_install,
 };

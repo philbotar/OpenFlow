@@ -49,8 +49,9 @@ pub use ports::{
     AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, PartialToolCall,
     ResolvedChatAttachment, StructuredUserInput, ToolAccessPolicy, ToolBatchEffects,
     ToolBatchOutput, ToolPort, UsageReport, UserInputOption, UserInputQuestion,
+    UserInputSelectionMode,
 };
-pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
+pub use template::{default_templates, Template};
 pub use tools::{
     summarize_diff, tool_access_policy_allows_call, tool_intent_from_arguments, tool_tier_for_call,
     ApprovalMode, EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot, NodeToolConfig,

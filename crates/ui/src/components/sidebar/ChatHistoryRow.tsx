@@ -1,3 +1,4 @@
+import { handleMenuKeyDown } from "../../lib/menuKeyboard";
 import Ellipsis from "lucide-solid/icons/ellipsis";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
@@ -43,7 +44,7 @@ export function ChatHistoryRow(props: ChatHistoryRowProps) {
       active={props.active}
       onSelect={props.onSelect}
       actionSlot={
-        <div class="project-folder-menu-anchor" ref={menuAnchor}>
+        <div class="project-folder-menu-anchor" ref={menuAnchor} onKeyDown={handleMenuKeyDown}>
           <Tooltip label={`Chat options for ${props.title}`}>
             <button
               type="button"

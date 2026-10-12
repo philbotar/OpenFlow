@@ -77,12 +77,9 @@ mod tests {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             self.calls.lock().push(request.node_id.to_string());
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"ok": true}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }

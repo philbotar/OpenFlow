@@ -15,8 +15,9 @@ mod reasoning_convert;
 mod stream;
 
 use crate::client::{AiClientConfig, ProviderAdapterConfig};
-use crate::CodexOAuthCredentials;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink};
+pub use error::is_unauthorized as is_codex_unauthorized;
+pub use model::build_codex as build_codex_model;
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
@@ -24,55 +25,6 @@ use std::time::{Duration, SystemTime};
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) fn openai_api_base_url(config: &crate::OpenAiCompatibleConfig) -> String {
     model::rig_openai_base_url(config, config.wire_api)
-}
-
-#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
-pub(crate) fn build_codex_model(
-    provider_label: &str,
-    base_url: &str,
-    model_name: &str,
-    credentials: &CodexOAuthCredentials,
-    http: reqwest::Client,
-    fast_mode: bool,
-) -> Result<model::RigModel, AgentError> {
-    model::build_codex(
-        provider_label,
-        base_url,
-        model_name,
-        credentials,
-        http,
-        fast_mode,
-    )
-}
-
-#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
-pub(crate) async fn invoke_codex_model(
-    model: &model::RigModel,
-    request: &AgentRequest,
-    provider_label: &str,
-    provider_id: &crate::ProviderId,
-) -> Result<AgentTurnOutcome, AgentError> {
-    model
-        .invoke(request, provider_label, provider_id, None)
-        .await
-}
-
-#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
-pub(crate) async fn invoke_codex_model_stream(
-    model: &model::RigModel,
-    request: &AgentRequest,
-    sink: &dyn AiStreamSink,
-    provider_label: &str,
-    provider_id: &crate::ProviderId,
-) -> Result<AgentTurnOutcome, AgentError> {
-    model
-        .invoke_stream(request, sink, provider_label, provider_id, None)
-        .await
-}
-
-#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
-pub(crate) fn is_codex_unauthorized(error: &AgentError, provider_label: &str) -> bool {
-    error::is_unauthorized(error, provider_label)
 }
 
 /// Rebuild a cached model this long before its credentials actually expire so
@@ -153,7 +105,7 @@ impl ModelCache {
     }
 }
 
-async fn dispatch_invoke(
+pub async fn invoke(
     config: &AiClientConfig,
     cache: &ModelCache,
     request: AgentRequest,
@@ -173,7 +125,7 @@ async fn dispatch_invoke(
         .await
 }
 
-async fn dispatch_invoke_stream(
+pub async fn invoke_stream(
     config: &AiClientConfig,
     cache: &ModelCache,
     request: AgentRequest,
@@ -193,59 +145,6 @@ async fn dispatch_invoke_stream(
             openai_config,
         )
         .await
-}
-
-pub async fn invoke_anthropic(
-    config: &AiClientConfig,
-    cache: &ModelCache,
-    request: AgentRequest,
-) -> Result<AgentTurnOutcome, AgentError> {
-    dispatch_invoke(config, cache, request).await
-}
-
-pub async fn invoke_anthropic_stream(
-    config: &AiClientConfig,
-    cache: &ModelCache,
-    request: AgentRequest,
-    sink: &dyn AiStreamSink,
-) -> Result<AgentTurnOutcome, AgentError> {
-    dispatch_invoke_stream(config, cache, request, sink).await
-}
-
-pub async fn invoke_openai_compatible(
-    config: &AiClientConfig,
-    cache: &ModelCache,
-    request: AgentRequest,
-) -> Result<AgentTurnOutcome, AgentError> {
-    dispatch_invoke(config, cache, request).await
-}
-
-pub async fn invoke_openai_compatible_stream(
-    config: &AiClientConfig,
-    cache: &ModelCache,
-    request: AgentRequest,
-    sink: &dyn AiStreamSink,
-) -> Result<AgentTurnOutcome, AgentError> {
-    dispatch_invoke_stream(config, cache, request, sink).await
-}
-
-#[cfg(feature = "bedrock")]
-pub async fn invoke_bedrock(
-    config: &AiClientConfig,
-    cache: &ModelCache,
-    request: AgentRequest,
-) -> Result<AgentTurnOutcome, AgentError> {
-    dispatch_invoke(config, cache, request).await
-}
-
-#[cfg(feature = "bedrock")]
-pub async fn invoke_bedrock_stream(
-    config: &AiClientConfig,
-    cache: &ModelCache,
-    request: AgentRequest,
-    sink: &dyn AiStreamSink,
-) -> Result<AgentTurnOutcome, AgentError> {
-    dispatch_invoke_stream(config, cache, request, sink).await
 }
 
 #[cfg(test)]

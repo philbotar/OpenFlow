@@ -1,3 +1,4 @@
+import { handleMenuKeyDown } from "../../lib/menuKeyboard";
 import Ellipsis from "lucide-solid/icons/ellipsis";
 import { createEffect, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
@@ -49,7 +50,7 @@ export function WorkflowListRow(props: WorkflowListRowProps) {
       editSlot={props.editSlot}
       actionSlot={
         <Show when={!props.editing}>
-          <div class="project-folder-menu-anchor" ref={menuAnchor}>
+          <div class="project-folder-menu-anchor" ref={menuAnchor} onKeyDown={handleMenuKeyDown}>
             <Tooltip label={`Workflow options for ${props.title}`}>
               <button
                 type="button"

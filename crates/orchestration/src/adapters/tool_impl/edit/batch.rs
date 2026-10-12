@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::apply_patch::expand_apply_patch_to_inputs;
 use super::file_snapshot_store::{canonical_snapshot_path, record_file_snapshot};
 use super::hashline::input::Patch;
-use super::hashline::snapshots::{InMemorySnapshotStore, SnapshotStore};
+use super::hashline::snapshots::InMemorySnapshotStore;
 use super::hashline::types::SplitOptions;
 use super::path::resolve_writable;
 use super::tool_args::{PatchEnvelopeArgs, ToolPathArg};

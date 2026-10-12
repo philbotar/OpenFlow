@@ -26,7 +26,8 @@ orchestration
 
 | Path | Owns |
 | --- | --- |
-| `lib.rs` | Tauri command handlers and app bootstrap |
+| `lib.rs` | Tauri command registration and app bootstrap |
+| `commands/` | Tauri command handlers |
 | `ipc_types.rs` | Desktop IPC payload and command error types |
 | `main.rs` | Binary entry, Tauri builder |
 | `app_lifecycle.rs` | Window lifecycle cleanup |
@@ -60,9 +61,9 @@ Desktop is **transport only**: serialize DTOs, call `AppBackend`, emit events to
 
 | Change | Location |
 | --- | --- |
-| New IPC command | `lib.rs` handler + matching method in `orchestration/backend/mod.rs` |
-| New event to UI | `lib.rs` emit + `ui/src/api.ts` listener |
-| App bootstrap payload | `BootstrapPayload` in `ipc_types.rs` + `ui/lib/types.ts` |
+| New IPC command | `commands/` handler + `lib.rs` registration + matching operation in `orchestration/src/backend/` |
+| New event to UI | Event bridge + `ui/src/api.ts` listener |
+| App bootstrap payload | `BootstrapPayload` in `ipc_types.rs` + `ui/src/lib/types/` |
 | Tauri plugin/window setup | `main.rs` or `lib.rs` setup hook |
 
 ### Request flow (run state)
@@ -88,13 +89,6 @@ cargo nextest run -p desktop
 ```
 
 Test command wiring and payload shapes. Mock `AppBackend` where needed.
-
-## Change checklist
-
-1. Handler delegates to `AppBackend` — no orchestration logic inlined?
-2. No `engine` or `providers` imports?
-3. Frontend seam updated (`api.ts`, `types.ts`) if contract changed?
-4. Run `./scripts/test-fast.sh --desktop` (or `./scripts/verify.sh test` for full workspace).
 
 ## Related docs
 

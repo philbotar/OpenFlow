@@ -46,27 +46,7 @@ pub(crate) async fn refresh_with_endpoint(
             operation: "token refresh",
         })?;
 
-    let status = response.status();
-    if !status.is_success() {
-        let code = response
-            .json::<Value>()
-            .await
-            .ok()
-            .and_then(|body| oauth_error_code(&body));
-        return Err(CodexOAuthError::Http {
-            operation: "token refresh",
-            status: status.as_u16(),
-            code,
-        });
-    }
-
-    let response =
-        response
-            .json::<TokenResponse>()
-            .await
-            .map_err(|_| CodexOAuthError::InvalidResponse {
-                operation: "token refresh",
-            })?;
+    let response = decode_token_response(response, "token refresh").await?;
     Ok(merge_refresh_response(credentials, response))
 }
 
@@ -92,6 +72,13 @@ pub(super) async fn exchange_authorization_code(
             operation: "token exchange",
         })?;
 
+    credentials_from_exchange(decode_token_response(response, "token exchange").await?)
+}
+
+async fn decode_token_response(
+    response: reqwest::Response,
+    operation: &'static str,
+) -> Result<TokenResponse, CodexOAuthError> {
     let status = response.status();
     if !status.is_success() {
         let code = response
@@ -100,20 +87,17 @@ pub(super) async fn exchange_authorization_code(
             .ok()
             .and_then(|body| oauth_error_code(&body));
         return Err(CodexOAuthError::Http {
-            operation: "token exchange",
+            operation,
             status: status.as_u16(),
             code,
         });
     }
 
-    let response =
-        response
-            .json::<TokenResponse>()
-            .await
-            .map_err(|_| CodexOAuthError::InvalidResponse {
-                operation: "token exchange",
-            })?;
-    credentials_from_exchange(response)
+    let response = response
+        .json::<TokenResponse>()
+        .await
+        .map_err(|_| CodexOAuthError::InvalidResponse { operation })?;
+    Ok(response)
 }
 
 fn credentials_from_exchange(

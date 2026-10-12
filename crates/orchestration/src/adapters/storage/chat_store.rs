@@ -1,5 +1,5 @@
 use crate::adapters::storage::json_file_store::{
-    read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
+    app_data_dir, read_json_file, write_json_file,
 };
 use crate::chat::{Chat, ChatStore};
 use serde::{Deserialize, Serialize};
@@ -25,10 +25,7 @@ impl FileChatStore {
 
     #[must_use]
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(OPENFLOW_DATA_DIR_SLUG)
-            .join(CHATS_FILE_NAME)
+        app_data_dir().join(CHATS_FILE_NAME)
     }
 }
 

@@ -128,12 +128,6 @@ impl ChatCatalog {
         Ok(chat)
     }
 
-    /// # Errors
-    /// Returns an error if the chat store cannot be read or written, or the chat does not exist.
-    pub fn attach_run(&self, chat_id: &str, run_id: String) -> Result<Chat, BackendError> {
-        self.attach_run_with_title(chat_id, None, run_id)
-    }
-
     /// Persist the prepared title and run ID as one chat mutation.
     ///
     /// # Errors

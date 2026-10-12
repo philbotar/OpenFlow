@@ -112,7 +112,8 @@ impl CodexClient {
             self.http.clone(),
             request.fast_mode,
         )?;
-        rig_adapter::invoke_codex_model(&model, request, &self.provider_label, &self.provider_id)
+        model
+            .invoke(request, &self.provider_label, &self.provider_id, None)
             .await
             .map_err(|error| map_codex_quota_error(error, &self.provider_label))
     }
@@ -131,15 +132,10 @@ impl CodexClient {
             self.http.clone(),
             request.fast_mode,
         )?;
-        rig_adapter::invoke_codex_model_stream(
-            &model,
-            request,
-            sink,
-            &self.provider_label,
-            &self.provider_id,
-        )
-        .await
-        .map_err(|error| map_codex_quota_error(error, &self.provider_label))
+        model
+            .invoke_stream(request, sink, &self.provider_label, &self.provider_id, None)
+            .await
+            .map_err(|error| map_codex_quota_error(error, &self.provider_label))
     }
 }
 

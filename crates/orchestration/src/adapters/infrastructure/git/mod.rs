@@ -180,7 +180,6 @@ mod tests {
             .expect("git config name");
     }
 
-    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn diff_file_shows_uncommitted_changes() {
         let temp = tempfile::TempDir::new().expect("tempdir");
@@ -202,7 +201,6 @@ mod tests {
         assert!(diff.contains("beta") || diff.contains("-alpha") || diff.contains("+beta"));
     }
 
-    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn current_branch_returns_head_name() {
         let temp = tempfile::TempDir::new().expect("tempdir");
@@ -223,7 +221,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn diff_repo_includes_untracked_new_files() {
         let temp = tempfile::TempDir::new().expect("tempdir");

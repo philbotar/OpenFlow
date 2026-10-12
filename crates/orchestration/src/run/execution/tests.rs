@@ -18,6 +18,108 @@ use tempfile::TempDir;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+#[tokio::test]
+async fn headless_missing_input_joins_execution_task() {
+    struct WaitingAi {
+        _lifetime: Arc<()>,
+    }
+    #[async_trait]
+    impl AiPort for WaitingAi {
+        async fn invoke(&self, _: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".into(),
+                assistant_message: "Need a decision".into(),
+                structured_input: None,
+                reasoning: Vec::new(),
+            }))
+        }
+    }
+    let dir = TempDir::new().unwrap();
+    let lifetime = Arc::new(());
+    let mut workflow = Workflow::new("Headless cleanup");
+    let mut node = engine::Node::agent("wait", 0.0, 0.0);
+    node.id = NodeId::from("wait");
+    node.agent.model = "test-model".into();
+    node.agent.auto_start = true;
+    node.agent.request_user_input = true;
+    workflow.nodes.push(node);
+    let result = timeout(
+        Duration::from_secs(5),
+        run_workflow_headless(
+            workflow,
+            None,
+            WaitingAi {
+                _lifetime: Arc::clone(&lifetime),
+            },
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            Some(dir.path().to_path_buf()),
+            None,
+        ),
+    )
+    .await
+    .expect("headless failure returns promptly");
+    assert!(
+        matches!(&result, Err(WorkflowExecutionError::MissingManualInput(id)) if id == "wait"),
+        "unexpected result: {result:?}"
+    );
+    assert_eq!(
+        Arc::strong_count(&lifetime),
+        1,
+        "provider task must be joined"
+    );
+}
+
+#[tokio::test]
+async fn dropping_headless_runner_aborts_provider_task() {
+    struct PendingAi {
+        started: Arc<tokio::sync::Notify>,
+        dropped: Arc<tokio::sync::Notify>,
+    }
+    impl Drop for PendingAi {
+        fn drop(&mut self) {
+            self.dropped.notify_one();
+        }
+    }
+    #[async_trait]
+    impl AiPort for PendingAi {
+        async fn invoke(&self, _: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.started.notify_one();
+            std::future::pending().await
+        }
+    }
+    let dir = TempDir::new().unwrap();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let dropped = Arc::new(tokio::sync::Notify::new());
+    let mut workflow = Workflow::new("Dropped headless runner");
+    let mut node = engine::Node::agent("wait", 0.0, 0.0);
+    node.agent.model = "test-model".into();
+    node.agent.auto_start = true;
+    workflow.nodes.push(node);
+    let runner = tokio::spawn(run_workflow_headless(
+        workflow,
+        None,
+        PendingAi {
+            started: Arc::clone(&started),
+            dropped: Arc::clone(&dropped),
+        },
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        Some(dir.path().to_path_buf()),
+        None,
+    ));
+    timeout(Duration::from_secs(5), started.notified())
+        .await
+        .expect("provider starts");
+    runner.abort();
+    assert!(runner.await.unwrap_err().is_cancelled());
+    timeout(Duration::from_secs(5), dropped.notified())
+        .await
+        .expect("dropping runner releases provider task");
+}
+
 fn sample_agent_request() -> AgentRequest {
     AgentRequest {
         workflow_id: "wf-1".into(),
@@ -45,7 +147,6 @@ fn sample_agent_request() -> AgentRequest {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_emits_provider_usage_with_context_window() {
     struct UsageAi;
@@ -62,11 +163,8 @@ async fn adapter_emits_provider_usage_with_context_window() {
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
                 usage: Some(engine::UsageReport {
                     prompt_tokens: 10_000,
                     completion_tokens: 2_400,
@@ -74,6 +172,7 @@ async fn adapter_emits_provider_usage_with_context_window() {
                     cached_input_tokens: 8_000,
                     cache_creation_input_tokens: 1_000,
                 }),
+                ..Default::default()
             }))
         }
     }
@@ -115,7 +214,6 @@ async fn adapter_emits_provider_usage_with_context_window() {
     assert_eq!(max_context_tokens, Some(200_000));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_materializes_markdown_handoff_before_returning_completion() {
     struct MarkdownAi;
@@ -132,14 +230,12 @@ async fn adapter_materializes_markdown_handoff_before_returning_completion() {
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "markdown": "# Handoff\n\n## Summary\nDone.\n\n## Risks\nNone.\n"
                 }),
                 raw_text: "{}".to_string(),
                 assistant_message: Some("Research complete.".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -186,7 +282,6 @@ async fn adapter_materializes_markdown_handoff_before_returning_completion() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_rejects_markdown_handoff_missing_template_heading() {
     struct IncompleteMarkdownAi;
@@ -203,12 +298,9 @@ async fn adapter_rejects_markdown_handoff_missing_template_heading() {
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "markdown": "# Handoff\n\n## Summary\nDone.\n" }),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -252,7 +344,6 @@ async fn adapter_rejects_markdown_handoff_missing_template_heading() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     struct StreamingNeedsInputAi;
@@ -321,7 +412,6 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_does_not_repeat_streamed_prefix_in_input_request() {
     struct StreamingRepeatedAnswerAi;
@@ -456,12 +546,7 @@ fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
         ExecutionEvent::ToolCallProposed {
             node_id: NodeId("first".to_string()),
             label: "First".to_string(),
-            tool_call: ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({ "path": "README.md" }),
-            },
+            tool_call: ToolCall::new("call-1", "read", json!({ "path": "README.md" })),
         },
     );
     apply_event_to_run_state(
@@ -791,6 +876,7 @@ fn record_user_input_restores_thinking_status() {
                     id: "target_env".to_string(),
                     header: "Target".to_string(),
                     question: "Which environment?".to_string(),
+                    selection_mode: engine::UserInputSelectionMode::Single,
                     options: vec![
                         engine::UserInputOption {
                             label: "Staging".to_string(),
@@ -826,12 +912,7 @@ fn reducer_tracks_tool_approval_and_completion() {
         ExecutionEvent::ToolCallProposed {
             node_id: NodeId("first".to_string()),
             label: "First".to_string(),
-            tool_call: ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: json!({"path": "README.md"}),
-            },
+            tool_call: ToolCall::new("call-1", "read", json!({"path": "README.md"})),
         },
     );
     apply_event_to_run_state(
@@ -842,12 +923,7 @@ fn reducer_tracks_tool_approval_and_completion() {
                 approval_id: "approval-1".to_string(),
                 node_id: NodeId::from("first"),
                 node_label: "First".to_string(),
-                tool_call: ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({"path": "README.md"}),
-                },
+                tool_call: ToolCall::new("call-1", "read", json!({"path": "README.md"})),
                 tier: ToolTier::Read,
             },
         },
@@ -884,7 +960,6 @@ fn reducer_tracks_tool_approval_and_completion() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
     #[derive(Clone, Default)]
@@ -900,12 +975,9 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let mut calls = self.calls.lock();
@@ -919,23 +991,19 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Inspecting docs".to_string()),
-                    tool_calls: vec![ToolCall {
-                        id: "call-1".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "README.md"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-1",
+                        "read",
+                        json!({"path": "README.md"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -960,7 +1028,6 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
     assert!(!snapshot.tool_calls_by_node[&NodeId("first".to_string())].is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_survives_permanent_tool_failure_and_completes() {
     #[derive(Clone, Default)]
@@ -976,12 +1043,9 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let mut calls = self.calls.lock();
@@ -990,12 +1054,11 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-missing".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "definitely-missing-file-orch-test.txt"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-missing",
+                        "read",
+                        json!({"path": "definitely-missing-file-orch-test.txt"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -1009,12 +1072,9 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
             });
             assert!(saw_error, "model should see not_found tool error");
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "recovered"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1047,7 +1107,6 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     #[derive(Clone)]
@@ -1062,12 +1121,11 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({"path": "README.md"}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-1",
+                    "read",
+                    json!({"path": "README.md"}),
+                )],
                 reasoning: vec![],
                 usage: None,
             }))
@@ -1527,7 +1585,6 @@ where
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
     #[derive(Clone)]
@@ -1542,12 +1599,9 @@ async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
                 self.calls.fetch_add(1, Ordering::SeqCst);
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1616,7 +1670,6 @@ async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
     assert!(saw_skip_warning, "the skipped MCP server must be visible");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn interrupt_during_slow_tool_emits_node_interrupted() {
     #[derive(Clone)]
@@ -1636,12 +1689,11 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "call-sleep".to_string(),
-                    provider_call_id: None,
-                    name: "bash".to_string(),
-                    arguments: json!({"command": "sleep 30", "timeout": 30}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-sleep",
+                    "bash",
+                    json!({"command": "sleep 30", "timeout": 30}),
+                )],
                 reasoning: vec![],
                 usage: None,
             }))
@@ -1691,7 +1743,6 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
     #[derive(Clone)]
@@ -1768,7 +1819,6 @@ async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn new_message_retries_failed_node_with_message_in_transcript() {
     #[derive(Clone, Default)]
@@ -1789,12 +1839,9 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
         ) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -1809,12 +1856,9 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
                 "retry request should include the new user message"
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1863,7 +1907,6 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
     assert!(finished, "expected run to finish after retry input");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn new_message_during_tool_execution_reaches_next_model_turn() {
     #[derive(Clone, Default)]
@@ -1890,24 +1933,20 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
         ) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-sleep".to_string(),
-                        provider_call_id: None,
-                        name: "bash".to_string(),
-                        arguments: json!({"command": "sleep 1", "timeout": 5}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-sleep",
+                        "bash",
+                        json!({"command": "sleep 1", "timeout": 5}),
+                    )],
                     reasoning: Vec::new(),
                     usage: None,
                 }));
@@ -1921,12 +1960,9 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
                 "next model request must include the live user message"
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1974,7 +2010,6 @@ async fn new_message_during_tool_execution_reaches_next_model_turn() {
     assert!(finished, "expected run to finish after live input");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_retries_transient_node_error() {
     #[derive(Clone)]
@@ -2004,12 +2039,9 @@ async fn headless_retries_transient_node_error() {
                 return Err(AgentError::Transient("timeout".to_string()));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2035,7 +2067,6 @@ async fn headless_retries_transient_node_error() {
     assert_eq!(snapshot.report.outputs.len(), 1);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_exhausted_transient_retries_returns_missing_retry() {
     #[derive(Clone)]
@@ -2084,7 +2115,6 @@ async fn headless_exhausted_transient_retries_returns_missing_retry() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
     #[derive(Clone)]
@@ -2152,12 +2182,9 @@ fn question_then_complete(request: &AgentRequest) -> AgentTurnOutcome {
         })
     } else {
         AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "done"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })
     }
 }
@@ -2208,7 +2235,6 @@ where
     (params, checkpoint_sink)
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_then_continue_restores_awaiting_input() {
     #[derive(Clone)]
@@ -2305,7 +2331,6 @@ async fn stop_then_continue_restores_awaiting_input() {
     assert!(saw_awaiting_again, "expected awaiting input after continue");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stale_input_is_ignored_and_run_continues() {
     #[derive(Clone)]
@@ -2372,7 +2397,6 @@ async fn stale_input_is_ignored_and_run_continues() {
     assert!(finished, "expected run to finish after valid input");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn completed_run_includes_post_run_suggestions() {
     #[derive(Clone)]
@@ -2440,7 +2464,6 @@ async fn completed_run_includes_post_run_suggestions() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stopped_run_continuation_retries_node_with_message() {
     #[derive(Clone)]
@@ -2473,12 +2496,9 @@ async fn stopped_run_continuation_retries_node_with_message() {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "resumed"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2568,7 +2588,6 @@ fn write_tool_workflow() -> Workflow {
     workflow
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
     #[derive(Clone)]
@@ -2589,23 +2608,19 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-write".to_string(),
-                        provider_call_id: None,
-                        name: "write".to_string(),
-                        arguments: json!({"path": "out.txt", "content": "deny-me\n"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-write",
+                        "write",
+                        json!({"path": "out.txt", "content": "deny-me\n"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2715,7 +2730,6 @@ fn output_repair_policy_from_workflow_trims_blank_and_keeps_model() {
         .is_none());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
     struct RepairStreamAi;
@@ -2740,12 +2754,9 @@ async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
                 model: "repair-m".into(),
             });
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".into(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -2819,7 +2830,6 @@ fn reducer_output_repair_events_do_not_set_last_error() {
     assert!(state.run_trace[1].message.contains("repair failed"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed() {
     use std::sync::Mutex as StdMutex;
@@ -2862,7 +2872,6 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
         steps: StdMutex::new(vec![
             Err(primary_err),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "repaired_arguments": {
                         "output": { "summary": "repaired" }
@@ -2870,8 +2879,7 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         ]),
         captured: Arc::new(StdMutex::new(Vec::new())),
@@ -2935,7 +2943,6 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
     assert_eq!(requests[2].node_id, NodeId::from("__post_run_review"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_failed_repair_preserves_retryable_error_path() {
     use std::sync::Mutex as StdMutex;

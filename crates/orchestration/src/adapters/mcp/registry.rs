@@ -1,8 +1,7 @@
 use crate::mcp::catalog::{
-    McpCatalog, McpCatalogArgument, McpCatalogError, McpCatalogInput, McpCatalogPackage,
-    McpCatalogPage, McpCatalogQuery, McpCatalogRemote, McpCatalogServer,
+    McpCatalogArgument, McpCatalogError, McpCatalogInput, McpCatalogPackage, McpCatalogPage,
+    McpCatalogQuery, McpCatalogRemote, McpCatalogServer,
 };
-use async_trait::async_trait;
 use reqwest::Url;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -141,9 +140,8 @@ impl McpRegistryClient {
     }
 }
 
-#[async_trait]
-impl McpCatalog for McpRegistryClient {
-    async fn search(&self, query: &McpCatalogQuery) -> Result<McpCatalogPage, McpCatalogError> {
+impl McpRegistryClient {
+    pub async fn search(&self, query: &McpCatalogQuery) -> Result<McpCatalogPage, McpCatalogError> {
         let response = self
             .list_servers(&RegistryListParams {
                 search: query.search.clone(),
@@ -155,7 +153,7 @@ impl McpCatalog for McpRegistryClient {
         Ok(self.catalog_page(response))
     }
 
-    async fn versions(&self, server_name: &str) -> Result<McpCatalogPage, McpCatalogError> {
+    pub async fn versions(&self, server_name: &str) -> Result<McpCatalogPage, McpCatalogError> {
         let response = self
             .list_server_versions(server_name)
             .await
@@ -163,7 +161,7 @@ impl McpCatalog for McpRegistryClient {
         Ok(self.catalog_page(response))
     }
 
-    async fn exact_version(
+    pub async fn exact_version(
         &self,
         server_name: &str,
         version: &str,

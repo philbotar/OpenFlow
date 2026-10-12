@@ -1,6 +1,5 @@
 use std::io::ErrorKind;
 use std::net::Ipv4Addr;
-use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
@@ -12,17 +11,13 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::auth::CodexOAuthCredentials;
 
 use super::tokens::exchange_authorization_code;
-use super::{
-    CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient, CodexOAuthError,
-    CODEX_OAUTH_CLIENT_ID,
-};
+use super::{CodexLoginPrompt, CodexOAuthClient, CodexOAuthError, CODEX_OAUTH_CLIENT_ID};
 
 const OAUTH_SCOPE: &str = "openid profile email offline_access";
 const MAX_CALLBACK_BYTES: usize = 16 * 1024;
 
 pub(super) async fn login<F>(
     client: &CodexOAuthClient,
-    cancellation: &CodexLoginCancellation,
     publish: &F,
 ) -> Result<CodexOAuthCredentials, CodexOAuthError>
 where
@@ -50,24 +45,19 @@ where
 
     publish(CodexLoginPrompt::Browser { authorization_url }).map_err(CodexOAuthError::Prompt)?;
 
-    let callback = tokio::time::timeout(
-        client.browser_timeout,
-        wait_for_callback(&listener, cancellation, &state),
-    )
-    .await
-    .map_err(|_| CodexOAuthError::TimedOut)??;
+    let callback =
+        tokio::time::timeout(client.browser_timeout, wait_for_callback(&listener, &state))
+            .await
+            .map_err(|_| CodexOAuthError::TimedOut)??;
 
-    let exchange = exchange_authorization_code(
+    let credentials = exchange_authorization_code(
         &client.http,
         &client.endpoints.token,
         &callback.code,
         &redirect_uri,
         &verifier,
-    );
-    let credentials = tokio::select! {
-        () = wait_until_cancelled(cancellation) => Err(CodexOAuthError::Cancelled),
-        result = exchange => result,
-    };
+    )
+    .await;
 
     let mut stream = callback.stream;
     let (status, body) = if credentials.is_ok() {
@@ -92,16 +82,13 @@ struct CallbackRequest {
 
 async fn wait_for_callback(
     listener: &TcpListener,
-    cancellation: &CodexLoginCancellation,
     expected_state: &str,
 ) -> Result<CallbackRequest, CodexOAuthError> {
     loop {
-        let (mut stream, _address) = tokio::select! {
-            () = wait_until_cancelled(cancellation) => return Err(CodexOAuthError::Cancelled),
-            accepted = listener.accept() => accepted.map_err(|error| {
-                CodexOAuthError::Callback(error.kind().to_string())
-            })?,
-        };
+        let (mut stream, _address) = listener
+            .accept()
+            .await
+            .map_err(|error| CodexOAuthError::Callback(error.kind().to_string()))?;
 
         let request_target = match read_request_target(&mut stream).await {
             Ok(target) => target,
@@ -233,12 +220,6 @@ fn random_base64<const SIZE: usize>() -> Result<String, CodexOAuthError> {
 
 fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-}
-
-pub(super) async fn wait_until_cancelled(cancellation: &CodexLoginCancellation) {
-    while !cancellation.is_cancelled() {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 #[cfg(test)]

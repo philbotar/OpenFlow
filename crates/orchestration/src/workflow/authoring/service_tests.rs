@@ -20,12 +20,10 @@ struct MockAuthoringAi {
 impl AiPort for MockAuthoringAi {
     async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -40,17 +38,14 @@ impl AiPort for CapturingPromptAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         *self.system_messages.lock().expect("system messages lock") = request.system_messages;
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_materializes_valid_draft() {
     let ai = MockAuthoringAi {
@@ -148,7 +143,6 @@ impl AiPort for CapturingRuntimeAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_applies_authoring_runtime_config() {
     let ai = CapturingRuntimeAi {
@@ -190,7 +184,6 @@ async fn send_turn_applies_authoring_runtime_config() {
     assert!(request.fast_mode);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_keeps_informational_questions_in_chat() {
     let service = WorkflowAuthoringService::new();
@@ -235,19 +228,12 @@ impl AiPort for ProposalThenToolsAi {
             .iter()
             .any(|tool| tool.name == "openflow_set_workflow_meta"));
         match call {
-            0 if self.first_completed => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({
+            0 if self.first_completed => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output: json!({
                     "assistantMessage": "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
-                }),
-                raw_text: String::new(),
-                assistant_message: Some(
+                }), raw_text: String::new(), assistant_message: Some(
                     "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
                         .to_string(),
-                ),
-                reasoning: Vec::new(),
-                usage: None,
-            })),
+                ), ..Default::default() })),
             0 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
                 raw_text: "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
                     .to_string(),
@@ -259,23 +245,11 @@ impl AiPort for ProposalThenToolsAi {
             1 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "set-weekly-options-name".to_string(),
-                    provider_call_id: None,
-                    name: "openflow_set_workflow_meta".to_string(),
-                    arguments: json!({ "name": "Weekly Options Research" }),
-                }],
+                tool_calls: vec![ToolCall::new("set-weekly-options-name", "openflow_set_workflow_meta", json!({ "name": "Weekly Options Research" }))],
                 reasoning: Vec::new(),
                 usage: None,
             })),
-            2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
-                output: json!({ "assistantMessage": "Proposed a workflow for review." }),
-                raw_text: String::new(),
-                assistant_message: Some("Proposed a workflow for review.".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
-            })),
+            2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output: json!({ "assistantMessage": "Proposed a workflow for review." }), raw_text: String::new(), assistant_message: Some("Proposed a workflow for review.".to_string()), ..Default::default() })),
             _ => panic!("unexpected proposal authoring invoke count {call}"),
         }
     }
@@ -308,13 +282,11 @@ async fn assert_proposal_text_requires_a_real_draft(first_completed: bool) {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 3);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn submitted_proposal_text_is_retried_until_a_real_draft_exists() {
     assert_proposal_text_requires_a_real_draft(true).await;
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn plain_proposal_text_is_retried_until_a_real_draft_exists() {
     assert_proposal_text_requires_a_real_draft(false).await;
@@ -357,7 +329,6 @@ fn only_direct_workflow_change_requests_enable_authoring_tools() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn project_authoring_uses_project_specific_preamble() {
     let project_dir = tempfile::tempdir().expect("project tempdir");
@@ -436,12 +407,11 @@ impl AiPort for ProjectReadToolsAi {
                 Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "read-project-manifest".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({ "path": "PROJECT.md" }),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "read-project-manifest",
+                        "read",
+                        json!({ "path": "PROJECT.md" }),
+                    )],
                     reasoning: Vec::new(),
                     usage: None,
                 }))
@@ -461,12 +431,10 @@ impl AiPort for ProjectReadToolsAi {
                 );
                 let output = single_node_draft("Repo-aware Flow", "root", "Root");
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: output.clone(),
                     raw_text: output.to_string(),
                     assistant_message: Some("Built a repo-aware workflow.".to_string()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             _ => panic!("unexpected project authoring invoke count {call}"),
@@ -474,7 +442,6 @@ impl AiPort for ProjectReadToolsAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn project_authoring_exposes_and_executes_read_tools() {
     let project_dir = tempfile::tempdir().expect("project tempdir");
@@ -529,24 +496,22 @@ impl AiPort for IncrementalAuthoringAi {
                 raw_text: String::new(),
                 assistant_message: None,
                 tool_calls: vec![
-                    ToolCall {
-                        id: "call-meta".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_set_workflow_meta".to_string(),
-                        arguments: json!({ "name": "Demo" }),
-                    },
-                    ToolCall {
-                        id: "call-root".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_add_node".to_string(),
-                        arguments: json!({
+                    ToolCall::new(
+                        "call-meta",
+                        "openflow_set_workflow_meta",
+                        json!({ "name": "Demo" }),
+                    ),
+                    ToolCall::new(
+                        "call-root",
+                        "openflow_add_node",
+                        json!({
                             "id": "root",
                             "label": "Root",
                             "systemPrompt": "You are root.",
                             "taskPrompt": "Summarize the idea.",
                             "autoStart": true
                         }),
-                    },
+                    ),
                 ],
                 reasoning: vec![],
                 usage: None,
@@ -555,24 +520,22 @@ impl AiPort for IncrementalAuthoringAi {
                 raw_text: String::new(),
                 assistant_message: None,
                 tool_calls: vec![
-                    ToolCall {
-                        id: "call-plan".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_add_node".to_string(),
-                        arguments: json!({
+                    ToolCall::new(
+                        "call-plan",
+                        "openflow_add_node",
+                        json!({
                             "id": "plan",
                             "label": "Plan",
                             "systemPrompt": "You plan.",
                             "taskPrompt": "Plan from upstream.",
                             "autoStart": true
                         }),
-                    },
-                    ToolCall {
-                        id: "call-edge".to_string(),
-                        provider_call_id: None,
-                        name: "openflow_add_edge".to_string(),
-                        arguments: json!({ "id": "root-plan", "from": "root", "to": "plan" }),
-                    },
+                    ),
+                    ToolCall::new(
+                        "call-edge",
+                        "openflow_add_edge",
+                        json!({ "id": "root-plan", "from": "root", "to": "plan" }),
+                    ),
                 ],
                 reasoning: vec![],
                 usage: None,
@@ -586,12 +549,10 @@ impl AiPort for IncrementalAuthoringAi {
                     "expected authoring tools on request"
                 );
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({ "assistantMessage": "Built a two-step workflow." }),
                     raw_text: String::new(),
                     assistant_message: Some("Built a two-step workflow.".to_string()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             _ => panic!("unexpected authoring invoke count {call}"),
@@ -599,7 +560,6 @@ impl AiPort for IncrementalAuthoringAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_builds_draft_via_incremental_authoring_tools() {
     let ai = IncrementalAuthoringAi {
@@ -657,43 +617,38 @@ impl AiPort for MixedToolTurnRetryAi {
                     raw_text: String::new(),
                     assistant_message: None,
                     tool_calls: vec![
-                        ToolCall {
-                            id: "call-meta".to_string(),
-                            provider_call_id: None,
-                            name: "openflow_set_workflow_meta".to_string(),
-                            arguments: json!({ "name": "Demo" }),
-                        },
-                        ToolCall {
-                            id: "call-root".to_string(),
-                            provider_call_id: None,
-                            name: "openflow_add_node".to_string(),
-                            arguments: json!({
+                        ToolCall::new(
+                            "call-meta",
+                            "openflow_set_workflow_meta",
+                            json!({ "name": "Demo" }),
+                        ),
+                        ToolCall::new(
+                            "call-root",
+                            "openflow_add_node",
+                            json!({
                                 "id": "root",
                                 "label": "Root",
                                 "systemPrompt": "You are root.",
                                 "taskPrompt": "Summarize the idea.",
                                 "autoStart": true
                             }),
-                        },
+                        ),
                     ],
                     reasoning: vec![],
                     usage: None,
                 }))
             }
             2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({ "assistantMessage": "Built a one-step workflow." }),
                 raw_text: String::new(),
                 assistant_message: Some("Built a one-step workflow.".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
             _ => panic!("unexpected authoring invoke count {call}"),
         }
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_mixed_tool_turn_and_materializes_draft() {
     let ai = MixedToolTurnRetryAi {
@@ -772,17 +727,14 @@ impl AiPort for MultiTurnMockAi {
             single_node_draft("Draft v2", "root", "Root Updated")
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Updated draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_preserves_session_for_follow_up_messages() {
     let ai = MultiTurnMockAi {
@@ -822,7 +774,6 @@ async fn send_turn_preserves_session_for_follow_up_messages() {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_accepts_flat_draft_fields_in_output() {
     let ai = MockAuthoringAi {
@@ -885,18 +836,15 @@ impl AiPort for ClarificationThenDraftAi {
             }))
         } else {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_returns_clarification_for_the_next_user_turn() {
     let draft_response = json!({
@@ -975,7 +923,6 @@ impl AiPort for AlwaysClarifyAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_returns_assistant_message_when_model_requests_clarification() {
     let ai = AlwaysClarifyAi;
@@ -1033,17 +980,14 @@ impl AiPort for MalformedSubmitThenDraftAi {
             "expected malformed-submit feedback in transcript"
         );
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: self.draft_response.clone(),
             raw_text: self.draft_response.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
     struct MissingSubmitThenDraftAi {
@@ -1061,12 +1005,10 @@ async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
                 ));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1124,7 +1066,6 @@ async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_malformed_submit_output_and_materializes_draft() {
     let draft_response = json!({
@@ -1222,17 +1163,14 @@ impl AiPort for InvalidDraftThenValidAi {
             single_node_draft("Demo", "root", "Root")
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Built draft".to_string()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_invalid_draft_until_it_converges() {
     let ai = InvalidDraftThenValidAi {

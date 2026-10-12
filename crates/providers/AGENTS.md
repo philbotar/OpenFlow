@@ -34,10 +34,11 @@ engine::AiPort (trait)
 | Path | Owns |
 | --- | --- |
 | `lib.rs` | `create_provider()` factory — **only public wiring entry** |
-| `client.rs` | `AiClient: AiPort`, config types (`OpenAiCompatibleConfig`, `AnthropicConfig`, `BedrockConfig`) |
+| `client.rs` | `AiClient: AiPort`, provider configs; buffered/streaming calls share Rig dispatch |
+| `codex.rs` / `codex_oauth/` | Codex inference, serialized token refresh, browser/device login |
 | `mapping/` | `AgentRequest` ↔ provider payloads; `jsonrepair-rs` for tool args |
 | `rig_adapter/` | Rig model build, convert, stream, outcome, Anthropic HTTP extras |
-| `auth.rs` | `AuthConfig`, header construction |
+| `auth.rs` | `AuthConfig`, shared key/header validation for inference and model discovery |
 | `spec.rs` | Provider metadata, builtin specs, `ProviderId` |
 | `prompt_cache.rs` | Prompt caching hints (Anthropic / OpenAI-compat keys) |
 | `aws_runtime.rs` / `bedrock_*.rs` | Bedrock credentials, model list, errors (feature `bedrock`) |
@@ -61,6 +62,15 @@ Orchestration may import only allowlisted symbols from `providers` (factory + co
 3. **No upward leaks** — orchestration never branches on `Anthropic` vs `OpenAI`; that logic stays here.
 4. **Errors** — map HTTP/auth/parsing failures to `AgentError` (engine port vocabulary).
 5. **Streaming** — emit `AiStreamEvent` through `AiStreamSink`; keep delta assembly testable.
+
+`rig_adapter/model.rs` selects the transport once when building a cached model. Do not add
+provider-named pass-through invocation wrappers. Build each request from the current
+`AgentRequest`; the cache stores models, not transcripts or runtime request settings.
+
+Tool schemas use Rig's existing `ToolDefinition` inside this adapter; engine tool types remain
+provider-independent. OAuth login has one cancellation boundary around the entire browser/device
+attempt, including callback reads and HTTP requests. Credential persistence stays behind
+`CodexCredentialSink`, implemented by orchestration.
 
 ## Patterns
 
@@ -98,13 +108,6 @@ cargo nextest run -p providers --features bedrock
 ```
 
 Test wire mapping and `jsonrepair` recovery. Avoid live network in unit tests. Default builds skip the `bedrock` feature (no AWS SDK); desktop enables it for the app.
-
-## Change checklist
-
-1. Does orchestration still depend only on `create_provider()` + config types?
-2. Is provider-specific logic contained in this crate?
-3. Do mapping / `rig_adapter` tests cover new fields and tool-call shapes?
-4. Run `./scripts/verify.sh test-fast clippy arch`.
 
 ## Related docs
 

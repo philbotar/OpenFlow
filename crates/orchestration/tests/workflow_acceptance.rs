@@ -78,7 +78,6 @@ impl AiPort for ScriptedAi {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     let ai = ScriptedAi::default();
@@ -129,7 +128,6 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     assert_eq!(entrypoint_text, "Plan project ORCHID-91");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
     #[derive(Clone)]
@@ -140,24 +138,19 @@ async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             if request.node_id == "research" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({
                         "markdown": "# Handoff\n\n## Summary\nVerified ORCHID-91.\n"
                     }),
                     raw_text: "{}".to_string(),
                     assistant_message: Some("Research complete.".to_string()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
 
@@ -175,23 +168,19 @@ async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
             if let Some(content) = read_result {
                 assert!(content.contains("Verified ORCHID-91."));
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"summary": "consumed ORCHID-91 handoff"}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
 
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
-                tool_calls: vec![ToolCall {
-                    id: "read-handoff".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: json!({"path": handoff_uri}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "read-handoff",
+                    "read",
+                    json!({"path": handoff_uri}),
+                )],
                 assistant_message: None,
                 reasoning: Vec::new(),
                 usage: None,
@@ -218,7 +207,6 @@ async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
     #[derive(Clone, Default)]
@@ -232,12 +220,9 @@ async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
             self.requests.lock().push(request.clone());
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             match &*request.node_id {
@@ -260,25 +245,20 @@ async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
                         })
                         .unwrap();
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                        handoff: None,
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: Some("Locked. Advancing.".to_string()),
-                        reasoning: Vec::new(),
-                        usage: None,
+                        ..Default::default()
                     }))
                 }
                 "final" => {
                     assert_eq!(request.input["upstream"][0]["node_id"], "human-review");
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                        handoff: None,
                         output: json!({
                             "summary": request.input["upstream"][0]["output"]["summary"]
                         }),
                         raw_text: "{}".to_string(),
-                        assistant_message: None,
-                        reasoning: Vec::new(),
-                        usage: None,
+                        ..Default::default()
                     }))
                 }
                 _ => unreachable!(),
@@ -320,7 +300,6 @@ async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() {
     #[derive(Clone, Default)]
@@ -352,12 +331,9 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
                         })
                         .expect("second answer");
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                        handoff: None,
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
-                        assistant_message: None,
-                        reasoning: Vec::new(),
-                        usage: None,
+                        ..Default::default()
                     }))
                 }
             }
@@ -405,7 +381,6 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     #[derive(Clone, Default)]
@@ -418,12 +393,9 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let call_number = {
@@ -442,12 +414,11 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Need repo context".to_string()),
-                    tool_calls: vec![ToolCall {
-                        id: "call-1".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "README.md"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-1",
+                        "read",
+                        json!({"path": "README.md"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -458,12 +429,9 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "tool verified ORCHID-91"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -512,7 +480,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     assert!(!snapshot.tool_calls_by_node[&NodeId("tool-node".into())].is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     #[derive(Clone, Default)]
@@ -525,12 +492,9 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let call_number = {
@@ -542,12 +506,11 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Saving draft".to_string()),
-                    tool_calls: vec![ToolCall {
-                        id: "call-write".to_string(),
-                        provider_call_id: None,
-                        name: "write".to_string(),
-                        arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-write",
+                        "write",
+                        json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -558,12 +521,9 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "draft saved ORCHID-91"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -632,12 +592,9 @@ impl AiPort for CheckpointWriteToolAi {
         use std::sync::atomic::Ordering;
         if request.node_id == "__post_run_review" {
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"suggestions": []}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }));
         }
         let call_number = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
@@ -645,12 +602,11 @@ impl AiPort for CheckpointWriteToolAi {
             return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: Some("Saving draft".to_string()),
-                tool_calls: vec![ToolCall {
-                    id: "call-write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
-                }],
+                tool_calls: vec![ToolCall::new(
+                    "call-write",
+                    "write",
+                    json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
+                )],
                 reasoning: vec![],
                 usage: None,
             }));
@@ -661,12 +617,9 @@ impl AiPort for CheckpointWriteToolAi {
             .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
         assert!(saw_tool_result);
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({"summary": "draft saved ORCHID-91"}),
             raw_text: "{}".to_string(),
-            assistant_message: None,
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }
@@ -720,7 +673,6 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn checkpoint_resume_mid_approval_replays_batch() {
     use parking_lot::Mutex as ParkingMutex;
@@ -808,7 +760,6 @@ async fn checkpoint_resume_mid_approval_replays_batch() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn failed_read_tool_feeds_error_and_node_completes() {
     #[derive(Clone, Default)]
@@ -821,12 +772,9 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let n = {
@@ -838,12 +786,11 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-1".to_string(),
-                        provider_call_id: None,
-                        name: "read".to_string(),
-                        arguments: json!({"path": "missing-acceptance-file.txt"}),
-                    }],
+                    tool_calls: vec![ToolCall::new(
+                        "call-1",
+                        "read",
+                        json!({"path": "missing-acceptance-file.txt"}),
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -853,12 +800,9 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 engine::AgentTranscriptItem::ToolResult { result } if result.is_error
             )));
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok after tool error"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -891,7 +835,6 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
 
 /// Regression probe: `read` on a missing file yields `[not_found]`; `search` on a
 /// missing path should not silently succeed with "No matches found".
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn search_missing_path_surfaces_not_found_not_empty_success() {
     #[derive(Clone, Default)]
@@ -904,12 +847,9 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             let n = {
@@ -921,15 +861,14 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "call-search".to_string(),
-                        provider_call_id: None,
-                        name: "search".to_string(),
-                        arguments: json!({
+                    tool_calls: vec![ToolCall::new(
+                        "call-search",
+                        "search",
+                        json!({
                             "pattern": "ORCHID-91",
                             "paths": "missing-acceptance-target.txt"
                         }),
-                    }],
+                    )],
                     reasoning: vec![],
                     usage: None,
                 }));
@@ -957,12 +896,9 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 result.content
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": "ok after search path error"}),
                 raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }))
         }
     }
@@ -1037,16 +973,13 @@ impl AiPort for OutputRepairAcceptanceAi {
         if node_id.ends_with("__output_repair") {
             if self.invalid_repair {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"not_repaired": true}),
                     raw_text: "{}".into(),
                     assistant_message: Some("overseer prose".into()),
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }));
             }
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({
                     "repaired_arguments": {
                         "output": { "summary": "FIXED-REPAIR" }
@@ -1054,8 +987,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             }));
         }
 
@@ -1084,12 +1016,9 @@ impl AiPort for OutputRepairAcceptanceAi {
                     ));
                 }
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({"summary": "should-not-reach-without-repair"}),
                     raw_text: "{}".into(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             "down" => {
@@ -1100,7 +1029,6 @@ impl AiPort for OutputRepairAcceptanceAi {
                     "downstream must receive repaired root output"
                 );
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    handoff: None,
                     output: json!({
                         "summary": format!(
                             "down saw {}",
@@ -1108,18 +1036,13 @@ impl AiPort for OutputRepairAcceptanceAi {
                         )
                     }),
                     raw_text: "{}".into(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
+                    ..Default::default()
                 }))
             }
             other => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"summary": format!("unexpected {other}")}),
                 raw_text: "{}".into(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         }
     }
@@ -1140,7 +1063,6 @@ fn root_down_workflow(overseer_model: Option<&str>) -> Workflow {
     workflow
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn output_repair_propagates_repaired_output_downstream() {
     let ai = OutputRepairAcceptanceAi::success();
@@ -1216,7 +1138,6 @@ async fn output_repair_propagates_repaired_output_downstream() {
     assert_eq!(down.model, "down-m");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn output_repair_inherits_worker_model_when_unset() {
     let ai = OutputRepairAcceptanceAi::success();
@@ -1234,7 +1155,6 @@ async fn output_repair_inherits_worker_model_when_unset() {
     assert_eq!(repair.model, "worker-m");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn output_repair_invalid_overseer_keeps_retryable_path_and_redacts_secret() {
     let ai = OutputRepairAcceptanceAi::invalid_repair();

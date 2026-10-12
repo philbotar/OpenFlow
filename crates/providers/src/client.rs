@@ -119,19 +119,7 @@ impl AiClient {
 #[async_trait]
 impl AiPort for AiClient {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-        match &self.config.adapter {
-            ProviderAdapterConfig::OpenAiCompatible(_) => {
-                crate::rig_adapter::invoke_openai_compatible(&self.config, &self.models, request)
-                    .await
-            }
-            ProviderAdapterConfig::OpenAiCodex(_) => Err(codex_not_wired_error()),
-            ProviderAdapterConfig::Anthropic(_) => {
-                crate::rig_adapter::invoke_anthropic(&self.config, &self.models, request).await
-            }
-            ProviderAdapterConfig::Bedrock(_) => {
-                bedrock_invoke(&self.config, &self.models, request).await
-            }
-        }
+        crate::rig_adapter::invoke(&self.config, &self.models, request).await
     }
 
     async fn invoke_stream(
@@ -139,77 +127,8 @@ impl AiPort for AiClient {
         request: AgentRequest,
         sink: &dyn AiStreamSink,
     ) -> Result<AgentTurnOutcome, AgentError> {
-        match &self.config.adapter {
-            ProviderAdapterConfig::OpenAiCompatible(_) => {
-                crate::rig_adapter::invoke_openai_compatible_stream(
-                    &self.config,
-                    &self.models,
-                    request,
-                    sink,
-                )
-                .await
-            }
-            ProviderAdapterConfig::OpenAiCodex(_) => Err(codex_not_wired_error()),
-            ProviderAdapterConfig::Anthropic(_) => {
-                crate::rig_adapter::invoke_anthropic_stream(
-                    &self.config,
-                    &self.models,
-                    request,
-                    sink,
-                )
-                .await
-            }
-            ProviderAdapterConfig::Bedrock(_) => {
-                bedrock_invoke_stream(&self.config, &self.models, request, sink).await
-            }
-        }
+        crate::rig_adapter::invoke_stream(&self.config, &self.models, request, sink).await
     }
-}
-
-fn codex_not_wired_error() -> AgentError {
-    AgentError::Failed("OpenAI Codex inference is not wired yet".into())
-}
-
-#[cfg(feature = "bedrock")]
-async fn bedrock_invoke(
-    config: &AiClientConfig,
-    models: &crate::rig_adapter::ModelCache,
-    request: AgentRequest,
-) -> Result<AgentTurnOutcome, AgentError> {
-    crate::rig_adapter::invoke_bedrock(config, models, request).await
-}
-
-#[cfg(not(feature = "bedrock"))]
-async fn bedrock_invoke(
-    _config: &AiClientConfig,
-    _models: &crate::rig_adapter::ModelCache,
-    _request: AgentRequest,
-) -> Result<AgentTurnOutcome, AgentError> {
-    Err(AgentError::Failed(
-        "Bedrock support is disabled (enable the `bedrock` feature)".into(),
-    ))
-}
-
-#[cfg(feature = "bedrock")]
-async fn bedrock_invoke_stream(
-    config: &AiClientConfig,
-    models: &crate::rig_adapter::ModelCache,
-    request: AgentRequest,
-    sink: &dyn AiStreamSink,
-) -> Result<AgentTurnOutcome, AgentError> {
-    crate::rig_adapter::invoke_bedrock_stream(config, models, request, sink).await
-}
-
-#[cfg(not(feature = "bedrock"))]
-async fn bedrock_invoke_stream(
-    _config: &AiClientConfig,
-    _models: &crate::rig_adapter::ModelCache,
-    _request: AgentRequest,
-    _sink: &dyn AiStreamSink,
-) -> Result<AgentTurnOutcome, AgentError> {
-    Err(AgentError::Failed(
-        "Bedrock support is disabled (enable the `bedrock` feature)".into(),
-    ))
 }
 
 #[cfg(test)]

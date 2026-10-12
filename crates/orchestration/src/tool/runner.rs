@@ -550,7 +550,6 @@ mod tests {
         })
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_file_selector_returns_numbered_lines() {
         let dir = tempfile::tempdir().unwrap();
@@ -558,12 +557,11 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-1".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: serde_json::json!({"path": "note.txt:2-3"}),
-                },
+                ToolCall::new(
+                    "call-1",
+                    "read",
+                    serde_json::json!({"path": "note.txt:2-3"}),
+                ),
                 None,
             )
             .await
@@ -572,7 +570,6 @@ mod tests {
         assert!(record.result.content.contains("3:c"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_file_without_selector_announces_truncation() {
         let dir = tempfile::tempdir().unwrap();
@@ -584,12 +581,7 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-trunc".to_string(),
-                    provider_call_id: None,
-                    name: "read".to_string(),
-                    arguments: serde_json::json!({"path": "big.txt"}),
-                },
+                ToolCall::new("call-trunc", "read", serde_json::json!({"path": "big.txt"})),
                 None,
             )
             .await
@@ -606,7 +598,6 @@ mod tests {
             .contains("use :{start}-{end} or :raw to read more"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn search_finds_matching_lines() {
         let dir = tempfile::tempdir().unwrap();
@@ -614,12 +605,11 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-2".to_string(),
-                    provider_call_id: None,
-                    name: "search".to_string(),
-                    arguments: serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
-                },
+                ToolCall::new(
+                    "call-2",
+                    "search",
+                    serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
+                ),
                 None,
             )
             .await
@@ -627,19 +617,17 @@ mod tests {
         assert!(record.result.content.contains("note.txt:2:beta"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn write_creates_file_under_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "new.txt", "content": "hello\n"}),
-                },
+                ToolCall::new(
+                    "call-write",
+                    "write",
+                    serde_json::json!({"path": "new.txt", "content": "hello\n"}),
+                ),
                 None,
             )
             .await
@@ -671,7 +659,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn edit_replaces_text_in_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -679,15 +666,14 @@ mod tests {
         let runner = runner(dir.path());
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-edit".to_string(),
-                    provider_call_id: None,
-                    name: "edit".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "call-edit",
+                    "edit",
+                    serde_json::json!({
                         "path": "note.txt",
                         "edits": [{"old_text": "beta", "new_text": "gamma"}]
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -702,19 +688,17 @@ mod tests {
         assert_eq!(record.file_changes[0].op, engine::FileChangeOp::Update);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn write_rejects_path_outside_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
         let runner = runner(dir.path());
         let error = runner
             .execute(
-                ToolCall {
-                    id: "call-escape".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "../escape.txt", "content": "nope"}),
-                },
+                ToolCall::new(
+                    "call-escape",
+                    "write",
+                    serde_json::json!({"path": "../escape.txt", "content": "nope"}),
+                ),
                 None,
             )
             .await
@@ -722,7 +706,6 @@ mod tests {
         assert!(error.to_string().contains("path escapes execution folder"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn write_rejects_no_op_overwrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -730,12 +713,11 @@ mod tests {
         let runner = runner(dir.path());
         let error = runner
             .execute(
-                ToolCall {
-                    id: "call-noop".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
-                },
+                ToolCall::new(
+                    "call-noop",
+                    "write",
+                    serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
+                ),
                 None,
             )
             .await
@@ -747,7 +729,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn edit_rejects_path_outside_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -755,15 +736,14 @@ mod tests {
         let runner = runner(dir.path());
         let error = runner
             .execute(
-                ToolCall {
-                    id: "call-edit-escape".to_string(),
-                    provider_call_id: None,
-                    name: "edit".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "call-edit-escape",
+                    "edit",
+                    serde_json::json!({
                         "path": "../escape.txt",
                         "edits": [{"old_text": "alpha", "new_text": "beta"}]
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -771,7 +751,6 @@ mod tests {
         assert!(error.to_string().contains("path escapes execution folder"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn apply_patch_creates_file_under_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -779,12 +758,11 @@ mod tests {
         let patch = "*** Begin Patch\n*** Add File: new.txt\n+hello\n*** End Patch\n";
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-patch".to_string(),
-                    provider_call_id: None,
-                    name: "apply_patch".to_string(),
-                    arguments: serde_json::json!({"input": patch}),
-                },
+                ToolCall::new(
+                    "call-patch",
+                    "apply_patch",
+                    serde_json::json!({"input": patch}),
+                ),
                 None,
             )
             .await
@@ -809,7 +787,6 @@ mod tests {
         }
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn repeated_read_across_nodes_serves_cached_content_with_provenance() {
         let dir = tempfile::tempdir().unwrap();
@@ -832,7 +809,6 @@ mod tests {
         assert_eq!(second.result.tool_call_id, "call-2");
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn repeated_read_in_same_conversation_omits_content() {
         let dir = tempfile::tempdir().unwrap();
@@ -852,7 +828,6 @@ mod tests {
         assert!(!second.result.content.contains("alpha"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_cache_invalidated_when_file_changes() {
         let dir = tempfile::tempdir().unwrap();
@@ -871,17 +846,17 @@ mod tests {
         assert!(second.result.content.contains("2:gamma"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn search_cache_invalidated_by_write_tool() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
         let runner = runner(dir.path());
-        let search = |id: &str| ToolCall {
-            id: id.to_string(),
-            provider_call_id: None,
-            name: "search".to_string(),
-            arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
+        let search = |id: &str| {
+            ToolCall::new(
+                id,
+                "search",
+                serde_json::json!({"pattern": "alpha", "paths": "."}),
+            )
         };
         runner
             .execute(search("call-1"), ctx("recon", "recon"))
@@ -894,12 +869,11 @@ mod tests {
         assert!(hit.result.content.contains("[cached]"));
         runner
             .execute(
-                ToolCall {
-                    id: "call-write".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "other.txt", "content": "alpha too\n"}),
-                },
+                ToolCall::new(
+                    "call-write",
+                    "write",
+                    serde_json::json!({"path": "other.txt", "content": "alpha too\n"}),
+                ),
                 ctx("implement", "implement"),
             )
             .await
@@ -912,17 +886,17 @@ mod tests {
         assert!(after_write.result.content.contains("other.txt"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bump_cache_epoch_invalidates_search_entries() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
         let runner = runner(dir.path());
-        let search = |id: &str| ToolCall {
-            id: id.to_string(),
-            provider_call_id: None,
-            name: "search".to_string(),
-            arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
+        let search = |id: &str| {
+            ToolCall::new(
+                id,
+                "search",
+                serde_json::json!({"pattern": "alpha", "paths": "."}),
+            )
         };
         runner
             .execute(search("call-1"), ctx("recon", "recon"))
@@ -936,7 +910,6 @@ mod tests {
         assert!(!after_bump.result.content.contains("[cached]"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn read_artifact_round_trip_and_unknown_id() {
         let dir = tempfile::tempdir().unwrap();
@@ -973,7 +946,6 @@ mod tests {
             .contains("artifacts only live for the current run"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn plan_draft_write_edit_and_seal_stay_out_of_the_repository() {
         let dir = tempfile::tempdir().unwrap();
@@ -981,15 +953,14 @@ mod tests {
         let markdown = "# Plan\n\nImplement the smallest safe change.\n";
         let drafted = runner
             .execute(
-                ToolCall {
-                    id: "plan-draft".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "plan-draft",
+                    "write",
+                    serde_json::json!({
                         "path": engine::PLAN_DRAFT_PATH,
                         "content": "# Plan\n\nStub."
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -999,18 +970,17 @@ mod tests {
 
         let edited = runner
             .execute(
-                ToolCall {
-                    id: "plan-edit".to_string(),
-                    provider_call_id: None,
-                    name: "edit".to_string(),
-                    arguments: serde_json::json!({
+                ToolCall::new(
+                    "plan-edit",
+                    "edit",
+                    serde_json::json!({
                         "path": engine::PLAN_DRAFT_PATH,
                         "edits": [{
                             "old_text": "Stub.",
                             "new_text": "Implement the smallest safe change."
                         }]
                     }),
-                },
+                ),
                 None,
             )
             .await
@@ -1024,12 +994,11 @@ mod tests {
 
         let written = runner
             .execute(
-                ToolCall {
-                    id: "plan-write".to_string(),
-                    provider_call_id: None,
-                    name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                    arguments: serde_json::json!({}),
-                },
+                ToolCall::new(
+                    "plan-write",
+                    engine::WRITE_PLAN_ARTIFACT_TOOL,
+                    serde_json::json!({}),
+                ),
                 None,
             )
             .await
@@ -1049,7 +1018,6 @@ mod tests {
         assert_eq!(read.result.content, markdown);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_without_context_bypasses_cache() {
         let dir = tempfile::tempdir().unwrap();
@@ -1066,7 +1034,6 @@ mod tests {
         assert!(!second.result.content.contains("[cached]"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn partial_apply_patch_returns_file_changes_without_ledger_leak() {
         let dir = tempfile::tempdir().unwrap();
@@ -1074,12 +1041,11 @@ mod tests {
         let patch = "*** Begin Patch\n*** Add File: good.txt\n+hello\n*** Update File: missing.txt\n@ old\n-old\n+new\n*** End Patch\n";
         let record = runner
             .execute(
-                ToolCall {
-                    id: "call-partial".to_string(),
-                    provider_call_id: None,
-                    name: "apply_patch".to_string(),
-                    arguments: serde_json::json!({"input": patch}),
-                },
+                ToolCall::new(
+                    "call-partial",
+                    "apply_patch",
+                    serde_json::json!({"input": patch}),
+                ),
                 None,
             )
             .await
@@ -1108,12 +1074,11 @@ mod tests {
 
         let write_record = runner
             .execute(
-                ToolCall {
-                    id: "call-after-partial".to_string(),
-                    provider_call_id: None,
-                    name: "write".to_string(),
-                    arguments: serde_json::json!({"path": "after.txt", "content": "ok\n"}),
-                },
+                ToolCall::new(
+                    "call-after-partial",
+                    "write",
+                    serde_json::json!({"path": "after.txt", "content": "ok\n"}),
+                ),
                 None,
             )
             .await
@@ -1123,19 +1088,13 @@ mod tests {
         assert_eq!(write_record.file_changes[0].path, "after.txt");
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn external_tool_result_preserves_error_status() {
         let dir = tempfile::tempdir().unwrap();
         let runner = runner(dir.path());
         let record = runner
             .finalize_record_with_status(
-                ToolCall {
-                    id: "call-external".into(),
-                    provider_call_id: None,
-                    name: "mcp_4_test_echo".into(),
-                    arguments: serde_json::json!({}),
-                },
+                ToolCall::new("call-external", "mcp_4_test_echo", serde_json::json!({})),
                 "invalid input".into(),
                 true,
                 Vec::new(),
@@ -1148,7 +1107,6 @@ mod tests {
         assert!(record.result.is_error);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn mcp_execute_without_clients_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -1174,12 +1132,7 @@ mod tests {
         );
         let err = runner
             .execute(
-                ToolCall {
-                    id: "call-mcp".into(),
-                    provider_call_id: None,
-                    name: "mcp_4_test_echo".into(),
-                    arguments: serde_json::json!({}),
-                },
+                ToolCall::new("call-mcp", "mcp_4_test_echo", serde_json::json!({})),
                 None,
             )
             .await

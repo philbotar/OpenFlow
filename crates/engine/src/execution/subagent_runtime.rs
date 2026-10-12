@@ -184,25 +184,15 @@ pub fn start_subagent_invoke(
     declared_subagents.insert(subagent.id.clone(), subagent.clone());
 
     let provider_id = effective_node_provider_id(workflow, parent_node);
-    let mut sub_request = if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
-        build_saved_agent_request(
-            workflow,
-            agent_def,
-            &subagent,
-            &call_args.input,
-            available_tools,
-            provider_id,
-        )
-    } else {
-        build_adhoc_agent_request(
-            workflow,
-            parent_node,
-            &subagent,
-            &call_args.input,
-            available_tools,
-            provider_id,
-        )
-    };
+    let mut sub_request = build_subagent_request(
+        workflow,
+        parent_node,
+        agent_snapshots.get(&call_args.subagent_id),
+        &subagent,
+        &call_args.input,
+        available_tools,
+        provider_id,
+    );
     if sub_request.model.trim().is_empty() {
         sub_request.model.clone_from(&parent_node.agent.model);
     }
@@ -224,83 +214,58 @@ pub fn start_subagent_invoke(
     )
 }
 
-fn build_saved_agent_request(
-    workflow: &Workflow,
-    agent: &CallableAgent,
-    subagent: &SubagentSummary,
-    input: &str,
-    available_tools: Vec<crate::ToolDefinition>,
-    provider_id: Option<String>,
-) -> AgentRequest {
-    let sub_node_config = agent.tools.clone();
-    let system_prompt = merge_shared_context(workflow, &agent.system_prompt);
-    let sub_transcript = vec![AgentTranscriptItem::UserMessage {
-        content: format!(
-            "You are the saved agent \"{}\".\n\nTask: {input}",
-            agent.name
-        ),
-        attachments: Vec::new(),
-    }];
-    AgentRequest {
-        workflow_id: workflow.id.clone(),
-        node_id: NodeId(subagent.id.clone()),
-        node_label: subagent.name.clone(),
-        model: agent.model.clone(),
-        provider_id,
-        max_output_tokens: None,
-        system_messages: vec![system_prompt],
-        task_prompt: input.to_string(),
-        input: Value::Null,
-        output_schema: effective_output_schema(&agent.output_schema),
-        tool_config: sub_node_config,
-        available_tools,
-        transcript: sub_transcript,
-        entrypoint_attachments: Vec::new(),
-        resolved_attachments: std::collections::BTreeMap::new(),
-        model_attempt: 1,
-        reasoning_effort: None,
-        reasoning_budget_tokens: None,
-        fast_mode: workflow.settings.fast_mode,
-        tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
-        allow_user_input: false,
-        conversation_mode: false,
-    }
-}
-
-fn build_adhoc_agent_request(
+fn build_subagent_request(
     workflow: &Workflow,
     parent_node: &Node,
+    saved_agent: Option<&CallableAgent>,
     subagent: &SubagentSummary,
     input: &str,
     available_tools: Vec<crate::ToolDefinition>,
     provider_id: Option<String>,
 ) -> AgentRequest {
-    let sub_node_config = parent_node.agent.tools.clone();
-    let sub_transcript = vec![AgentTranscriptItem::UserMessage {
-        content: format!(
-            "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {input}",
-            subagent.name, subagent.purpose
-        ),
-        attachments: Vec::new(),
-    }];
-    let system_prompt = merge_shared_context(
-        workflow,
-        &format!("You are {}. {}", subagent.name, subagent.purpose),
+    let (model, tools, output_schema, system_prompt, user_message) = saved_agent.map_or_else(
+        || {
+            (
+                &parent_node.agent.model,
+                &parent_node.agent.tools,
+                default_structured_output_schema(),
+                format!("You are {}. {}", subagent.name, subagent.purpose),
+                format!(
+                    "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {input}",
+                    subagent.name, subagent.purpose
+                ),
+            )
+        },
+        |agent| {
+            (
+                &agent.model,
+                &agent.tools,
+                effective_output_schema(&agent.output_schema),
+                agent.system_prompt.clone(),
+                format!(
+                    "You are the saved agent \"{}\".\n\nTask: {input}",
+                    agent.name
+                ),
+            )
+        },
     );
     AgentRequest {
         workflow_id: workflow.id.clone(),
         node_id: NodeId(subagent.id.clone()),
         node_label: subagent.name.clone(),
-        model: parent_node.agent.model.clone(),
+        model: model.clone(),
         provider_id,
         max_output_tokens: None,
-        system_messages: vec![system_prompt],
+        system_messages: vec![merge_shared_context(workflow, &system_prompt)],
         task_prompt: input.to_string(),
         input: Value::Null,
-        output_schema: default_structured_output_schema(),
-        tool_config: sub_node_config,
+        output_schema,
+        tool_config: tools.clone(),
         available_tools,
-        transcript: sub_transcript,
+        transcript: vec![AgentTranscriptItem::UserMessage {
+            content: user_message,
+            attachments: Vec::new(),
+        }],
         entrypoint_attachments: Vec::new(),
         resolved_attachments: std::collections::BTreeMap::new(),
         model_attempt: 1,
@@ -324,7 +289,7 @@ pub fn advance_subagent_invoke(
         Ok(AgentTurnOutcome::Completed(success)) => complete_subagent(session, success),
         Ok(AgentTurnOutcome::ToolCalls(batch)) => {
             session.text_turn_streak = 0;
-            let mut transcript = session.request.transcript.clone();
+            let transcript = &mut session.request.transcript;
             for reasoning in &batch.reasoning {
                 transcript.push(AgentTranscriptItem::Reasoning {
                     reasoning: reasoning.clone(),
@@ -341,7 +306,6 @@ pub fn advance_subagent_invoke(
             for result in tool_results {
                 transcript.push(AgentTranscriptItem::ToolResult { result });
             }
-            session.request.transcript = transcript;
             SubagentInvokeStep::NeedAi(session)
         }
         Ok(AgentTurnOutcome::Message(message)) => {
@@ -538,15 +502,14 @@ mod tests {
             },
         );
 
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: CALL_SUBAGENT_TOOL.to_string(),
-            arguments: json!({
+        let tool_call = ToolCall::new(
+            "call-1",
+            CALL_SUBAGENT_TOOL,
+            json!({
                 "subagent_id": "sub-1",
                 "input": "wire the API"
             }),
-        };
+        );
 
         match start_subagent_invoke(
             &workflow,
@@ -577,12 +540,11 @@ mod tests {
                 status: SubagentStatus::Declared,
             },
         );
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: CALL_SUBAGENT_TOOL.to_string(),
-            arguments: json!({ "subagent_id": "sub-1", "input": "go" }),
-        };
+        let tool_call = ToolCall::new(
+            "call-1",
+            CALL_SUBAGENT_TOOL,
+            json!({ "subagent_id": "sub-1", "input": "go" }),
+        );
 
         match start_subagent_invoke(
             &workflow,
@@ -601,12 +563,11 @@ mod tests {
     #[test]
     fn declare_subagents_rejects_malformed_arguments() {
         let mut declared = std::collections::BTreeMap::new();
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: DECLARE_SUBAGENTS_TOOL.to_string(),
-            arguments: json!({ "subagents": "not-an-array" }),
-        };
+        let tool_call = ToolCall::new(
+            "call-1",
+            DECLARE_SUBAGENTS_TOOL,
+            json!({ "subagents": "not-an-array" }),
+        );
 
         let outcome =
             handle_declare_subagents(&NodeId("n1".to_string()), &tool_call, &mut declared);
@@ -630,12 +591,11 @@ mod tests {
         let mut snapshots = std::collections::BTreeMap::new();
         snapshots.insert("agent-1".to_string(), agent);
 
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: CALL_SUBAGENT_TOOL.to_string(),
-            arguments: json!({ "subagent_id": "agent-1", "input": "go" }),
-        };
+        let tool_call = ToolCall::new(
+            "call-1",
+            CALL_SUBAGENT_TOOL,
+            json!({ "subagent_id": "agent-1", "input": "go" }),
+        );
 
         match start_subagent_invoke(
             &workflow,
@@ -658,12 +618,7 @@ mod tests {
     #[test]
     fn advance_subagent_invoke_records_tool_calls_before_results() {
         let session = sample_session();
-        let tool_call = ToolCall {
-            id: "call-1".to_string(),
-            provider_call_id: None,
-            name: "read_file".to_string(),
-            arguments: json!({ "path": "notes.txt" }),
-        };
+        let tool_call = ToolCall::new("call-1", "read_file", json!({ "path": "notes.txt" }));
         let tool_result = ToolResult {
             tool_call_id: tool_call.id.clone(),
             tool_name: tool_call.name.clone(),

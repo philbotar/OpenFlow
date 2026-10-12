@@ -179,57 +179,29 @@ impl ProviderSpec {
     /// Returns the built-in reasoning effort options for this provider kind.
     #[must_use]
     pub fn default_reasoning_effort_options(&self) -> Vec<ReasoningEffortOption> {
-        match self.kind {
-            ProviderKind::Anthropic(_) | ProviderKind::Bedrock(_) => vec![
-                ReasoningEffortOption {
-                    value: "none".to_string(),
-                    label: "None".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "adaptive".to_string(),
-                    label: "Adaptive".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "low".to_string(),
-                    label: "Low".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "medium".to_string(),
-                    label: "Medium".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "high".to_string(),
-                    label: "High".to_string(),
-                    uses_budget_tokens: false,
-                },
+        let options: &[(&str, &str)] = match self.kind {
+            ProviderKind::Anthropic(_) | ProviderKind::Bedrock(_) => &[
+                ("none", "None"),
+                ("adaptive", "Adaptive"),
+                ("low", "Low"),
+                ("medium", "Medium"),
+                ("high", "High"),
             ],
-            ProviderKind::OpenAiCompatible(_) | ProviderKind::OpenAiCodex => vec![
-                ReasoningEffortOption {
-                    value: "none".to_string(),
-                    label: "None".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "low".to_string(),
-                    label: "Low".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "medium".to_string(),
-                    label: "Medium".to_string(),
-                    uses_budget_tokens: false,
-                },
-                ReasoningEffortOption {
-                    value: "high".to_string(),
-                    label: "High".to_string(),
-                    uses_budget_tokens: false,
-                },
+            ProviderKind::OpenAiCompatible(_) | ProviderKind::OpenAiCodex => &[
+                ("none", "None"),
+                ("low", "Low"),
+                ("medium", "Medium"),
+                ("high", "High"),
             ],
-        }
+        };
+        options
+            .iter()
+            .map(|(value, label)| ReasoningEffortOption {
+                value: (*value).to_string(),
+                label: (*label).to_string(),
+                uses_budget_tokens: false,
+            })
+            .collect()
     }
 }
 
