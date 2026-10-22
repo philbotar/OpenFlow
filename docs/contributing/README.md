@@ -1,14 +1,14 @@
 # Contributing
 
-Start with a [source build](../getting-started/build-from-source.md), then choose the owning area and checks for your change.
+Start with a [source build](../getting-started/build-from-source.md), then find the owning area and checks for your change.
 
 ## Make a change
 
-1. Check the working tree and preserve existing staged, unstaged, and untracked work.
-2. Find the owner in [AGENTS.md](../../AGENTS.md) and read that area’s guide.
-3. Implement the change in that layer. Use [Coding patterns](coding-patterns.md) for ownership, errors, persistence, and test placement.
-4. Run the checks for the affected behavior, then inspect the diff. Update product docs when behavior changes.
-5. Run the full verification gate before a code PR. Report local checks, any live-provider smoke, and remote CI separately.
+1. Check the working tree. Preserve existing staged, unstaged, and untracked work.
+2. Find the owner in [AGENTS.md](../../AGENTS.md) and read that area's guide.
+3. Implement in that layer, following [Coding patterns](coding-patterns.md) for ownership, errors, persistence, and test placement.
+4. Run checks for the affected behavior and inspect the diff. Update product docs when behavior changes.
+5. Run the full verification gate before a code PR. Report local checks, live-provider smoke, and remote CI separately.
 
 <a id="filesystem"></a>
 
@@ -28,20 +28,20 @@ Start with a [source build](../getting-started/build-from-source.md), then choos
 | Check dependency rules | [Architecture contract](../architecture/contract.md) |
 | Look up engine and app vocabulary | [Glossary](../glossary.md) |
 
-Project skills under [`.cursor/skills/`](../../.cursor/skills/) provide scoped help; [Development lanes](development-lanes.md) maps them to changes.
+Project skills in [`.cursor/skills/`](../../.cursor/skills/) give scoped help; [Development lanes](development-lanes.md) maps them to changes.
 
 ## Verify and submit
 
-[Development lanes](development-lanes.md) selects the checks; [Development commands](commands.md) provides the command reference. Docs-only edits need link, path, syntax, and diff checks. Runtime changes need execution coverage; desktop changes need the desktop lane.
+[Development lanes](development-lanes.md) picks the checks; [Development commands](commands.md) lists them. Docs-only edits need link, path, syntax, and diff checks. Runtime changes need execution coverage; desktop changes need the desktop lane.
 
-Publishing tags and releases requires explicit authorization. The [release guide](releasing.md) describes versioning and publication.
+Publishing tags and releases needs explicit authorization. The [release guide](releasing.md) covers versioning and publication.
 
 <a id="boundary-seams"></a>
 <a id="ui-layout"></a>
 <a id="persistence-overview"></a>
 
-For code orientation, use [Ports and public boundaries](../FOLDER_STRUCTURE.md#ports-and-public-boundaries), [UI layout](../FOLDER_STRUCTURE.md#ui-layout), and [Persistence locations](../architecture/orchestration-layout.md#persistence-locations).
+Code orientation: [Ports and public boundaries](../FOLDER_STRUCTURE.md#ports-and-public-boundaries), [UI layout](../FOLDER_STRUCTURE.md#ui-layout), [Persistence locations](../architecture/orchestration-layout.md#persistence-locations).
 
 <a id="verification-quick-path"></a>
 
-The [verification command reference](commands.md#verification-quick-path) includes fast checks, and the full gate.
+Fast checks and the full gate: [verification command reference](commands.md#verification-quick-path).

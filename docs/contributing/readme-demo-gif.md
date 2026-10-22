@@ -1,70 +1,69 @@
 # README workflow demo GIF
 
-Record a request entering the workflow, two agents running in parallel, and a final agent combining their work. Keep the graph large enough to follow without reading the prompt text:
+Show a request entering the workflow, two agents running in parallel, and a final agent combining their work. Keep the graph large enough to follow without reading prompt text:
 
 ```text
 idea -> clarify -> plan + risk (parallel) -> final brief
 ```
 
-Use [`../../examples/feature_plan.workflow.json`](../../examples/feature_plan.workflow.json).
-Do not build a new workflow during the recording. Keep graph editing out of this recording so the viewer can follow the run.
+Use [`../../examples/feature_plan.workflow.json`](../../examples/feature_plan.workflow.json). Don't build or edit a workflow on camera; the viewer should follow the run.
 
 ## Website video
 
-The landing page now uses a real product screenshot; see [Product screenshots](documentation-site.md#product-screenshots) for capture provenance and asset handling. The earlier `docs/public/media/workflow-demo.mp4` and `workflow-demo-poster.png` remain available, and the README keeps the GIF for GitHub compatibility.
+The landing page now uses a real product screenshot (see [Product screenshots](documentation-site.md#product-screenshots) for provenance and asset handling). The earlier `docs/public/media/workflow-demo.mp4` and `workflow-demo-poster.png` remain, and the README keeps the GIF for GitHub compatibility.
 
-The earlier MP4 comes from the existing 1280 × 800, 12 fps GIF. It adds native playback controls and reduces the download size, but retains the GIF's limited detail. The repository's capture script, `crates/desktop/e2e/walkthroughs/readme-demo.capture.ts`, supplies scripted run events; the README labels that demo accordingly. Its original MP4 output, `test-results/readme-demo/openflow-workflow-demo.mp4`, is not included in the repository.
+The earlier MP4 was made from the existing 1280 × 800, 12 fps GIF: native playback controls and a smaller download, but the GIF's limited detail. Its capture script, `crates/desktop/e2e/walkthroughs/readme-demo.capture.ts`, supplies scripted run events, and the README labels the demo that way. The script's original MP4 output, `test-results/readme-demo/openflow-workflow-demo.mp4`, isn't in the repository.
 
-For a sharper replacement, record the current installed app at native resolution and at least 30 fps. Prefer a 2560 × 1600 capture, with the graph and conversation sized so labels remain readable at the website's 1120-pixel display width. Keep the original recording. Export the website video from that recording, never from the GIF.
+For a sharper replacement:
 
-After trimming the recording to the sequence below, export an H.264 MP4 with fast start and a still frame:
+1. Record the current installed app at native resolution, at least 30 fps. Prefer 2560 × 1600, sized so graph and conversation labels stay readable at the site's 1120-pixel display width.
+2. Keep the original recording. Export from it, never from the GIF.
+3. Trim to the sequence below, then export an H.264 MP4 with fast start and a still frame:
 
-```bash
-mkdir -p docs/public/media
+   ```bash
+   mkdir -p docs/public/media
+   ffmpeg -i openflow-demo.mov \
+     -an -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p \
+     -movflags +faststart docs/public/media/workflow-demo.mp4
+   ```
 
-ffmpeg -i openflow-demo.mov \
-  -an -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p \
-  -movflags +faststart docs/public/media/workflow-demo.mp4
+   ```bash
+   ffmpeg -ss 7 -i docs/public/media/workflow-demo.mp4 \
+     -frames:v 1 docs/public/media/workflow-demo-poster.png
+   ```
 
-ffmpeg -ss 7 -i docs/public/media/workflow-demo.mp4 \
-  -frames:v 1 docs/public/media/workflow-demo-poster.png
-```
+4. Check the export before replacing either asset. The commands ask before overwriting.
 
-Check the export before replacing either asset. The commands ask before overwriting an existing file. If you reintroduce video in `docs/.vitepress/theme/LandingPage.vue`, add native playback controls and captions that match the new recording. Keep the demo label accurate: only call it a real provider run if the capture actually uses a provider.
+If you bring video back to `docs/.vitepress/theme/LandingPage.vue`, add native playback controls and captions matching the new recording. Call it a real provider run only if the capture used a provider.
 
 ## Target
 
 - Length: 14-18 seconds after trimming.
 - Size: 1280 x 800, 12-15 FPS, under 10 MB.
-- Layout: app window only; hide the desktop, menu bar, dock, terminal, and
-  unrelated apps.
-- Theme: dark, unless the README changes to a light visual style.
-- Cursor: visible, moved deliberately, no circles or click effects.
-- Authenticity: record a real provider run. Speed up waits in editing; do not
-  fake node states or output.
+- Layout: app window only; no desktop, menu bar, dock, terminal, or unrelated apps.
+- Theme: dark, unless the README moves to a light style.
+- Cursor: visible, deliberate, no circles or click effects.
+- Authenticity: a real provider run. Speed up waits in editing; never fake node states or output.
 
 ## Prepare the app
 
-1. Copy `examples/feature_plan.workflow.json` into a clean demo project's
-   `.flow/workflows/` directory.
+1. Copy `examples/feature_plan.workflow.json` into a clean demo project's `.flow/workflows/`.
 2. Open **Feature planning demo**.
 3. Confirm all four nodes use an available, fast model.
 4. Confirm provider readiness is green.
-5. Run the workflow once off-camera. Check that:
+5. Run it once off-camera and check:
    - **Clarify idea** finishes first.
    - **Create plan** and **Find risks** visibly run at the same time.
-   - **Final brief** starts only after both parallel nodes finish.
-   - The run completes without retries, approvals, or errors.
+   - **Final brief** starts only after both finish.
+   - No retries, approvals, or errors.
 6. Return to a clean idle run.
 7. Hide the left sidebar and inspector.
-8. Keep the full graph centered on the canvas.
-9. Open the bottom **Chat** panel to roughly 30% of the window height.
-10. Close notifications. Remove any visible personal paths, project names,
-    provider keys, unrelated chats, or prior output.
-11. Set the window to 1440 x 900 or another 16:10 size. Record at native
-    resolution.
+8. Center the full graph on the canvas.
+9. Open the bottom **Chat** panel to about 30% of window height.
+10. Close notifications. Remove visible personal paths, project names, provider keys, unrelated chats, and prior output.
+11. Set the window to 1440 x 900 or another 16:10 size. Record at native resolution.
 
-Use this one-line starter message:
+Starter message:
 
 ```text
 Plan undo and redo for a visual workflow editor.
@@ -81,40 +80,35 @@ Plan undo and redo for a visual workflow editor.
 | 10.0-13.0 s | Show both parallel nodes complete, then **Final brief** run. | Downstream work waits for its dependencies. |
 | 13.0-16.0 s | Let **Final brief** complete. Open **Run trace** and hold on the completed events. | The run produces inspectable output and trace history. |
 
-Keep the pointer away from node labels while agents run. The changing node
-colors, status labels, animated edges, and parallel-agent message provide the
-motion.
+Keep the pointer off node labels while agents run. Node colors, status labels, animated edges, and the parallel-agent message provide the motion.
 
 ## Edit the capture
 
-1. Remove startup, hesitation, accidental pointer movement, and the provider's
-   long idle waits.
-2. Keep at least one second of both middle nodes visibly running together.
-3. Speed up only inactive waits. If the total run needs heavy compression, add
-   a small `2x` label.
-4. Hold the final trace frame for 1.5-2 seconds.
-5. Add a 200-300 ms crossfade from the final frame back to the opening frame so
-   the loop does not snap.
-6. Crop to the app window. Preserve node labels and the readiness indicator.
-7. Export the source recording too. A future UI change should not require
-   screen-recording from scratch.
+1. Cut startup, hesitation, stray pointer movement, and long provider idle waits.
+2. Keep at least one second of both middle nodes running together.
+3. Speed up only inactive waits. If the run needs heavy compression, add a small `2x` label.
+4. Hold the final trace frame 1.5-2 seconds.
+5. Crossfade 200-300 ms from the last frame to the first so the loop doesn't snap.
+6. Crop to the app window, keeping node labels and the readiness indicator.
+7. Export the source recording too, so a future UI change doesn't force a full re-record.
 
 Example GIF export:
 
 ```bash
 mkdir -p docs/assets
-
 ffmpeg -i openflow-demo.mov \
   -vf "fps=12,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" \
   -loop 0 docs/assets/openflow-workflow-demo.gif
+```
 
-# Optional final optimization.
+Optional final optimization:
+
+```bash
 gifsicle -O3 docs/assets/openflow-workflow-demo.gif \
   -o docs/assets/openflow-workflow-demo.gif
 ```
 
-If the GIF exceeds 10 MB, reduce FPS to 10 first, then width to 1120. Do not
-make text unreadable to preserve FPS.
+Over 10 MB? Drop to 10 FPS first, then to 1120 width. Never trade readable text for FPS.
 
 ## README placement
 
@@ -124,7 +118,7 @@ Store the final asset at:
 docs/assets/openflow-workflow-demo.gif
 ```
 
-Place it after the overview text and before **Install**:
+Place it after the overview text, before **Install**:
 
 ```html
 <p align="center">
@@ -139,10 +133,10 @@ Place it after the overview text and before **Install**:
 
 ## Reject and retake when
 
-- Parallel execution is not visible for at least one second.
+- Parallel execution shows for less than one second.
 - Text, output, or project names contain personal or secret data.
 - A retry, error, approval prompt, or stale run appears.
-- The graph is clipped or the final node sits below the fold.
+- The graph is clipped or the final node is below the fold.
 - The cursor darts between controls or covers labels.
-- The final file exceeds 10 MB or labels blur at README width.
+- The file exceeds 10 MB or labels blur at README width.
 - The opening frame needs more than two seconds to explain itself.

@@ -5,11 +5,11 @@
 1. `engine` owns workflow model rules, execution semantics, templates, and ports.
 2. `providers` is an adapter crate that implements `AiPort` for BYOK providers.
 3. `orchestration` composes runtime, state, persistence, tools, projects, settings, and app services.
-4. `desktop` is a transport adapter only; keep Tauri commands and app bootstrap there.
-5. `ui` owns rendering and interaction; it should talk through typed desktop invokes/events.
+4. `desktop` is only a transport adapter: Tauri commands and app bootstrap.
+5. `ui` owns rendering and interaction, via typed desktop invokes/events.
 6. `engine` must not depend on HTTP clients, filesystem/tool I/O, Tauri, providers, orchestration, desktop, or UI.
-7. `orchestration` must call engine APIs; do not duplicate workflow validity or execution rules in `orchestration`.
-8. Add a port/trait only when a consumer is typed on that interface; otherwise call the concrete type directly.
+7. `orchestration` calls engine APIs; it never duplicates workflow validity or execution rules.
+8. Add a port/trait only when a consumer is typed on it; otherwise call the concrete type.
 9. Existing boundaries: `engine/src/ports/` (`AiPort`, `ToolPort`), `providers/src/client.rs` (`AiClient`), and `ui/src/api.ts` (typed Tauri invoke/event wrappers).
 
 ## Ownership by concern
@@ -48,58 +48,58 @@
 
 ## Runtime semantics
 
-Keep these execution rules in `crates/orchestration/src/run/**` and `crates/engine/src/execution/**`; do not reimplement them in UI or desktop:
+These live in `crates/orchestration/src/run/**` and `crates/engine/src/execution/**`, never in UI or desktop.
 
-1. **Shared context** - `WorkflowSettings.shared_context` is trimmed and appended to every node's system prompt (and ad-hoc/saved subagent prompts) for the run.
-2. **Execution cwd** - the backend resolves it from the exact selected project's `default_execution_cwd` (or project root). App workflow/chat runs use an isolated app-managed folder under `{data_local}/openflow/workspaces/`. Filesystem tools run against this path.
-3. **Callable agents** - `AgentNodeConfig.callable_agents` (or `allow_all_callable_agents`) is snapshotted at run start via `engine::resolve_callable_agent_snapshots` into `CallableAgent` records; persisted agents use the same type (`orchestration::AgentDefinition` alias). Invocable through runtime builtins `openflow_call_subagent` and `openflow_declare_subagents`.
-4. **Provider routing** - `AgentNodeConfig.provider_id` overrides `WorkflowSettings.provider_id`, which overrides the active settings provider. The run-scoped router dispatches each `AgentRequest` to that effective provider; provider errors surface without cross-provider failover.
-5. **Model default** - at run prep, a node with an empty `AgentNodeConfig.model` inherits its effective `ProviderProfile.default_model`; an explicit node model always wins.
-6. **Workflow storage split** - app-local workflows live in `workflows.json`; project-linked workflows persist under `{project}/.flow/workflows/`. `AppBackend` merges both on load.
-7. **Tool concurrency** - shared tools may run in parallel within a batch; exclusive tools acquire a per-tool semaphore in `ToolPortImpl`.
+1. **Shared context**: `WorkflowSettings.shared_context` is trimmed and appended to every node's system prompt for the run, and to ad-hoc/saved subagent prompts.
+2. **Execution cwd**: the backend resolves it from the exact selected project's `default_execution_cwd` (else project root). App workflow/chat runs get an isolated app-managed folder under `{data_local}/openflow/workspaces/`. Filesystem tools run there.
+3. **Callable agents**: `AgentNodeConfig.callable_agents` (or `allow_all_callable_agents`) is snapshotted at run start by `engine::resolve_callable_agent_snapshots` into `CallableAgent` records, the same type persisted agents use (`orchestration::AgentDefinition` alias). Invoked via runtime builtins `openflow_call_subagent` and `openflow_declare_subagents`.
+4. **Provider routing**: `AgentNodeConfig.provider_id` beats `WorkflowSettings.provider_id`, which beats the active settings provider. The run-scoped router sends each `AgentRequest` to that provider; errors surface with no cross-provider failover.
+5. **Model default**: at run prep, an empty `AgentNodeConfig.model` inherits the effective `ProviderProfile.default_model`. An explicit node model always wins.
+6. **Workflow storage split**: app-local workflows live in `workflows.json`; project-linked workflows persist under `{project}/.flow/workflows/`. `AppBackend` merges both on load.
+7. **Tool concurrency**: shared tools may run in parallel within a batch; exclusive tools take a per-tool semaphore in `ToolPortImpl`.
 
 ## Persistence conventions
 
-1. All app persistence files live under `{data_local}/openflow/` (`agents.json`, `projects.json`, `workflows.json`, `settings.json`, `mcp-secrets.json`).
+1. All app persistence files live under `{data_local}/openflow/`: `agents.json`, `projects.json`, `workflows.json`, `settings.json`, `mcp-secrets.json`.
 2. Project workflow files use the `{workflowId}.workflow.json` suffix under `.flow/workflows/`.
-3. Provider API keys persist in `settings.json` on each `ProviderProfile.api_key` (plaintext on disk). UI loads settings redacted and fetches keys via dedicated IPC. Env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and provider-specific fallbacks) remain fallbacks.
-4. MCP inputs and OAuth credentials persist in `mcp-secrets.json` (plaintext, mode `0600` on Unix). MCP config stores opaque `mcp-secret:v1:*` refs only.
+3. Provider API keys persist in plaintext in `settings.json`, on each `ProviderProfile.api_key`. The UI loads settings redacted and fetches keys over dedicated IPC. Env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, provider-specific ones) stay fallbacks.
+4. MCP inputs and OAuth credentials persist in `mcp-secrets.json` (plaintext, mode `0600` on Unix). MCP config stores only opaque `mcp-secret:v1:*` refs.
 
 ## Implementation conventions
 
-1. Keep constants at top of file and name by intent (`*_WIDTH`, `*_HEIGHT`, `*_GAP`, `*_PADDING`).
-2. Keep helper functions near usage and private unless reused.
-3. Keep tests in `#[cfg(test)] mod tests` in the same file as behavior.
-4. Use typed errors with `thiserror`; include actionable error strings.
-5. Preserve deterministic order where it affects behavior by sorting IDs (existing pattern in `validation.rs` and `runner.rs`).
-6. For mutating state, prefer dedicated methods on `WorkflowRunState` / `AppBackend` rather than direct map/vector edits across modules.
-7. UI sidebar lists use shared primitives (`SidebarNavButton`, `SidebarIconButton`, `SidebarList`, `SidebarListRow`) for consistent hover/rename behavior.
-8. Hide the inspector when no node is selected; show `WorkflowSettingsPanel` or `InspectorPanel` in the right column based on editor state.
+1. Constants go at the top of the file, named by intent (`*_WIDTH`, `*_HEIGHT`, `*_GAP`, `*_PADDING`).
+2. Helpers sit near their use, private unless reused.
+3. Tests go in `#[cfg(test)] mod tests` in the behavior's file.
+4. Typed `thiserror` errors with actionable messages.
+5. Where order affects behavior, sort IDs for determinism (as in `validation.rs` and `runner.rs`).
+6. Mutate state through dedicated `WorkflowRunState` / `AppBackend` methods, not direct map/vector edits across modules.
+7. UI sidebar lists use the shared primitives (`SidebarNavButton`, `SidebarIconButton`, `SidebarList`, `SidebarListRow`) for consistent hover/rename.
+8. With no node selected, hide the inspector. The right column shows `WorkflowSettingsPanel` or `InspectorPanel` by editor state.
 
 ## Error handling rules
 
 1. Map external/system errors into local domain language at crate boundaries.
-2. Return `Result<_, _>` from operations that can fail; avoid panics outside tests.
-3. Use `expect(...)` only for invariants that are guaranteed by validated flow.
+2. Fallible operations return `Result<_, _>`. No panics outside tests.
+3. `expect(...)` only for invariants a validated flow guarantees.
 
 ## Test strategy
 
-1. Add focused unit tests in the same module for new behavior.
-2. Test externally visible behavior, not private implementation detail.
+1. New behavior gets focused unit tests in the same module.
+2. Test visible behavior, not private implementation details.
 3. For workflow logic changes, cover:
-   - validation outcomes,
-   - execution layer ordering,
-   - upstream input shape,
-   - shared context injection,
-   - callable agent snapshot resolution,
-   - execution cwd resolution,
-   - failure propagation.
+   - validation outcomes
+   - execution layer ordering
+   - upstream input shape
+   - shared context injection
+   - callable agent snapshot resolution
+   - execution cwd resolution
+   - failure propagation
 
 [Testing workflows](testing-workflows.md) defines acceptance and live-AI checks. The [architecture contract](../architecture/contract.md) defines layer rules.
 
 ## Dependency boundary
 
-1. Add workspace deps in root `Cargo.toml` first, then consume in crate manifests.
+1. Add workspace deps to the root `Cargo.toml` first, then to crate manifests.
 2. Keep crate dependencies minimal and role-specific:
    - `engine`: graph, execution, templates, conversations, tools, and ports only.
    - `providers`: HTTP + provider payload parsing/auth only.
@@ -130,7 +130,7 @@ Declare sibling test modules in the parent `mod.rs`:
 mod patch_tests;
 ```
 
-Do not mix patterns within one file - pick sibling file or inline block, not both.
+One pattern per file: sibling file or inline block, never both.
 
 ## Change checklist
 
@@ -145,4 +145,4 @@ cargo clippy-max
 cargo nextest run --workspace
 ```
 
-4. If behavior contracts changed, update this doc, [`AGENTS.md`](../../AGENTS.md), and [`glossary.md`](../glossary.md) when needed.
+4. If behavior contracts changed, update this doc, [`AGENTS.md`](../../AGENTS.md), and [`glossary.md`](../glossary.md) as needed.
