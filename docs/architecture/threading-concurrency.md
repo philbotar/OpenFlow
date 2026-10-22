@@ -1,16 +1,10 @@
 # Threading and concurrency
 
-How async tasks, runtimes, and I/O interact in OpenFlow, and where the current design creates risk or limits throughput.
-
-Related: [`contract.md`](contract.md)
-
-## Executive summary
-
-This app is **not heavily threaded**. In the desktop app, orchestration uses the Tauri Tokio runtime handle. Tests can still construct `AppBackend` with an owned Tokio runtime through `AppBackend::new(...)`. Each workflow run has one execution task. Within a DAG layer, ready AI calls and tool batches run concurrently via `FuturesUnordered`; completions apply to engine state one at a time. Shared tools may also batch in parallel under `ToolPortImpl`. The main risks are:
+Orchestration uses the Tauri Tokio runtime handle in the desktop app. The [architecture contract](contract.md) defines ownership across the runtime boundaries. Tests can still construct `AppBackend` with an owned Tokio runtime through `AppBackend::new(...)`. Each workflow run has one execution task. Within a DAG layer, ready AI calls and tool batches run concurrently via `FuturesUnordered`; completions apply to engine state one at a time. Shared tools may also batch in parallel under `ToolPortImpl`. Concurrency constraints include:
 
 1. **Runtime split outside Tauri** when tests or helper entry points construct `AppBackend` with a separate owned runtime.
 2. **Blocking I/O coverage** that depends on dispatching filesystem and subprocess work through `spawn_blocking`.
-3. **Layer-bounded concurrency** — independent nodes only overlap while they share a ready layer; later layers still wait.
+3. **Layer-bounded concurrency**: independent nodes only overlap while they share a ready layer; later layers still wait.
 4. **Addressable run sessions** with shared provider/tool budgets and one mutation lease per canonical execution cwd.
 5. **Many sync Tauri commands** doing filesystem or settings I/O on the command thread pool.
 
@@ -76,7 +70,7 @@ The event bridge runs on Tauri's runtime in `start_run()` (`crates/desktop/src/l
 
 In the desktop path, the same Tauri runtime handle is used for command tasks and run execution. In tests or bespoke non-Tauri entry points, `AppBackend` may still be constructed with a separate owned runtime. That split is useful for local construction, but it should not become the production path.
 
-**Recommendation direction:** Keep desktop execution on the injected Tauri runtime handle. Avoid adding production code paths that construct their own runtime around `AppBackend`.
+Keep desktop execution on the injected Tauri runtime handle. Reserve owned runtimes for tests or explicit non-Tauri entry points.
 
 ---
 
@@ -101,15 +95,15 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
-The host loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive.rs`). It calls `InteractiveEngine::run()`, which invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
+The host loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive/mod.rs`). It calls `InteractiveEngine::run()`, which invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
 
 ### Layer parallelism (implemented)
 
 `execution_layers()` groups nodes by dependency depth. When a layer is active, `InteractiveEngine` schedules every ready AI call and tool batch into one `FuturesUnordered` pool (`crates/engine/src/execution/interactive_engine/mod.rs`). Independent nodes in the same layer therefore overlap in wall time; state updates remain single-threaded on completion.
 
-### Issue: subagents block the whole run
+### Subagent waits
 
-Subagent execution is a **nested loop inside the same task**, sharing `ai`, `tool_runner`, and channels. A slow subagent blocks everything else in that run.
+A subagent runs inside its parent's tool batch and shares `ai`, `tool_runner`, and channels. The parent waits for its result. Other ready nodes in the layer continue through the engine's `FuturesUnordered` pool; the subagent does not block the whole run.
 
 ---
 
@@ -191,7 +185,7 @@ Only a handful of commands are `async fn`. The rest block a Tauri worker.
 
 ## Run session locking & channels
 
-All run lifecycle state sits behind one mutex:
+Each run keeps its lifecycle state behind its own mutex:
 
 ```mermaid
 sequenceDiagram
@@ -231,7 +225,7 @@ sequenceDiagram
 
 ## UI ↔ backend boundary
 
-The UI is single-threaded (SolidJS in WebView). It does not spawn threads. Concurrency pain shows up as **IPC latency** and **event delivery**:
+The UI is single-threaded (SolidJS in WebView). It does not spawn threads. Slow backend work appears as delayed IPC responses or event delivery:
 
 ```mermaid
 flowchart LR
@@ -283,7 +277,7 @@ inactive sessions. It never evicts active sessions; durable run records remain o
 
 ## Recommended directions (not implemented)
 
-These are architectural options, not a mandate.
+These options require implementation and measurement; they are not current behavior.
 
 ### A. Keep production on one runtime
 
@@ -357,8 +351,8 @@ flowchart TB
 | Concern | File |
 | --- | --- |
 | Runtime handle and backend facade | `crates/orchestration/src/backend/mod.rs` |
-| Execution loop + spawn | `crates/orchestration/src/run/execution/mod.rs`, `crates/orchestration/src/run/execution/drive.rs` |
-| Sequential engine | `crates/engine/src/execution/interactive_engine/` |
+| Execution loop + spawn | `crates/orchestration/src/run/execution/mod.rs`, `crates/orchestration/src/run/execution/drive/mod.rs` |
+| Interactive engine | `crates/engine/src/execution/interactive_engine/` |
 | Tool concurrency and semaphores | `crates/orchestration/src/run/execution/tool_port.rs`, `crates/orchestration/src/tool/registry.rs` |
 | Blocking tool I/O | `crates/orchestration/src/tool/dispatch.rs`, `crates/orchestration/src/tool/runner.rs` |
 | Sync file persistence | `crates/orchestration/src/adapters/storage/` |

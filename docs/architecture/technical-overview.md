@@ -1,72 +1,18 @@
-# OpenFlow Technical Overview
+# Agent execution and context
 
-How context flows, how caching works, how the architecture is layered, how nodes execute, and where the agentic harness diverges from convention.
+<a id="openflow-technical-overview"></a>
 
-All claims reference source files; diagrams are Mermaid.
-
----
-
-## 1. Architecture Layout
-
-OpenFlow is **nested hexagonal architecture**: five layers, each an adapter for the layer above and a consumer of the layer below. Dependencies point strictly inward and are CI-enforced by [`../../scripts/check-architecture.sh`](../../scripts/check-architecture.sh), which reads [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml).
-
-```mermaid
-flowchart TD
-    subgraph UI["crates/ui — React + TypeScript"]
-        Canvas["Canvas (nodes & edges)"]
-        Chat["Per-node chat panels"]
-        Port["api.ts<br/>(only production file allowed to import @tauri-apps)"]
-    end
-
-    subgraph Desktop["crates/desktop — Tauri adapter"]
-        Cmds["Command handlers<br/>(IPC + DTO mapping only)"]
-    end
-
-    subgraph Orch["crates/orchestration — application layer / composition root"]
-        Backend["AppBackend façade"]
-        Coord["RunCoordinator<br/>(session, action channel)"]
-        Drive["run/execution/drive.rs<br/>(only place allowed to construct engines)"]
-        ToolPortImpl["ToolPortImpl + ToolRunner<br/>(tool execution, cache, artifacts)"]
-        Stores["adapters/storage/*<br/>(atomic JSON persistence)"]
-    end
-
-    subgraph Engine["crates/engine — I/O-free hexagon"]
-        IE["InteractiveEngine<br/>(state machine)"]
-        Graph["Workflow / Node / Edge<br/>+ DAG validation"]
-        Ports["Ports: AiPort, ToolPort"]
-        Policy["Tool approval policy<br/>(tiers, modes)"]
-    end
-
-    subgraph Providers["crates/providers — outbound adapter"]
-        Factory["create_provider() → Box&lt;dyn AiPort&gt;"]
-        OpenAI["OpenAI-compatible<br/>(Responses + Chat Completions)"]
-        Anthropic["Anthropic Messages API"]
-    end
-
-    UI -->|"invoke Tauri commands"| Desktop
-    Desktop -->|"calls AppBackend only"| Orch
-    Orch -->|"drives InteractiveEngine::run()"| Engine
-    Orch -->|"dyn AiPort, never concrete types"| Providers
-    Providers -->|"implements engine::AiPort"| Engine
-```
-
-Key constraints (all CI-checked, not just documented):
-
-| Rule | Enforcement |
-|---|---|
-| Engine has **zero I/O** — no filesystem, no HTTP, no `unwrap`/`expect`/`panic` | Clippy denies + forbidden-dep table (`reqwest`, `tauri` banned in engine) |
-| Only `orchestration/run/execution/` may construct `InteractiveEngine` | Tier-3 arch check |
-| Desktop imports `orchestration::Workflow`, never `engine::Workflow` | Re-export boundary; ban tables |
-| Orchestration may only import `create_provider` + config types from providers | Allowlist; `AiClient` banned |
-| Engine public API is snapshot-tested | `crates/engine/tests/snapshots/public_api.txt` |
-
-The engine answers *"what is a valid workflow and how does a run behave"*; orchestration answers *"how does the app store, wire, and host runs"*; providers answer *"how do we speak to a specific LLM"*. UI and Desktop are transport only.
+The engine schedules agent nodes, assembles their context, and advances the graph when their outputs satisfy the handoff contract. Orchestration supplies model and tool I/O, stores run state, and sends events back to the UI.
 
 ---
 
-## 2. Nodes and Flow
+<a id="1-architecture-layout"></a>
 
-A workflow is a DAG of agent nodes. Validation ([graph/validation.rs](../../crates/engine/src/graph/validation.rs)) topologically sorts the graph into **execution layers** — all nodes in a layer have all dependencies satisfied by previous layers and run **concurrently**.
+The [system boundaries](README.md#system-boundaries) locate the engine and its I/O adapters. [Run lifecycle](end-to-end-runtime.md) follows launch, checkpointing, and resume.
+
+## 2. Nodes and flow
+
+A workflow is a DAG of agent nodes. Validation ([graph/validation.rs](../../crates/engine/src/graph/validation.rs)) topologically sorts the graph into **execution layers**: all nodes in a layer have all dependencies satisfied by previous layers and run **concurrently**.
 
 ```mermaid
 flowchart LR
@@ -88,7 +34,7 @@ flowchart LR
 
 ### The engine state machine
 
-[`InteractiveEngine`](../../crates/engine/src/execution/interactive_engine/mod.rs) is a **sans-I/O state machine**. It never calls a model or runs a tool itself — `run()` invokes `AiPort` and `ToolPort` until the workflow completes, fails, cancels, or returns `NeedsInteraction`. The host feeds human input and approvals back via `on_*` handlers, then calls `run()` again.
+[`InteractiveEngine`](../../crates/engine/src/execution/interactive_engine/mod.rs) is a **sans-I/O state machine**. Its `run()` method invokes `AiPort` and `ToolPort` until the workflow completes, fails, cancels, or returns `NeedsInteraction`. Concrete model and tool I/O stays in those port implementations. The host feeds human input and approvals back via `on_*` handlers, then calls `run()` again.
 
 ```mermaid
 stateDiagram-v2
@@ -113,7 +59,7 @@ stateDiagram-v2
     RunTools --> Running : on_tool_results
 ```
 
-`EngineRunResult::NeedsInteraction` is the **only** surface orchestration sees during a run — it batches every paused node at once (`inputs` + `approvals` + `retryables`), so the UI can show all pending human work across parallel branches simultaneously.
+`EngineRunResult::NeedsInteraction` is the engine's interaction result. It batches paused nodes in `inputs`, `approvals`, and `retryables`, so the UI can show pending work across parallel branches together. Completion, failure, and cancellation return terminal results.
 
 ### One full node turn, end to end
 
@@ -122,7 +68,7 @@ sequenceDiagram
     participant UI as UI (canvas/chat)
     participant D as Desktop (Tauri)
     participant RC as RunCoordinator
-    participant DR as drive.rs loop
+    participant DR as drive/mod.rs loop
     participant E as InteractiveEngine
     participant AI as AiPort (provider)
     participant TP as ToolPortImpl
@@ -133,7 +79,7 @@ sequenceDiagram
     RC->>DR: spawn background task (event/action channels)
     DR->>E: engine.run(ai_adapter, tool_port, cancel)
     loop until layer complete
-        E->>AI: invoke(AgentRequest) — ready nodes in layer, sequentially
+        E->>AI: invoke(AgentRequest) — ready nodes in layer, concurrently
         AI-->>E: AgentTurnOutcome::ToolCalls(batch)
         E->>E: queue PendingToolBatch (policy decides approval)
         alt requires approval
@@ -154,9 +100,9 @@ sequenceDiagram
 
 ---
 
-## 3. Context Assembly
+## 3. Context assembly
 
-Context is **engine-owned and deterministic**. Providers receive an ordered `AgentRequest` and map it to wire format verbatim — they never edit prompts ([node_invocation.rs](../../crates/engine/src/execution/node_invocation.rs)).
+Context is **engine-owned and deterministic**. Providers receive an ordered `AgentRequest` and map it to wire format verbatim: they never edit prompts ([node_invocation.rs](../../crates/engine/src/execution/node_invocation.rs)).
 
 ```mermaid
 flowchart TD
@@ -188,11 +134,9 @@ flowchart TD
     AR --> Provider["AiPort provider<br/>(maps to Responses / Chat Completions / Messages)"]
 ```
 
-Notable properties:
-
-- **Deterministic ordering.** Upstream outputs are sorted by node ID; `serde_json::Value` maps are BTreeMap-backed, so the same graph state always produces byte-identical input. This is what makes tool-result caching keyable on raw arguments (§4).
-- **Transitive file-change provenance.** `upstream_changed_files` walks *all* transitive ancestors, not just direct parents, and merges `FileChangeRecord`s (rename chains collapse to the destination path). A node three hops downstream knows exactly which files the run has touched before it starts — without re-reading anything.
-- **Transcript ≠ context blob.** Each node has its own append-only transcript of typed items (`AgentTranscriptItem`). Human replies, tool turns, and retries all extend the same transcript, so a retried node *continues* rather than restarts.
+- **Deterministic ordering.** Upstream outputs are sorted by node ID; `serde_json::Value` maps are BTreeMap-backed, so the same graph state always produces byte-identical input. Tool-result caching can therefore use raw arguments as keys (§4).
+- **Transitive file-change provenance.** `upstream_changed_files` walks *all* transitive ancestors, not just direct parents, and merges `FileChangeRecord`s (rename chains collapse to the destination path). A node three hops downstream receives the run's recorded file changes before it starts, without reading those files again.
+- **Node transcripts.** Each node has its own append-only transcript of typed items (`AgentTranscriptItem`). Human replies, tool turns, and retries all extend the same transcript, so a retried node *continues* rather than restarts.
 - **Tool catalog in preamble.** `NODE_RUNTIME_PREAMBLE` documents every builtin and harness tool with when-to-use guidance. Per-turn `available_tools` schemas remain authoritative for parameters; the preamble is the cross-tool usage guide. **When you add or materially change a tool**, update both `orchestration/src/tool/registry.rs` (schema + description) and the `## Available tools` section of `NODE_RUNTIME_PREAMBLE` in `engine/src/execution/node_invocation.rs`. New harness tools (e.g. submit, request input) also need matching preamble sections.
 
 ---
@@ -200,10 +144,10 @@ Notable properties:
 ## 4. Caching
 
 OpenFlow uses two independent cache layers. Providers reuse exact LLM prompt prefixes as described
-in [provider adapters](provider-adapters.md#provider-prompt-caching). This section covers the
+in [provider adapters](provider-adapters.md#provider-prompt-caching). The
 **per-run, cross-node, validated tool-result cache**
 ([tool/cache.rs](../../crates/orchestration/src/tool/cache.rs), served from
-[tool/runner.rs](../../crates/orchestration/src/tool/runner.rs)). It avoids downstream agents
+[tool/runner.rs](../../crates/orchestration/src/tool/runner.rs)) avoids downstream agents
 re-reading the same files and re-running the same searches their parents already ran.
 
 ```mermaid
@@ -225,29 +169,27 @@ flowchart TD
     Exec --> Bump["Write-capable tool?<br/>bump write_epoch ⇒<br/>invalidate all epoch entries"]
 ```
 
-Three design choices worth noting:
+1. **Validation at hit time, not TTL.** Single-file reads carry an `mtime + length` stamp checked against the live filesystem on every lookup. Multi-file results (search, directory reads) carry a **write epoch**: a global counter bumped whenever any write-capable tool runs or an edit batch is reverted. These checks invalidate observed changes; they do not guarantee freshness for external writes that preserve metadata or bypass the run's write epoch.
+2. **Conversation-aware degradation.** The cache knows which transcript the original result went into (`conversation_id` = node ID, or a unique session ID for subagents). A repeat call from the *same* transcript gets a content-omitting stub: the content is already in the model's context, so resending it would add input tokens. A repeat from a *different* node gets the full content plus a provenance note, so the model can identify the earlier result. The filesystem checks above still limit what the cache can establish about freshness.
+3. **Per-run scoping.** The cache lives on the `ToolRunner` constructed per run in `drive/setup.rs`. It is not persisted or shared across runs.
 
-1. **Validation at hit time, not TTL.** Single-file reads carry an `mtime + length` stamp checked against the live filesystem on every lookup. Multi-file results (search, directory reads) carry a **write epoch** — a global counter bumped whenever any write-capable tool runs or an edit batch is reverted. The cache can never serve a stale view of the workspace.
-2. **Conversation-aware degradation.** The cache knows which transcript the original result went into (`conversation_id` = node ID, or a unique session ID for subagents). A repeat call from the *same* transcript gets a content-omitting stub — the content is already in the model's context, so resending it would only burn tokens. A repeat from a *different* node gets the full content plus a provenance note, so the model knows the data is unchanged and can trust prior conclusions.
-3. **Per-run scoping.** The cache lives on the `ToolRunner` constructed per run in `drive.rs` — no cross-run staleness, no persistence concerns.
+Large outputs and file-change summaries use separate mechanisms:
 
-Two adjacent mechanisms complete the context-economy story:
-
-- **Artifact spill** ([tool/output.rs](../../crates/orchestration/src/tool/output.rs)): tool output over 50 KB is written to a per-run artifact directory; the model receives head (20 KB) + tail (20 KB) with a marker naming the artifact ID for full retrieval. Big outputs never flood a transcript.
-- **Changed-files records** (§3): downstream nodes get file-edit *summaries* through graph input rather than re-reading files — the cache then handles the case where they read anyway.
+- **Artifact spill** ([tool/output.rs](../../crates/orchestration/src/tool/output.rs)): tool output over 50 KB is written to a per-run artifact directory; the model receives head (20 KB) + tail (20 KB) with a marker naming the artifact ID for full retrieval. The full output remains available through the artifact.
+- **Changed-files records** (§3) pass file-edit summaries downstream through graph input. If a node then reads those files, the cache checks whether it can reuse the earlier result.
 
 ---
 
-## 5. Where the Harness Diverges from Convention
+## 5. Agent completion and interaction
 
 ### 5.1 Completion is a tool call, not text
 
-There is no "parse the model's final answer" step. A workflow node is **incomplete until it calls `openflow_submit_node_output`** with `{output: <schema-conforming object>, assistant_message}`. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Human-input harnesses are explicit: `openflow_request_user_input` asks one free-text question; `openflow_ask_user_question` presents structured choices. Direct-chat nodes use `conversationMode`: a plain assistant message ends one conversation turn without completing the node.
+A workflow node completes by calling `openflow_submit_node_output` with `{output: <schema-conforming object>, assistant_message}`. Plain assistant text does not complete it. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Human-input harnesses are explicit: `openflow_request_user_input` asks one free-text question; `openflow_ask_user_question` presents structured choices. Direct-chat nodes use `conversationMode`: a plain assistant message ends one conversation turn without completing the node.
 
-This makes the **control plane itself tool-driven**. Every turn advertises
+Every turn advertises
 `openflow_submit_node_output`, optional human-input harnesses, and the node's executable
 catalog tools together. The model may call either exactly one harness tool alone, or one
-or more executable tools — never mix harness and executable tools in the same response.
+or more executable tools: never mix harness and executable tools in the same response.
 Providers reject mixed batches as `MixedToolTurn` and the engine retries with corrective
 feedback. Workflow requests use required tool choice. Direct-chat requests use automatic
 tool choice so the provider may return either plain text or `openflow_ask_user_question`.
@@ -273,20 +215,20 @@ After the input retry budget is exhausted, the node fails instead of surfacing m
 
 Every node starts as soon as its upstream inputs are ready. A node configured with `request_user_input` may call `openflow_request_user_input` for free text or `openflow_ask_user_question` for choices. Orchestration resumes the same state machine through `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision`.
 
-Because `NeedsInteraction` batches all paused nodes, parallel branches don't serialize on the human: branch A can await your input while branch B keeps executing tools.
+Branch A can wait for input while branch B continues executing tools. `NeedsInteraction` reports the paused nodes together.
 
 ### 5.3 The engine is sans-I/O
 
 `InteractiveEngine::run()` is the sole execution entry. It drives model and tool I/O through port traits until it returns `EngineRunResult`. Orchestration handles `NeedsInteraction` by blocking on the action channel, applying `on_human_input` / `on_tool_decision` / `retry_node`, and calling `run()` again.
 
-I/O-freedom is enforced, not aspirational: clippy denies `unwrap`/`expect`/`panic`, `std::fs` is disallowed, and the arch check bans transport crates. Every execution semantic (retry classification, approval policy, layer advancement, interruption) is testable as a pure state transition.
+Clippy denies `unwrap`/`expect`/`panic`, `std::fs` is disallowed, and architecture checks ban transport crates. Retry classification, approval policy, layer advancement, and interruption can be tested as state transitions.
 
-### 5.4 Subagents as a resumable state machine — declared at runtime by the model
+### 5.4 Subagents as a resumable state machine: declared at runtime by the model
 
 Subagents follow the same sans-I/O discipline ([subagent_runtime.rs](../../crates/engine/src/execution/subagent_runtime.rs)). The engine exposes a step enum (`SubagentInvokeStep::NeedAi | Done`) and orchestration's `SubagentSession` drives the loop. Two sources of subagents:
 
 - **Snapshot agents**: saved `CallableAgent`s frozen at run start (no mid-run mutation races).
-- **Ad-hoc declaration**: the model itself calls `openflow_declare_subagents` mid-turn to define new subagents (name, prompt, tools), then fans work out via `openflow_call_subagent`. The agent designs its own delegation topology at runtime — the graph defines the macro-structure, the model improvises the micro-structure.
+- **Ad-hoc declaration**: the model itself calls `openflow_declare_subagents` mid-turn to define new subagents (name, prompt, tools), then fans work out via `openflow_call_subagent`. The workflow graph defines dependencies between nodes; a node can declare subagents during execution to divide its own task.
 
 ```mermaid
 sequenceDiagram
@@ -310,17 +252,17 @@ Recursion is structurally bounded: a subagent's tool list excludes `openflow_cal
 
 ### 5.5 Tiered approval with policy as pure domain logic
 
-Approval policy lives in the **engine**, not the UI ([tools/config.rs](../../crates/engine/src/tools/config.rs)): tools are classified `Read | Write | Exec`, nodes choose an `ApprovalMode` (`Yolo` / `Write` / `AlwaysAsk`) plus per-tool overrides, and `tool_decision_for_call` yields `AutoAllow | Prompt | Deny`. The engine queues `Prompt` batches as `AwaitToolApproval`; denial isn't an error — it becomes a denied `ToolResult` fed back to the model, which adapts and continues toward submit.
+Approval policy lives in the **engine**, not the UI ([tools/config.rs](../../crates/engine/src/tools/config.rs)): tools are classified `Read | Write`, nodes choose an `ApprovalMode` (`ReadOnly` / `Yolo` / `Write` / `AlwaysAsk`), and `tool_decision_for_call` yields `AutoAllow | Prompt | Deny`. Orchestration filters write-tier tools out of the `ReadOnly` catalog. The engine queues `Prompt` batches as `AwaitToolApproval`; a denial becomes a denied `ToolResult` returned to the model, which can adapt and continue toward submit.
 
 ### 5.6 Interruption, retry, and revert as first-class state
 
-- `mark_node_interrupted` cancels a node's pending tool batches mid-flight without poisoning the run; it surfaces as a `retryable` in `NeedsInteraction`.
-- `retry_node` preserves the transcript — the model resumes with everything it had learned, and `model_attempt` increments so providers/telemetry can distinguish attempts.
-- Edit batches are revertible: `revert_file_changes_for_batch` removes the records from downstream provenance, and the revert bumps the cache write epoch so no stale reads survive.
+- `mark_node_interrupted` cancels a node's pending tool batches mid-flight without failing the run; it surfaces as a `retryable` in `NeedsInteraction`.
+- `retry_node` preserves the transcript: the next request includes the earlier conversation, and `model_attempt` increments so providers/telemetry can distinguish attempts.
+- Edit batches are revertible: `revert_file_changes_for_batch` removes the records from downstream provenance, and the revert bumps the cache write epoch to invalidate cached results affected by the revert.
 
 ---
 
-## 6. File Map (orientation)
+## 6. File map (orientation)
 
 | Concern | Where |
 |---|---|
@@ -330,7 +272,7 @@ Approval policy lives in the **engine**, not the UI ([tools/config.rs](../../cra
 | Ports (AiPort, ToolPort) | `crates/engine/src/ports/` |
 | Subagent state machine | `crates/engine/src/execution/subagent_runtime.rs` |
 | Approval policy / tiers | `crates/engine/src/tools/config.rs` |
-| Run driver (only engine constructor) | `crates/orchestration/src/run/execution/drive.rs` |
+| Run driver and setup | `crates/orchestration/src/run/execution/drive/` |
 | Tool execution + cache + artifacts | `crates/orchestration/src/tool/{runner,cache,output}.rs` |
 | Provider factory + wire mapping | `crates/providers/src/` |
 | Architecture rules (CI) | `crates/workspace-checks/arch-check-rules.toml` |

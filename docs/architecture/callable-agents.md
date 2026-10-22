@@ -1,37 +1,24 @@
 # Callable agents in orchestration
 
-Engine and orchestration concept guide. For crate orientation, see [`crates/orchestration/AGENTS.md`](../../crates/orchestration/AGENTS.md).
+A `CallableAgent` is a saved agent definition that a workflow node may invoke as a subagent. Orchestration snapshots the selected definitions at run start, so later library edits do not affect that run.
 
-## Overview
-
-A **CallableAgent** is a saved agent definition a workflow node may invoke as a subagent. Orchestration snapshots agents at run-start so subagent calls stay deterministic.
-
-**Hexagonal pattern:**
-
-- **Core:** `agent.rs` - CRUD, validation, and the `AgentStore` trait.
-- **Adapter:** `adapters/storage/agent_store.rs` - `openflow/agents.json`.
+`agent.rs` owns CRUD, validation, and the `AgentStore` trait; `adapters/storage/agent_store.rs` persists `openflow/agents.json`. The [orchestration guide](../../crates/orchestration/AGENTS.md) describes the surrounding crate.
 
 ## Data model
 
-### `CallableAgent` (engine)
-
-Canonical type in `engine::graph::CallableAgent`. Immutable snapshot during a run.
-
-### `AgentDefinition` (orchestration)
-
-Orchestration working copy with filesystem backing. Converted to `CallableAgent` at run start.
+`engine::graph::CallableAgent` is the canonical type. Orchestration re-exports it as `AgentDefinition` for saved definitions; the run uses an immutable snapshot of the selected records.
 
 ## Run lifecycle
 
-1. **Run start** - `RunCoordinator` loads agents via `AgentLibrary` and freezes the selected records as `CallableAgent` snapshots.
-2. **Skill resolution** - installed `/skill-id` tokens anywhere in task prompts resolve through the configured skill catalog. OpenFlow reads the exact `SKILL.md` files, appends their contents to the node or callable-agent system prompt before the snapshot starts executing, and keeps resolved paths available for later chat turns.
-3. **Subagent invocation** - the engine uses the snapshot and never re-fetches saved agents during the run.
-4. **Run completion** - the snapshot is discarded; the next run gets a fresh snapshot.
+1. `RunCoordinator` loads agents via `AgentLibrary` and freezes the selected records as `CallableAgent` snapshots.
+2. Installed `/skill-id` tokens anywhere in task prompts resolve through the configured skill catalog. OpenFlow reads the exact `SKILL.md` files, appends their contents to the node or callable-agent system prompt before the snapshot starts executing, and keeps resolved paths available for later chat turns.
+3. The engine uses the snapshot and never re-fetches saved agents during the run.
+4. The snapshot is discarded; the next run gets a fresh snapshot.
 
 ## Extend agents
 
 1. Add the field to `engine::CallableAgent`.
-2. Add the field to orchestration `AgentDefinition` JSON.
+2. Cover the field in persisted `AgentDefinition` JSON and compatibility tests.
 3. Update `agent.rs` validation if needed.
 4. Update `RunCoordinator::start_run()` if snapshot semantics change.
 

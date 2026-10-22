@@ -1,26 +1,10 @@
-# Reference
+# Data locations
 
-Use this page for commands, storage paths, and operational facts that should be easy to look up.
+<a id="reference"></a>
 
-Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
+OpenFlow keeps app-managed data under `{data_local}/openflow/` and project data under the selected project’s `.flow/` directory.
 
-## Dev Commands
-
-| Goal | Command |
-| --- | --- |
-| Full desktop app | `./scripts/start.sh` |
-| Install desktop app (macOS) | `./scripts/install.sh` |
-| Frontend only | `npm --prefix crates/ui run dev` |
-| Frontend typecheck | `npm --prefix crates/ui run typecheck` |
-| Fast Rust lane | `./scripts/test-fast.sh` |
-| Fast lane with execution tests | `./scripts/test-fast.sh --execution` |
-| Full verification gate | `./scripts/verify.sh` (default Rust tests = `test-fast`; desktop via `./scripts/verify.sh test`) |
-| Leg timing | `./scripts/bench-test-legs.sh` |
-| Architecture checks only | `./scripts/check-architecture.sh` |
-| Workflow acceptance | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` |
-| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture` |
-
-## Runtime and Persistence Paths
+## Runtime and persistence paths
 
 | Data | Path |
 | --- | --- |
@@ -31,7 +15,7 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | Projects | `{data_local}/openflow/projects.json` |
 | Saved agents | `{data_local}/openflow/agents.json` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
-| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` |
+| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows\|chats}/{id}` |
 | App-run attachments | `{data_local}/openflow/runs/{runId}/attachments/{attachmentId}.{ext}` |
 | Project-run attachments | `{project}/.flow/runs/{runId}/attachments/{attachmentId}.{ext}` |
 | App-run node handoffs | `{data_local}/openflow/runs/{runId}/handoffs/{nodeId}/HANDOFF.md` or `HANDOFF.json` |
@@ -52,28 +36,18 @@ orchestration layer verifies and hydrates managed bytes immediately before provi
 Browser paste/drop staging uses opaque tokens under app data; successful sends or explicit removal
 clean staged copies, with 24-hour stale cleanup as fallback.
 
-## Provider Key Resolution
+<a id="provider-key-resolution"></a>
 
-OpenFlow resolves provider keys in this order:
+Credential precedence is defined in [Provider profiles](providers.md#provider-key-resolution). [Security and data](../security-and-data.md) describes which values are sensitive and which services receive them.
 
-1. Transient input panel key.
-2. Stored settings key: `ProviderProfile.api_key`.
-3. Provider environment variable fallback, such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+<a id="dev-commands"></a>
+<a id="architecture-check-config"></a>
 
-Managed cloud providers reject readiness when their required key cannot be resolved. `ollama`, `lmstudio`, and `custom_openai_compatible` can resolve without a key. Custom endpoints still receive a configured key when one exists.
+For source checkouts, use [Development commands](../contributing/commands.md) and the [architecture check configuration](../contributing/commands.md#architecture-check-config).
 
-Provider-specific request mapping belongs in `crates/providers`. Settings, readiness, and app-level resolution live in orchestration.
 
-The `openai-codex` provider does not consult `OPENAI_API_KEY`. It is ready when a refreshable ChatGPT OAuth session is stored. **Disconnect** explicitly clears that session; ordinary redacted settings saves preserve it.
+## Chat records
 
-## Architecture Check Config
+OpenFlow stores chat metadata and a durable run ID, then uses the workflow runtime to execute each conversation. Direct chats have no visible nodes, do not appear on the workflow canvas, and do not enter `workflows.json`.
 
-Architecture checks run through:
-
-```bash
-./scripts/check-architecture.sh
-```
-
-The machine-readable rule file is [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml). It is kept with the workspace-check tooling instead of the docs tree.
-
-Human-readable architecture rules live in [`../architecture/contract.md`](../architecture/contract.md).
+Attachment checkpoints store a generated ID, sanitized filename, media type, byte size, SHA-256, and kind. They do not store source paths or inline bytes.

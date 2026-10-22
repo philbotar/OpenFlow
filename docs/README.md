@@ -1,104 +1,56 @@
-# Documentation
+# OpenFlow overview
 
-OpenFlow docs are split by reader intent. Start with the product walkthroughs when you want to use the app, then move into architecture and contributing docs when you are changing code.
+<a id="table-of-contents"></a>
 
-## Filesystem
+OpenFlow is a desktop workspace for agents. Start a direct chat to work through one task in a conversation, or build a workflow when several agents should pass results to one another.
 
-```text
-docs/
-├── README.md                          # This index
-├── AGENTS.md                          # Docs file map for agents
-├── work-specs/                        # Numbered design / implementation work specs
-├── research/
-│   └── matt-pocock-skills.md          # Source-backed Matt Pocock skills usage
-├── getting-started/
-│   └── README.md                      # Install, run, configure a provider, start a workflow
-├── guides/
-│   ├── for-new-users.md               # Feature map and first-hour path
-│   ├── first-workflow.md              # End-to-end workflow walkthrough
-│   ├── provider-setup.md              # Provider onboarding, keys, OAuth, Rig wiring
-│   └── using-the-app.md               # Editor, runs, projects, schedules, integrations
-├── concepts/
-│   ├── README.md                      # Product vocabulary and mental model
-│   ├── how-openflow-works.md          # Runtime overview for users and contributors
-│   └── workflows-and-runs.md          # Workflows, nodes, runs, tools, approvals
-├── reference/
-│   ├── README.md                      # Commands, storage paths, provider key resolution
-│   └── tools.md                       # Built-in, harness, MCP, and authoring tools
-├── troubleshooting/
-│   └── README.md                      # Common setup, provider, run, and verification failures
-├── glossary.md                        # Engine vocabulary
-├── FOLDER_STRUCTURE.md                # Normative hexagonal folder layout
-├── contributing/
-│   ├── README.md                      # How to change code in this repo
-│   ├── development-lanes.md           # Change classification and verification lanes
-│   ├── coding-patterns.md             # Architecture rules and conventions
-│   └── testing-workflows.md           # Acceptance and live-AI verification
-└── architecture/
-    ├── README.md                      # Maintainer architecture index
-    ├── end-to-end-runtime.md          # Code-grounded UI → engine → providers run path
-    ├── technical-overview.md          # End-to-end runtime overview
-    ├── contract.md                    # Layer responsibilities and dependency rules
-    ├── orchestration-layout.md        # Orchestration module map and change paths
-    ├── callable-agents.md             # Saved-agent snapshot and subagent model
-    ├── provider-adapters.md           # Rig provider adapters and Bedrock notes
-    ├── run-persistence.md             # Durable run records, checkpoints, replay, resume
-    ├── threading-concurrency.md       # Async runtimes, threading, and I/O
-    └── diagrams/
-        ├── README.md                  # Mermaid diagram index
-        ├── layers-current-vs-target.mmd
-        └── layers-legacy-names.mmd    # Historical crate names (reference only)
-```
+For example, connect a planner to a checklist agent. The planner turns your request into a plan; the checklist agent waits for that output, then turns it into actionable items. You can inspect both conversations and reuse the same workflow with a different request.
 
-Architecture check rules are machine configuration, not documentation. They live at [`../crates/workspace-checks/arch-check-rules.toml`](../crates/workspace-checks/arch-check-rules.toml) and are consumed by [`../scripts/check-architecture.sh`](../scripts/check-architecture.sh).
+## Start using OpenFlow
 
-## Read Order
+<a id="choose-a-path"></a>
+<a id="get-started"></a>
 
-1. [`guides/for-new-users.md`](guides/for-new-users.md) - feature map and suggested first hour.
-2. [`getting-started/README.md`](getting-started/README.md) - run OpenFlow locally and configure a provider.
-3. [`guides/provider-setup.md`](guides/provider-setup.md) - configure a model provider and confirm readiness.
-4. [`guides/first-workflow.md`](guides/first-workflow.md) - build and run a small workflow.
-5. [`guides/using-the-app.md`](guides/using-the-app.md) - day-to-day UI: runs, dock, projects, schedule, MCP, skills.
-6. [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md) - understand the engine, orchestration host, providers, tools, and UI.
-7. [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md) - learn workflow and run vocabulary.
-8. [`reference/README.md`](reference/README.md) - commands, persistence paths, provider key rules.
-9. [`troubleshooting/README.md`](troubleshooting/README.md) - fix common local setup and run failures.
-10. [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) - code-grounded run path before changing execution or IPC.
-11. [`architecture/contract.md`](architecture/contract.md) - read before changing layer boundaries.
-12. [`contributing/development-lanes.md`](contributing/development-lanes.md) - classify code changes and choose verification.
+1. [Install OpenFlow](getting-started/README.md). Open the packaged macOS app; no development toolchain is required.
+2. [Connect a provider](guides/provider-setup.md). Use hosted credentials, ChatGPT sign-in, AWS credentials, or a local model server.
+3. [Start a direct chat](guides/direct-chats.md), or [build your first workflow](guides/first-workflow.md) with two prompts you can paste into the editor.
 
-## Doc Map
+[How OpenFlow works](concepts/how-openflow-works.md) explains dependencies, handoffs, and your role during a run. [Using the app](guides/using-the-app.md) locates the controls.
 
-| Goal | Read |
+## Work with the app
+
+<a id="i-use-openflow-day-to-day"></a>
+<a id="use-the-app"></a>
+
+| Task | Guide |
 | --- | --- |
-| New user overview and feature map | [`guides/for-new-users.md`](guides/for-new-users.md) |
-| Run the app | [`getting-started/README.md`](getting-started/README.md) |
-| Configure a provider | [`guides/provider-setup.md`](guides/provider-setup.md) |
-| Build your first workflow | [`guides/first-workflow.md`](guides/first-workflow.md) |
-| Use the desktop UI (runs, projects, schedule) | [`guides/using-the-app.md`](guides/using-the-app.md) |
-| Understand the runtime | [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md), [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) |
-| Learn workflow terms | [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md), [`glossary.md`](glossary.md) |
-| Find commands and paths | [`reference/README.md`](reference/README.md) |
-| Look up agent tools | [`reference/tools.md`](reference/tools.md) |
-| Review Matt Pocock skills usage | [`research/matt-pocock-skills.md`](research/matt-pocock-skills.md) |
-| Debug setup or run failures | [`troubleshooting/README.md`](troubleshooting/README.md) |
-| Change code safely | [`AGENTS.md`](../AGENTS.md), [`contributing/development-lanes.md`](contributing/development-lanes.md) |
-| Check architecture boundaries | [`architecture/contract.md`](architecture/contract.md) |
+| Create, configure, and validate a graph | [Workflow authoring](guides/workflow-authoring.md) |
+| Answer, approve, retry, replay, or resume | [Runs and recovery](guides/runs.md) |
+| Work in a repository and manage saved files | [Projects and persistence](guides/projects-and-persistence.md) |
+| Configure tool approval, skills, subagents, search, or MCP | [Tools and integrations](guides/tools-and-integrations.md) |
+| Run a saved workflow at a time or interval | [Scheduling workflows](guides/scheduling.md) |
+| Recover from a setup or run failure | [Troubleshooting](troubleshooting/README.md) |
 
-## Active Crates
+## Look up behavior
 
-| Crate | Question it answers | Agent orientation |
-| --- | --- | --- |
-| `crates/engine` | What is a valid workflow, and how does a run behave? | [`AGENTS.md`](../crates/engine/AGENTS.md) |
-| `crates/orchestration` | How does the desktop app store, load, wire, and host runs? | [`AGENTS.md`](../crates/orchestration/AGENTS.md) |
-| `crates/providers` | How do we talk to model providers? | [`AGENTS.md`](../crates/providers/AGENTS.md) |
-| `crates/ui` / `crates/desktop` | How does the user interact with the runtime? | [`ui/AGENTS.md`](../crates/ui/AGENTS.md), [`desktop/AGENTS.md`](../crates/desktop/AGENTS.md) |
+<a id="look-up-settings-or-fix-a-problem"></a>
 
-See [`architecture/contract.md`](architecture/contract.md) for layer boundaries and dependency rules.
+| Question | Reference |
+| --- | --- |
+| What does a workflow, node, edge, or run mean? | [Workflows and runs](concepts/workflows-and-runs.md) |
+| What are the settings, defaults, and limits? | [Configuration reference](reference/configuration.md) |
+| Which endpoints, credentials, and defaults does each provider use? | [Provider profiles](reference/providers.md) |
+| Which tools can an agent call? | [Tools reference](reference/tools.md) |
+| Where does OpenFlow store files and credentials? | [Data locations](reference/README.md) |
+| What leaves the app, and what requires trust? | [Security and data](security-and-data.md) |
 
-## Scope
+## Develop OpenFlow
 
-- Product docs explain how to run, configure, and use OpenFlow.
-- Architecture docs explain ownership, boundaries, and runtime design for maintainers.
-- Contributing docs explain local development lanes and verification.
-- If code and docs diverge, update docs in the same change set.
+[Build from source](getting-started/build-from-source.md) sets up a development checkout. [Contributing](contributing/README.md) describes the change and review workflow; [Architecture](architecture/README.md) maps the implementation.
+
+For commands and verification, use [Development commands](contributing/commands.md) and [Testing workflows](contributing/testing-workflows.md). [Documentation website](contributing/documentation-site.md) covers the site and Markdown exports.
+
+<a id="other-material"></a>
+<a id="documentation-map"></a>
+
+The [repository map](FOLDER_STRUCTURE.md) locates source packages. Historical plans and roadmap entries do not establish current product behavior.

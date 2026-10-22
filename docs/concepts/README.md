@@ -1,13 +1,8 @@
 # Concepts
 
-These pages explain OpenFlow without assuming you are editing Rust code.
+A workflow describes the work; a run executes it. Each node has its own conversation, and connections determine which results it receives.
 
-| Page | Use when |
-| --- | --- |
-| [`../guides/for-new-users.md`](../guides/for-new-users.md) | You are new and want a feature map and reading order |
-| [`how-openflow-works.md`](how-openflow-works.md) | You want the end-to-end mental model: UI, desktop, orchestration, engine, providers, tools |
-| [`workflows-and-runs.md`](workflows-and-runs.md) | You want the product vocabulary for workflows, nodes, edges, runs, Plan → Execute, and post-run review |
-| [`../guides/using-the-app.md`](../guides/using-the-app.md) | You want UI tasks: sidebar, dock, history, skills, MCP, schedules |
-| [`../glossary.md`](../glossary.md) | You need exact engine terms and naming |
+- [How OpenFlow works](how-openflow-works.md) follows a request through agents, tools, handoffs, and human decisions.
+- [Workflows and runs](workflows-and-runs.md) defines the graph, execution states, and provider profiles.
 
-For maintainer-level boundaries, continue to [`../architecture/contract.md`](../architecture/contract.md).
+To try those ideas, [build a two-agent workflow](../guides/first-workflow.md). Implementation details belong in [Architecture](../architecture/README.md).

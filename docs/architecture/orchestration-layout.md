@@ -6,7 +6,7 @@ Rust import paths match the folder layout. For example, `workflow/catalog.rs` is
 
 ## Module paths
 
-| What you see on disk | What Rust sees in code |
+| File or folder | Rust module |
 | --- | --- |
 | `backend/mod.rs` | `orchestration::backend` |
 | `workflow/catalog.rs` | `orchestration::workflow::catalog` |
@@ -47,9 +47,9 @@ adapters/
 | --- | --- | --- |
 | Composition | `backend/` | Construct services, expose the stable facade that desktop calls. |
 | Application services | `workflow/`, `agent.rs`, `project/`, `settings/`, `schedule/`, `run/`, `terminal.rs`, `tool/` | Apply app rules, coordinate ports, and return API DTOs. |
-| Port traits | `{entity}/ports.rs` | Define store/catalog seams consumed by entity services. |
+| Port traits | `{entity}/ports.rs` or `agent.rs` | Define store/catalog seams consumed by entity services. |
 | Run state | `run/state.rs` | Project `RunTelemetry` into `WorkflowRunState` for UI and IPC. |
-| Concrete storage | `adapters/storage/` | Read and write JSON files under `{data_local}/openflow/`, project workflow files, incidents, and run checkpoints. |
+| Concrete storage | `adapters/storage/` | Read and write JSON files under `{data_local}/openflow/`, project workflow files, and run checkpoints. |
 | Runtime I/O | `adapters/tool_impl/`, `adapters/mcp/`, `adapters/infrastructure/` | Perform filesystem, subprocess, MCP, git, and LSP work. |
 | Shared DTOs | `api.rs`, `error.rs` | Define transport shapes and `BackendError` used across the crate. |
 
@@ -69,7 +69,6 @@ orchestration/src/
 │   ├── storage/
 │   │   ├── agent_store.rs
 │   │   ├── app_workflow_store.rs
-│   │   ├── incident_store.rs
 │   │   ├── project_store.rs
 │   │   ├── project_workflow_store.rs
 │   │   ├── run_checkpoint_store.rs
@@ -80,7 +79,7 @@ orchestration/src/
 │   └── infrastructure/
 ├── agent.rs
 ├── chat.rs
-├── incident/
+├── diagnostics.rs
 ├── project/
 ├── run/
 │   ├── coordinator/
@@ -175,11 +174,11 @@ Only `run/execution/` constructs or drives `InteractiveEngine`, as required by t
 | `adapters/infrastructure/git` | `git` public alias | Execution-cwd-scoped diff and revert operations. |
 | `adapters/infrastructure/lsp` | `lsp` public alias | LSP settings and format/diagnostic integration. |
 
-### Incident, schedule, terminal, and template
+### Diagnostics, schedule, and terminal
 
 | File or folder | Module path | Responsibility |
 | --- | --- | --- |
-| `incident/` | `incident` | Record, list, dismiss, and clear backend incidents. |
+| `diagnostics.rs` | `diagnostics` | Append optional local debug output to a process-specific JSONL file in the system temporary directory. |
 | `schedule/` | `schedule` | Evaluate workflow schedules and status. |
 | `terminal.rs` | `terminal` | Manage embedded terminal sessions. |
 
@@ -209,10 +208,22 @@ sequenceDiagram
     Backend-->>Desktop: IPC payload
 ```
 
-`AppBackend` does not embed run logic. It delegates addressed lifecycle to `RunRegistry`, which owns
+`AppBackend` delegates run lifecycle operations to `RunRegistry`, which owns
 one `RunCoordinator` per live or retained in-process run. Different workflows may run concurrently;
 the registry rejects a second active run for the same workflow and targets 64 retained sessions by
 evicting inactive sessions first. Active sessions are never evicted.
+
+Registry operations accept an optional run ID internally: an explicit ID selects that session;
+omitting it selects the latest session for legacy backend calls. Missing explicit IDs return an
+error. `AppBackend` retains separate addressed and legacy methods for existing consumers.
+
+The coordinator completes fallible launch setup, including durable resume status writes, before
+spawning execution. It then installs handles without an intervening await. The headless runner
+cancels and joins execution on return; dropping its future cancels and aborts the owned task.
+
+Hashline editing uses one concrete snapshot store. A single mutex protects versions and path
+recency, so concurrent writes cannot bypass eviction. Bash and MCP package installation share
+the process-group cleanup helper in `adapters/infrastructure/process.rs`.
 
 ## Where to add code
 
@@ -241,18 +252,16 @@ Cross-entity work goes through services or `backend/`. Entity services should de
 
 ## Persistence locations
 
-| Store module | On-disk path |
-| --- | --- |
-| `app_workflow_store` | `{data_local}/openflow/workflows.json` |
-| `project_workflow_store` | `{project}/.flow/workflows/{id}.workflow.json` |
-| `agent_store` | `{data_local}/openflow/agents.json` |
-| `project_store` | `{data_local}/openflow/projects.json` |
-| `settings_store` | `{data_local}/openflow/settings.json` |
-| `incident_store` | `{data_local}/openflow/incidents.json` |
-| `run_checkpoint_store` | `{data_local}/openflow/runs/` or the project-scoped run root selected by orchestration |
+| Data | Location | Owning module |
+| --- | --- | --- |
+| App workflows | `{data_local}/openflow/workflows.json` | `orchestration/src/adapters/storage/app_workflow_store.rs` |
+| Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/project_store.rs` |
+| Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/agent_store.rs` |
+| Settings | `{data_local}/openflow/settings.json` | `orchestration/src/adapters/storage/settings_store.rs` |
+| Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` | `orchestration/src/adapters/storage/project_workflow_store.rs` |
+| Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) | `orchestration/src/adapters/storage/settings_store.rs` |
+| Skills | Discovered at runtime from Cursor/Claude/Agents skill dirs (not persisted) | `orchestration/src/adapters/storage/skill_store.rs` |
 
-## Related docs
+`AppBackend::load_all_workflows` merges app-store workflows with project-discovered workflows (project files win on ID collision).
 
-- [Architecture contract](contract.md) defines layer boundaries.
-- [Coding patterns](../contributing/coding-patterns.md) lists owner paths and runtime rules.
-- [AGENTS.md](../../AGENTS.md) maps common change paths.
+`run_checkpoint_store` writes to `{data_local}/openflow/runs/` or the project-scoped run root selected by orchestration. [Data locations](../reference/README.md) lists run attachments, handoffs, and credential storage.
