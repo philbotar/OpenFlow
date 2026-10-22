@@ -1,6 +1,6 @@
-# Architecture Diagrams
+# Architecture diagrams
 
-Mermaid sources for layer and seam diagrams.
+Use `layers-current-vs-target.mmd` for reviews and onboarding. `layers-legacy-names.mmd` preserves pre-rename labels for historical reference.
 
 ## Filesystem
 
@@ -11,10 +11,4 @@ diagrams/
 └── layers-legacy-names.mmd        # Historical pre-crate-rename labels (reference only)
 ```
 
-## Usage
-
-- **Source of truth for layer rules:** [`../contract.md`](../contract.md)
-- **Canonical diagram:** `layers-current-vs-target.mmd` — use this for reviews and onboarding.
-- **Legacy diagram:** `layers-legacy-names.mmd` — old module names (`workflow-core`, `app-backend`, etc.); do not update for new work.
-
-Render in any Mermaid viewer or paste the file contents into a Mermaid-capable markdown preview.
+Render the sources in a Mermaid viewer or a Markdown preview with Mermaid support. The [architecture contract](../contract.md) defines the layer rules. Keep the legacy diagram's old names, including `workflow-core` and `app-backend`; do not update it for new work.

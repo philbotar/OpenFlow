@@ -1,84 +1,43 @@
-# How OpenFlow Works
+# How OpenFlow works
 
-OpenFlow is a desktop workflow runner for agentic model workflows. A user builds a workflow in the UI, the desktop adapter sends run-addressed commands to orchestration, orchestration hosts independent active runs, the engine decides legal execution behavior, and providers perform model calls.
+OpenFlow gives each agent a conversation and a job. You can work with one agent in a direct chat, or connect several agents in a workflow so their results feed later steps.
 
-## Runtime Path
+## A graph describes the work
 
-```text
-UI
-  -> Desktop IPC
-    -> Orchestration
-      -> Engine
-      -> Providers
-      -> Tools and storage adapters
+Each node has a task prompt, model, and tool policy. An edge means that the downstream node needs the upstream result. For example, the feature-planning workflow clarifies a request, plans the work and checks risks independently, then combines the results:
+
+```mermaid
+flowchart LR
+    Clarify["Clarify idea"] --> Plan["Create plan"]
+    Clarify --> Risks["Find risks"]
+    Plan --> Brief["Final brief"]
+    Risks --> Brief
 ```
 
-## What Each Layer Owns
+Independent nodes in the same execution layer run together. A downstream node waits for its dependencies to finish. Each agent receives its prompt, shared context, and the input available to that step; root nodes receive your starting message.
 
-| Layer | Owns | Does not own |
-| --- | --- | --- |
-| UI | Presentation, editor state, screens, panels, canvas | Engine rules, provider transport |
-| Desktop | Tauri command and event bridge | Workflow semantics |
-| Orchestration | App state, workflow catalog, run sessions, storage, tools, provider wiring | Legal engine transitions |
-| Engine | Workflow model, validation, execution state machine, ports | Filesystem, Tauri, HTTP transport |
-| Providers | Model API transport and wire mapping | App state or workflow catalog rules |
+A downstream agent receives upstream output and can read saved handoff artifacts for more detail. The [workflow and run definitions](workflows-and-runs.md) distinguish the graph you save from each execution of it.
 
-The architecture contract is maintained in [`../architecture/contract.md`](../architecture/contract.md).
+## During a run
 
-## What Happens During a Run
+Open a node’s conversation to follow its work. An agent may call a tool, ask you a question, or produce its final output. Its approval mode determines which tool calls need your decision. Answer or approve in that conversation; other ready nodes can keep working while one waits.
 
-1. The UI sends a start, continue, or resume command through the desktop IPC seam.
-2. Orchestration resolves settings, provider readiness, workflow storage, run root, and execution cwd.
-3. Orchestration creates the provider adapter through `providers::create_provider`.
-4. The engine validates and advances the workflow.
-5. Agent nodes assemble an `AgentRequest`, including system prompt, upstream input, shared context, tools, and callable-agent snapshots.
-6. The provider returns model output, tool calls, or terminal output.
-7. Tool calls go through `ToolPortImpl` in orchestration and can pause for approval.
-8. Orchestration projects engine events into run state, trace entries, chat logs, and desktop events.
-9. Durable run data is written so paused or completed runs can be listed and resumed when supported.
+A failed node can await retry while the run remains active. Use [Runs and recovery](../guides/runs.md) to choose between replying, retrying a node, continuing an inactive session, and resuming a saved checkpoint.
 
-## Plan → Execute Mode
+## Saved work and new runs
 
-Plan → Execute is an optional `WorkflowSettings.planMode` gate. Its configured review node must
-allow follow-up questions. Before that node produces a schema-valid change evidence packet, the
-run is in **Planning**: agents can use read-tier tools, write or edit repository-relative
-`docs/**/*.md` files when the node is write-enabled, while only the configured evidence-source
-node can build the run-local plan draft at `run://PLAN.md` or request its seal. A read-only
-evidence-source node may still mutate that virtual draft. Other nodes never receive the seal
-tool; engine and host checks reject invented plan-draft or seal calls. Other repository writes,
-shell execution, MCP tools, and subagent calls are denied even if a model attempts an
-unadvertised call.
+The workflow stores the graph and agent configuration. Each run stores its own history and workflow snapshot. Editing a workflow does not rewrite an earlier run. History can open a read-only replay; paused, stopped, or failed runs can resume when a recoverable checkpoint exists. Completed workflow runs are replay-only.
 
-The agent creates the draft with `write`, refines it with replace-mode `edit`, then calls
-`openflow_write_plan_artifact` without passing the Markdown again. That seal call always creates
-an explicit human tool-approval pause. Denial leaves `run://PLAN.md` mutable for revision.
-Approval atomically moves the draft to an opaque UUID path under the run artifact root. Retrying
-an already successful seal returns the same artifact. The tool returns `artifact:<uuid>`,
-SHA-256, and size; it never accepts a repository path or plan payload. Once the evidence-source
-node submits its structured output, the engine freezes that exact packet with a canonical
-SHA-256 and moves to **Execution**. The frozen packet is checkpointed and added as
-`input.change_evidence_packet` to every later agent request. It is data, not a system instruction.
+After success, **Run review** may suggest changes to prompts, tools, models, coordination, or the graph. The review is advisory. Its result does not change whether the workflow run succeeded.
 
-The packet should stay compact: scope, exclusions, criteria, decisions, implementation slices,
-plan artifact reference and hash, assumptions, open questions, approval summary, and optional
-standards or ADR references. Downstream agents treat it as authoritative and read the artifact
-only when they need plan detail. Workflows without Plan → Execute retain normal tool behavior.
+## Plan → Execute mode
 
-## Why Ports Exist
+Enable **Plan → Execute** in workflow settings when execution should follow a reviewed plan. The designated evidence-source node prepares a plan during **Planning**, with restricted tools. Sealing that plan always asks for explicit approval, even when other tool calls are auto-approved.
 
-Ports are added only when a consumer is typed against the interface. OpenFlow currently uses explicit seams for:
+A denial leaves the draft editable. After approval and a valid evidence packet, the run enters **Execution** and later agents receive the frozen packet. Workflows without this setting use normal tool rules. The [Plan → Execute protocol](../architecture/plan-execute.md) defines the permitted writes, artifact sealing, and evidence fields.
 
-- `AiPort` and `AgentRequest` for model invocation.
-- `ToolPort` for tool and subagent execution.
-- Human input and tool approval ports for pauses.
-- `api.ts` wrappers for UI-to-desktop calls.
+<a id="runtime-path"></a>
+<a id="layer-responsibilities"></a>
+<a id="ports"></a>
 
-If there is no typed consumer, prefer calling the concrete type directly instead of adding a trait.
-
-## Where to Go Deeper
-
-- [`workflows-and-runs.md`](workflows-and-runs.md) - product vocabulary and Plan → Execute summary.
-- [`../guides/using-the-app.md`](../guides/using-the-app.md) - UI entry points for runs and settings.
-- [`../architecture/technical-overview.md`](../architecture/technical-overview.md) - deeper runtime overview.
-- [`../architecture/threading-concurrency.md`](../architecture/threading-concurrency.md) - runtimes, async I/O, and blocking work.
-- [`../architecture/run-persistence.md`](../architecture/run-persistence.md) - durable run records, replay, and resume.
+For implementation details, use [Runtime architecture](../architecture/end-to-end-runtime.md) and the [architecture contract](../architecture/contract.md).

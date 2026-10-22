@@ -1,18 +1,16 @@
 # Testing workflows
 
-How to verify workflow behavior without manually clicking through the desktop app.
+Use deterministic tests to check workflow contracts, provider fixtures to check wire formats, and an authorized live smoke test to check a real account. Each gives different evidence; a fixture pass does not establish live-provider compatibility.
 
 ## Test placement conventions
 
-Mirrored in `.cursor/rules/testing-conventions.mdc` so agents apply them automatically.
-
 ### Rust unit tests
 
-1. **Default: inline.** Unit tests live in a `#[cfg(test)] mod tests { ... }` block at the bottom of the source file they test.
-2. **Extract when large.** If the test module exceeds ~150 lines, move it to a sibling file:
+1. Unit tests live in a `#[cfg(test)] mod tests { ... }` block at the bottom of the source file they test.
+2. If the test module exceeds ~150 lines, move it to a sibling file:
    - `foo.rs` → `foo_tests.rs` in the same directory, declared as `#[cfg(test)] mod foo_tests;` (see `adapters/tool_impl/edit/patch_tests.rs`).
    - `mod.rs` → `tests.rs` in the same directory, declared as `#[cfg(test)] mod tests;` (see `run/execution/tests.rs`).
-3. **Always gate.** Every extracted test module declaration carries `#[cfg(test)]` so test code never compiles into release builds.
+3. Every extracted test module declaration carries `#[cfg(test)]` so test code never compiles into release builds.
 4. No other variants: no `*_test.rs`, no `test_*.rs`, no `tests/` directories inside `src/`.
 
 ### Rust integration / acceptance tests
@@ -25,9 +23,7 @@ Mirrored in `.cursor/rules/testing-conventions.mdc` so agents apply them automat
 - Vitest files sit next to the source they test: `foo.ts` → `foo.test.ts`, `Foo.tsx` → `Foo.test.tsx`.
 - No `__tests__/` directories.
 
-### Migration
-
-Files predating this convention are brought into conformance opportunistically - when materially editing a file whose tests violate the rules, fix the placement in the same change. No mass migrations.
+When materially editing a file with older test placement, bring its tests into this layout in the same change. Do not migrate unrelated tests.
 
 ## Local dev loops
 
@@ -53,7 +49,7 @@ Visual tests use a fixed 1280×900 viewport, `deviceScaleFactor: 1`, and a stati
 
 ## Runner
 
-All Rust tests use [cargo-nextest](https://nexte.st/) (`cargo nextest run`). Verify scripts, CI, and docs assume nextest — install via `./scripts/setup.sh` or `cargo install cargo-nextest --locked`. Do not use plain `cargo test` for workspace checks.
+All Rust tests use [cargo-nextest](https://nexte.st/) (`cargo nextest run`). Verify scripts, CI, and docs assume nextest: install via `./scripts/setup.sh` or `cargo install cargo-nextest --locked`. Do not use plain `cargo test` for workspace checks.
 
 ## Fast local compile loop
 
@@ -98,32 +94,15 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Manual saved-provider smoke | `./scripts/smoke-live-ai.sh` | The provider selected in saved app settings supports workflow authoring, agent authoring, a fixed two-node run, and post-run review |
 | Manual mixed-provider smoke | `OPENFLOW_LIVE_AI_SECONDARY_PROVIDER=<provider-id> ./scripts/smoke-live-multi-provider.sh` | One real workflow routes an override node to a secondary saved provider and an inherited node to the shared saved provider |
 | Manual saved-provider attachment smoke | `./scripts/smoke-live-attachments.sh` | The selected provider reads generated PNG/PDF fixtures, then reads a new fact from each attachment after durable stop/resume |
-| Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; runs in `release.yml` `release-verify` on tag push (Ubuntu); not on PR CI. |
 
-## Miri
+## Workflow acceptance contracts
 
-[Miri](https://github.com/rust-lang/miri) interprets Rust MIR to detect undefined behavior. Scope: **`engine`** and **`orchestration`** (`providers` / `desktop` still out - HTTP/Tauri/FFI).
-
-| Goal | Command |
-| --- | --- |
-| Run Miri (both crates) | `./scripts/miri.sh` |
-| Run Miri (one crate) | `./scripts/miri.sh engine` or `./scripts/miri.sh orchestration` |
-| Deep verify | `./scripts/verify.sh --deep` |
-| Engine cross target (macOS) | `MIRI_ENGINE_VPROC=x86_64-unknown-linux-gnu ./scripts/miri.sh` |
-
-Scope: `cargo miri nextest run -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri nextest run -p orchestration --lib` with a **UB-relevant allowlist** (`run::execution`, `coordinator`, `tool::runner`, `tool::blocking_ops`, `tool::retry`, `schedule`, `adapters::infrastructure`; see `ORCH_MIRI_FILTER` in `./scripts/miri.sh`) plus `-Zmiri-disable-isolation` for temp files. Pure edit/patch/store logic stays on `test-fast`/clippy — workspace `unsafe_code = "forbid"` means those tests have no UB surface. Tests run one Miri process each via [cargo-nextest](https://nexte.st/docs/integrations/miri/) (`--profile default-miri`) so lib tests can use multiple cores. Trade-offs: Miri recompiles the test crate per test (large crates may see less net speedup); cross-test data races on shared statics are not detected (unlike `cargo miri test`). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
-
-First run installs nightly `miri` and `cargo-nextest` if missing. Artifacts: `target/miri/`. Optional: `MIRI_JOBS=N` caps nextest parallelism; `MIRI_TOOLCHAIN` selects the rustc nightly (the `release-verify` job pins `nightly-2026-06-20` for cache stability).
-
-Mark new unsupported tests with `#[cfg_attr(miri, ignore)]` and a one-line `ponytail:` comment.
-
-
-The deterministic acceptance tests should prove:
+Deterministic acceptance tests must establish:
 
 1. Root nodes receive `entrypoint.text`.
 2. Downstream nodes receive upstream outputs in deterministic order.
 3. Branch/join workflows complete with all expected node outputs.
-4. Manual nodes pause before execution, carry a per-node conversation, and pass the final structured node output downstream when the model signals it is ready.
+4. Nodes that allow human input start when dependencies are ready, pause when the model requests input, and retain their per-node conversation. They pass structured output downstream only after a valid submit.
 5. Tool-enabled nodes can request one or more tool calls, receive tool results back into the model loop, and still produce the final node output downstream.
 6. Tool approval pauses block progress until an approval decision is supplied, and denied tools surface a structured error without corrupting the run.
 7. Run trace entries expose queued, running, paused, completed, or failed state transitions.
@@ -164,11 +143,9 @@ Live AI smoke tests must avoid exact prose assertions. Model output changes natu
 5. Required fields are non-empty.
 6. A sentinel value such as `ORCHID-91` is preserved exactly across nodes.
 
-Optional live smoke for overseer repair (when intentionally exercising a real provider): assert the run completes with schema-valid node outputs after a forced malformed submit path is not practical without a controllable mock; prefer the deterministic `output_repair_*` acceptance tests for release gating.
+Use deterministic `output_repair_*` acceptance tests for the overseer repair release gate. A real model cannot reliably be forced to submit malformed output, so a live smoke cannot consistently exercise that recovery path.
 
 ## Seam test placement
-
-Guidelines:
 
 1. Test `AiPort` contract behavior with inline `impl AiPort` stubs in the owning test module (see `workflow_acceptance.rs`, `runner.rs` tests).
 2. Test provider wire mapping in `providers/src/mapping/` and `rig_adapter/` (plus `crates/providers/tests/rig_*.rs`).
@@ -179,14 +156,14 @@ Guidelines:
 
 | Area | Location | What to test |
 | --- | --- | --- |
-| DTO helpers | `crates/ui/src/lib/*.test.ts` | Project grouping, execution cwd display, workflow utilities |
+| DTO helpers | `crates/ui/src/lib/**/*.test.ts` | Project grouping, execution cwd display, workflow utilities |
 | Provider vs legacy thinking | `crates/ui/src/components/conversation/providerThinking.test.ts` | Distinguish provider reasoning from legacy tool I/O lines on the thinking role |
 | Component behavior | `crates/ui/src/**/*.test.tsx` | Callable agent editor, app shell routing |
 | Canvas | `crates/ui/src/canvas/*.test.ts` | Graph interaction contracts |
 
 ## Verification gate (`scripts/verify.sh`)
 
-Primary gate for agents and local handoff - run after every change:
+Full gate for code PR readiness, releases, cross-layer changes, or an explicitly requested full verification:
 
 ```bash
 ./scripts/verify.sh
@@ -194,7 +171,7 @@ Primary gate for agents and local handoff - run after every change:
 
 Default Rust test step is **`test-fast`** (same lane as CI: engine + providers + orchestration lib + workspace-checks + workflow acceptance). It does **not** build `desktop`/Tauri. Full workspace coverage (including desktop): `./scripts/verify.sh test`.
 
-**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`, `miri`). Miri runs at release (tag push) in `release.yml` `release-verify`, not on PR CI. Run `./scripts/verify.sh` before handoff or PR.
+**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`). Use the full gate for code PR readiness; docs/instruction-only changes use link, path, syntax, and diff checks.
 
 Run a granular script directly for full untruncated output; run `verify.sh` for the truncated summary gate.
 
@@ -213,7 +190,6 @@ Run a granular script directly for full untruncated output; run `verify.sh` for 
 | `deny` | `./scripts/verify/deny.sh` |
 | `arch` | `./scripts/check-architecture.sh` |
 | `mutants` (`--deep`) | `./scripts/verify/mutants.sh` |
-| `miri` (`--deep`) | `./scripts/miri.sh` |
 
 | Test-fast leg | Granular script |
 | --- | --- |
@@ -230,14 +206,14 @@ Run a granular script directly for full untruncated output; run `verify.sh` for 
 | Output | One line per step (`PASS fmt (1s)` / `FAIL clippy (41s)`); truncated logs on fail; summary with exact repro commands |
 | Noise | No ANSI/progress escapes (`CARGO_TERM_COLOR=never`, `NO_COLOR=1`, `--quiet` on cargo/npm where supported) |
 | Filter | `./scripts/verify.sh fmt clippy ui-test` - unknown step name lists valid steps and exits 1 |
-| Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` and `./scripts/miri.sh` (Miri UB on `engine` + `orchestration`; minutes-long) |
+| Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` |
 | Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail; default reuses `./target`; `VERIFY_ISOLATE_TARGET=1` for parallel agents (`target/verify-<pid>`); `OPENFLOW_MAX_DEBUG_CACHE_GIB` caps `target/debug` (default 64 GiB); `OPENFLOW_MIN_BUILD_SPACE_GIB` sets the local pre-build free-space floor (default 24 GiB, 8 GiB on GitHub); `0` disables the corresponding disk guard |
 
-**Steps (default):** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **Opt-in:** `test` (full workspace incl. desktop). **`--deep` only:** `mutants`, `miri`.
+**Steps (default):** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **Opt-in:** `test` (full workspace incl. desktop). **`--deep` only:** `mutants`.
 
-**CI:** parallel jobs (`build` warm cache → `fmt`, `clippy`, `test`, `ui`, `lint-extras`); PR CI no longer runs Miri. Miri runs in the release workflow's `release-verify` job (tag push or `workflow_dispatch`) on Ubuntu: `./scripts/miri.sh` (both crates), pinning `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caching `~/.cache/miri` (sysroot) + `target/miri` (via `rust-cache`).
+Release verification runs execution and desktop tests plus orchestration E2E on Ubuntu before the macOS builds.
 
-**One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
+**One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`.
 
 ## Fast local lane
 
@@ -249,11 +225,7 @@ Use this during normal edit/test loops:
 
 Each leg is also runnable directly under `scripts/verify/test-*.sh` (e.g. `./scripts/verify/test-providers.sh`).
 
-Why this exists:
-
-- `cargo nextest run --workspace` rebuilds `desktop`, which pulls the Tauri/native stack.
-- `cargo nextest run -p desktop` stays opt-in unless you are changing the desktop seam.
-- Default `./scripts/verify.sh` already includes acceptance via `test-fast --execution`; standalone `./scripts/test-fast.sh` leaves acceptance opt-in via `--execution`.
+The fast lane omits `desktop` and its Tauri/native dependencies, which `cargo nextest run --workspace` rebuilds. Add `cargo nextest run -p desktop` when changing the desktop boundary. Default `./scripts/verify.sh` includes acceptance through `test-fast --execution`; standalone `./scripts/test-fast.sh` requires `--execution` to include it.
 
 Options:
 
@@ -273,19 +245,19 @@ Wall-clock per leg (warm `./target`):
 ./scripts/bench-test-legs.sh --with-opt-in
 ```
 
-Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22). Re-run the script on your machine if numbers drift a lot. First run after a feature/dep flip can be 10× these (cold compile).
+Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22). Measure again on your machine before using these timings. A cold compile after a feature or dependency change can take 10× as long.
 
 | Leg | Script | Rough warm budget |
 | --- | --- | --- |
-| engine | `test-engine.sh` | ~1–5s |
+| engine | `test-engine.sh` | ~1 to 5s |
 | providers | `test-providers.sh` | ~4 min (~255s; Wiremock; several intentional ~60s timeout tests) |
 | orchestration lib | `test-orchestration-lib.sh` | ~5 min (~315s) |
-| workspace-checks | `test-workspace-checks.sh` | ~1–3 min |
-| workflow acceptance | `test-execution.sh` | ~1–4 min |
+| workspace-checks | `test-workspace-checks.sh` | ~1 to 3 min |
+| workflow acceptance | `test-execution.sh` | ~1 to 4 min |
 | desktop | `test-desktop.sh` | opt-in; Tauri compile dominates |
 | workspace | `test.sh` | opt-in; includes desktop |
 
-**Not pursued after this baseline:** `[profile.test] opt-level` (engine already ~1s warm). **Already applied:** `bedrock` off by default on `providers`/`orchestration` (desktop enables it); ~2× fewer compile units in the fast lane. Next runtime cliff if needed: shorten intentional Wiremock timeout tests in `crates/providers/tests/rig_openai_compat.rs`.
+**Not pursued after this baseline:** `[profile.test] opt-level` (engine already ~1s warm). **Already applied:** `bedrock` off by default on `providers`/`orchestration` (desktop enables it); ~2× fewer compile units in the fast lane. If provider tests need further optimization, consider shortening the intentional Wiremock timeout tests in `crates/providers/tests/rig_openai_compat.rs`.
 
 ## When to run each layer
 
@@ -293,12 +265,12 @@ Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22).
 | --- | --- |
 | Iterate on one crate | `./scripts/verify/test-engine.sh` (or providers / orchestration-lib) |
 | Normal local loop | `./scripts/test-fast.sh` (+ `--execution` if touching runs) |
-| Handoff / PR | `./scripts/verify.sh` |
+| Code PR / release | `./scripts/verify.sh` |
 | Desktop / full workspace Rust | `./scripts/verify.sh test` or `./scripts/test-fast.sh --desktop` |
 
 `./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and the CI-aligned Rust test lane before commits.
 
-For local iteration, prefer `./scripts/test-fast.sh`. Use `./scripts/verify.sh` before handing work off or committing.
+For local changes, select the checks that exercise the affected behavior. Docs/instruction-only edits do not need Rust/UI suites unless executable examples or test/build behavior change. Repeat passing coverage only after relevant changes or failures.
 
 Run this when changing durable run persistence, replay, or resume behavior:
 

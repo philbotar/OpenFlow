@@ -1,7 +1,5 @@
 # Coding patterns
 
-Patterns we follow in this repo.
-
 ## Architecture rules
 
 1. `engine` owns workflow model rules, execution semantics, templates, and ports.
@@ -12,18 +10,18 @@ Patterns we follow in this repo.
 6. `engine` must not depend on HTTP clients, filesystem/tool I/O, Tauri, providers, orchestration, desktop, or UI.
 7. `orchestration` must call engine APIs; do not duplicate workflow validity or execution rules in `orchestration`.
 8. Add a port/trait only when a consumer is typed on that interface; otherwise call the concrete type directly.
-9. Real seams today: `engine/src/ports/` (`AiPort`, `ToolPort`), `providers/src/client.rs` (`AiClient`), and `ui/src/api.ts` (typed Tauri invoke/event wrappers).
+9. Existing boundaries: `engine/src/ports/` (`AiPort`, `ToolPort`), `providers/src/client.rs` (`AiClient`), and `ui/src/api.ts` (typed Tauri invoke/event wrappers).
 
 ## Ownership by concern
 
-| Concern | Source of Truth |
+| Concern | Source of truth |
 | --- | --- |
 | Workflow types, defaults, `WorkflowSettings` | `crates/engine/src/graph/workflow.rs` |
 | Graph validity and execution layer order | `crates/engine/src/graph/validation.rs` |
 | Batch / headless run semantics | `crates/orchestration/src/run/execution/headless.rs` |
 | Interactive pause/resume semantics | `crates/engine/src/execution/interactive_engine/` |
 | Node invocation and prompt assembly | `crates/engine/src/execution/node_invocation.rs` |
-| Node templates, defaults, locked fields, and `TemplateStore` trait | `crates/engine/src/template/` |
+| Node templates, defaults, and locked fields | `crates/engine/src/template/` |
 | LLM invocation contract (`AiPort`, `AgentRequest`) | `crates/engine/src/ports/outbound.rs` |
 | Tool execution contract (`ToolPort`) | `crates/engine/src/ports/outbound.rs`, `crates/orchestration/src/run/execution/tool_port.rs` |
 | Human input and tool approval resume behavior | `crates/engine/src/execution/interactive_engine/` |
@@ -43,7 +41,7 @@ Patterns we follow in this repo.
 | Tool registry and approval | `crates/orchestration/src/tool/` |
 | Tauri command/event surface | `crates/desktop/src/lib.rs` |
 | Frontend invoke wrappers and UI state wiring | `crates/ui/src/api.ts`, `crates/ui/src/context/` |
-| Frontend DTO types | `crates/ui/src/lib/types.ts` |
+| Frontend DTO types | `crates/ui/src/lib/types/index.ts` |
 | Editor layout and panels | `crates/ui/src/screens/EditorScreen.tsx`, `crates/ui/src/panels/` |
 | Sidebar and navigation | `crates/ui/src/components/sidebar/` |
 | Conversation and tool bubbles | `crates/ui/src/components/conversation/` |
@@ -97,7 +95,7 @@ Keep these execution rules in `crates/orchestration/src/run/**` and `crates/engi
    - execution cwd resolution,
    - failure propagation.
 
-See [`testing-workflows.md`](testing-workflows.md) for acceptance and live-AI verification details. Layer rules live in [`../architecture/contract.md`](../architecture/contract.md).
+[Testing workflows](testing-workflows.md) defines acceptance and live-AI checks. The [architecture contract](../architecture/contract.md) defines layer rules.
 
 ## Dependency boundary
 
@@ -111,9 +109,11 @@ See [`testing-workflows.md`](testing-workflows.md) for acceptance and live-AI ve
 
 ## Local run commands
 
-1. Desktop app: `./scripts/start.sh`
-2. Frontend only: `npm --prefix crates/ui run dev`
-3. Frontend typecheck: `npm --prefix crates/ui run typecheck`
+| Task | Command |
+| --- | --- |
+| Start the desktop app | `./scripts/start.sh` |
+| Start the frontend only | `npm --prefix crates/ui run dev` |
+| Typecheck the frontend | `npm --prefix crates/ui run typecheck` |
 
 ## Test file layout
 

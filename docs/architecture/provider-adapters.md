@@ -2,9 +2,52 @@
 
 `crates/providers` implements outbound LLM adapters for `engine::AiPort`. Orchestration resolves settings into provider configuration and calls `create_provider()`; it does not depend on concrete provider clients.
 
-For desktop provider onboarding (keys, OAuth, readiness), see [`../guides/provider-setup.md`](../guides/provider-setup.md).
+Transport goes through **Rig 0.39** in `rig_adapter/`. For keys, OAuth, and readiness controls, follow [Provider setup](../guides/provider-setup.md).
 
-Transport goes through **Rig 0.39** (`rig_adapter/`). Pre-Rig modules `openai_compat.rs`, `anthropic.rs`, and `sse.rs` were removed.
+## Request routing
+
+A model turn passes through the engine port, orchestration router, and provider adapter:
+
+```text
+Workflow run (engine)
+  → AgentRequest (prompt, tools, provider id, model id)
+    → AiPort (engine port)
+      → orchestration routes to the effective provider
+      → providers::create_provider(...) for each referenced provider
+        → mapping/ (transcript + tool wire shape)
+        → rig_adapter/ (Rig HTTP + streaming to the vendor API)
+```
+
+During a run, the **engine** only sees `AiPort`: one interface for model turns, streaming, and tool-call results. **Orchestration** loads `settings.json`, merges secrets, resolves every provider referenced by the workflow, and builds a run-scoped router over those clients. It validates all referenced provider credentials before execution. A provider failure stays attached to that node; OpenFlow does not retry the request through a different provider.
+
+Inside **`crates/providers`**, **Rig** (`rig-core` 0.39) owns most outbound HTTP and SSE streaming to vendor APIs. OpenFlow code around Rig handles:
+
+- `AgentRequest` ↔ provider payload conversion (`mapping/`, `rig_adapter/convert.rs`);
+- API keys, Anthropic headers, and OpenAI-compatible base URLs (`auth.rs`, profile fields);
+- ChatGPT Codex OAuth, refresh, and Codex-specific endpoints (`codex_oauth/`, `codex.rs`);
+- Amazon Bedrock credentials and Converse calls when the desktop build enables the `bedrock` feature (`aws_runtime.rs`).
+
+Orchestration does not import Rig or vendor SDKs directly; it only uses the factory and config types from `providers`. Run logic stays in the engine; provider transport stays in `providers`.
+
+### Wire protocols
+
+The `providers` crate uses `rig-core` for HTTP calls. Its `mapping/` code builds Rig `CompletionRequest` values from `AgentRequest`; workflow code does not call the OpenAI or Anthropic client SDKs directly.
+
+`create_provider()` picks an adapter family from the active builtin profile ([built-in profiles](../reference/providers.md)):
+
+| Profile family | `ProviderAdapterConfig` | Rig model (simplified) | HTTP shape |
+| --- | --- | --- | --- |
+| **Anthropic** | `Anthropic` | `rig_core::providers::anthropic` completion model | Anthropic **Messages** API (`/v1/messages`), `x-api-key` + Anthropic version headers |
+| **OpenAI** and most hosted vendors | `OpenAiCompatible` | `rig_core::providers::openai` | Default **Responses** API for OpenAI; **Chat Completions** for OpenRouter, Groq, Gemini compat, locals, etc. |
+| Per-model override on a compat profile | `OpenAiCompatible` + `model_transports` | Same Rig Anthropic client against the profile **base URL** | **Anthropic Messages** on a non-Anthropic host (gateway or proxy) |
+| **ChatGPT (Codex)** | `OpenAiCodex` (separate `CodexClient`) | Rig ChatGPT responses + OpenFlow OAuth | Private Codex backend (not `api.openai.com` API-key traffic) |
+| **Amazon Bedrock** | `Bedrock` | `rig-bedrock` completion model | AWS Bedrock **Converse** (not Anthropic Messages on `api.anthropic.com`) |
+
+At invoke time, `rig_adapter` builds one `RigModel` enum arm (Anthropic, OpenAiChat, OpenAiResponses, ChatGPT, or Bedrock), runs the turn, then maps the result back to `AgentTurnOutcome`. The engine always sees the same `AiPort` regardless of which arm ran.
+
+Selecting **Anthropic** or **OpenAI** in Settings changes the wire protocol and authentication without changing workflow JSON. **OpenAI** and **Groq** share the OpenAI-compatible adapter type, with different base URLs, key environment variables, and default Responses or Chat Completions transport in `spec.rs`.
+
+UI control for transport: **Settings → Providers** → per-model **Responses API**, **Chat Completions API**, or **Anthropic Messages API** on editable or custom profiles. Managed OpenAI defaults to Responses; most other compat profiles default to Chat Completions.
 
 ## Supported adapter families
 
@@ -17,6 +60,16 @@ Transport goes through **Rig 0.39** (`rig_adapter/`). Pre-Rig modules `openai_co
 | Shared mapping | `crates/providers/src/mapping/` | Transcript conversion, tool argument parsing, `jsonrepair-rs` recovery |
 | Factory | `crates/providers/src/lib.rs` | `create_provider()` returns `Box<dyn AiPort>` |
 | Client entry | `crates/providers/src/client.rs` | `AiClient: AiPort`, config enums, model cache |
+
+Buffered and streaming `AiClient` calls share dispatch in `rig_adapter/mod.rs`; model construction
+selects the provider transport. The per-client cache reuses models and rebuilds Bedrock models before credential expiry.
+Each invocation selects the model and builds its payload from the current `AgentRequest`, including
+its transcript and reasoning/fast-mode settings. Codex retains its separate refreshable client and
+shares the underlying Rig model invocation methods.
+
+Inference and HTTP model discovery share key/header validation in `auth.rs`. Discovery retains its
+shorter total timeout. Tool schemas use Rig's tool definition directly inside providers; engine
+contracts remain independent of Rig.
 
 ## Provider prompt caching
 
@@ -95,13 +148,16 @@ Providers own wire decoding and local `jsonrepair-rs` recovery. Semantic accepta
 
 When deterministic recovery cannot satisfy the node output schema, providers attach a redacted `OutputRepairCandidate` on `AgentError::MalformedSubmitOutput`. Orchestration wraps the run provider once in `RepairingAiPort` (before `AiInvocationAdapter`) so nodes and subagents share one overseer pass on the **same** provider.
 
+Malformed wire-argument markers retain at most 64 KiB of raw UTF-8 text, ending on a character
+boundary. The engine independently caps the repair candidate.
+
 | Setting | Meaning |
 | --- | --- |
 | `WorkflowSettings.output_repair_model` (`outputRepairModel`) | Optional overseer model override |
 | Blank / absent | Inherit the failed worker request's model |
 | Nonblank | Use that model string; credentials stay on the run provider |
 
-See [`output-repair.md`](output-repair.md) for sequence, guards, and deferred scope.
+[Overseer output repair](output-repair.md) describes the sequence, guards, and deferred scope.
 
 ## ChatGPT (Codex) OAuth
 
@@ -112,11 +168,12 @@ The **ChatGPT (Codex)** provider authenticates with a ChatGPT account instead of
 | Browser login | PKCE S256 on `http://localhost:1455/auth/callback`, loopback-only listener, exact state validation |
 | Port conflict | Falls back to ChatGPT's device-code flow only when port 1455 cannot be bound |
 | Refresh | Refreshes within five minutes of expiry, serializes concurrent refreshes, persists rotated credentials, then retries one unauthorized request |
+| Cancellation | Drops the entire pending login attempt, including stalled callback reads, device requests, and token exchange; releases the callback listener |
 | Inference | SSE `POST /backend-api/codex/responses` through Rig with `originator: openflow` and `OpenAI-Beta: responses=experimental`; no WebSocket |
 | Storage | Access, refresh, ID token, expiry, and account metadata are plaintext in `ProviderProfile.codex_oauth` inside `settings.json` |
-| UI boundary | Settings IPC returns only tagged login state, safe email, and device instructions—never tokens or account ID |
+| UI boundary | Settings IPC returns only tagged login state, safe email, and device instructions; it never returns tokens or account ID |
 
-OpenFlow rewrites the OAuth protocol in Rust. Endpoint, PKCE, token-body, and request-shape details derive from [oh-my-pi's MIT-licensed implementation](https://github.com/badlogic/pi-mono/tree/main/packages/ai/src/auth/oauth), then are pinned by fixture tests. OpenFlow intentionally differs from the Codex CLI by choosing device authorization, rather than a second callback port, when port 1455 is occupied.
+OpenFlow implements the OAuth protocol in Rust. Endpoint, PKCE, token-body, and request-shape details derive from [oh-my-pi's MIT-licensed implementation](https://github.com/badlogic/pi-mono/tree/main/packages/ai/src/auth/oauth), then are pinned by fixture tests. OpenFlow intentionally differs from the Codex CLI by choosing device authorization, rather than a second callback port, when port 1455 is occupied.
 
 ### Compatibility boundary
 
@@ -140,7 +197,7 @@ Bedrock uses AWS credentials and region settings rather than a normal API-key he
 
 1. In Settings → Bedrock, set **AWS profile** to the profile name from `~/.aws/config` (e.g. `bedrock`).
 2. Set **AWS region** to the region where your models are enabled (not necessarily `us-east-1`).
-3. In a terminal, run `aws sso login --profile <name>` before starting a run. SSO tokens expire (typically 8–12h); re-login when credentials fail.
+3. In a terminal, run `aws sso login --profile <name>` before starting a run. SSO tokens expire (typically 8 to 12 hours); re-login when credentials fail.
 4. On macOS, apps launched from the Dock do not inherit `AWS_PROFILE` from `~/.zshrc`. Either enter the profile in Settings or launch OpenFlow from a terminal (`./scripts/start.sh`) where the env var is set.
 5. Use **Test AWS connection** in Settings to confirm the app can load credentials (Settings → Bedrock). This checks the same credential chain used at run time.
 6. Verify credentials: `aws sts get-caller-identity --profile <name>` and `aws bedrock list-foundation-models --profile <name> --region <region>`.
@@ -160,4 +217,4 @@ export STEP_WORKFLOW_LIVE_MODEL=anthropic.claude-sonnet-4-20250514-v1:0
 cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```
 
-See [testing workflows](../contributing/testing-workflows.md) for the full live-AI rules.
+[Testing workflows](../contributing/testing-workflows.md) defines the live-AI checks and their limits.

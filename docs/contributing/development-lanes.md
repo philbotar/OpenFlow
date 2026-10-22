@@ -1,77 +1,63 @@
 # Development lanes
 
-Use this page to classify a change before editing. It translates the architecture contract into day-to-day development lanes, skill selection, and verification commands.
-
-Architecture facts live in [`../architecture/contract.md`](../architecture/contract.md). This page should point to those facts, not duplicate a second architecture model.
-
-## Intake
-
-1. Identify the primary touched path.
-2. Read the matching crate `AGENTS.md`.
-3. Check whether the change crosses a seam (`AiPort`, `ToolPort`, `AppBackend`, UI `api.ts`, provider factory, storage port).
-4. Pick the narrowest verification lane that proves the behavior.
-5. Run `./scripts/verify.sh` before handoff, commit, or PR (or load `openflow-finish-change`).
+Choose the row matching the behavior you are changing. Area `AGENTS.md` files define local constraints; the [architecture contract](../architecture/contract.md) defines layer rules.
 
 ## Lanes
 
-| Lane | Use when | Read first | Normal verification |
-| --- | --- | --- | --- |
-| Engine semantics | Workflow model, validation, prompts, execution state machine, ports, tool policy, telemetry | `crates/engine/AGENTS.md`, `docs/architecture/contract.md`, `docs/glossary.md`, `docs/architecture/end-to-end-runtime.md` when touching execution | `cargo nextest run -p engine` |
-| Run orchestration | Active run lifecycle, execution host, approval/input loop, event projection, checkpoint/replay, execution cwd | `crates/orchestration/AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md`, `docs/architecture/threading-concurrency.md` | `cargo nextest run -p orchestration --lib` and workflow acceptance when execution behavior changes |
-| Application service | Workflow catalog, agent library, project registry, settings facade, tool registry/runner | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | Focused `cargo nextest run -p orchestration --lib` filters |
-| Adapter/I/O | Storage files, tool implementations, git/LSP, filesystem or subprocess behavior | `crates/orchestration/AGENTS.md`, `docs/architecture/contract.md` | Focused adapter tests plus `./scripts/check-architecture.sh` |
-| Provider adapter | Rig transport, request/response mapping, auth, streaming, tool argument repair | `crates/providers/AGENTS.md`, `docs/architecture/provider-adapters.md` | `cargo nextest run -p providers` |
-| Desktop IPC | Tauri command handlers, event bridge, app bootstrap, macOS integration | `crates/desktop/AGENTS.md` | `cargo nextest run -p desktop` |
-| UI/Desktop seam | `api.ts`, frontend DTOs, AppProvider, screens, panels, canvas | `crates/ui/AGENTS.md`, `docs/architecture/end-to-end-runtime.md` for event path | `npm --prefix crates/ui run typecheck` and focused Vitest |
-| Cross-crate workflow | A user-visible workflow that crosses engine, orchestration, desktop, and UI | Root `AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; full `./scripts/verify.sh` before handoff |
-
-## Skill recommendations
-
-Project-local skills stay procedural. They tell an agent how to classify a change and which docs to read. They must not become a second source of architecture facts.
-
-| Skill | Path | Use when |
+| Change | Owner / guidance | Relevant verification |
 | --- | --- | --- |
-| `openflow-engine-change` | `.cursor/skills/openflow-engine-change/SKILL.md` | Any edit under `crates/engine/**` |
-| `openflow-orchestration-change` | `.cursor/skills/openflow-orchestration-change/SKILL.md` | Any edit under `crates/orchestration/**` |
-| `openflow-provider-change` | `.cursor/skills/openflow-provider-change/SKILL.md` | Any edit under `crates/providers/**` |
-| `openflow-ui-change` | `.cursor/skills/openflow-ui-change/SKILL.md` | Any edit under `crates/ui/**` |
-| `rust-hexarc-organizer` | `.cursor/skills/rust-hexarc-organizer/SKILL.md` | Cross-crate placement, layer violations, which crate owns a change |
-| `openflow-finish-change` | `.cursor/skills/openflow-finish-change/SKILL.md` | Final verification before handoff |
+| Workflow model, validation, execution semantics, ports | [Engine](../../crates/engine/AGENTS.md) | Focused engine tests; workflow acceptance for execution; public API check for public contracts |
+| Run hosting, active retry, checkpoint/replay, execution cwd | [Orchestration](../../crates/orchestration/AGENTS.md), [runtime](../architecture/end-to-end-runtime.md) | Orchestration tests and workflow acceptance |
+| Catalogs, settings, storage, tools I/O | [Orchestration](../../crates/orchestration/AGENTS.md) | Focused service/adapter tests; compatibility coverage for saved data |
+| Provider transport, auth, streaming, mapping | [Providers](../../crates/providers/AGENTS.md) | Provider tests; Bedrock lane for AWS changes |
+| Tauri handlers, event bridge, bootstrap | [Desktop](../../crates/desktop/AGENTS.md) | Desktop command/event coverage |
+| UI state, interactions, DTOs, invoke wrappers | [UI](../../crates/ui/AGENTS.md) | Typecheck and focused Vitest; native coverage for IPC changes |
+| Cross-layer behavior | [Runtime](../architecture/end-to-end-runtime.md), [testing](testing-workflows.md) | Full gate plus desktop/Bedrock lanes when affected |
+| Docs and agent instructions only | [Docs](../AGENTS.md) | Changed links, anchors, paths, command syntax, examples, and diff |
 
-Load the matching lane skill first. Load `rust-hexarc-organizer` when ownership is unclear. Load `openflow-finish-change` before claiming done.
+For async ownership consult [threading](../architecture/threading-concurrency.md); for uncertain terminology consult the [glossary](../glossary.md). Routine edits do not require a full architecture review.
 
-If a skill conflicts with `docs/architecture/contract.md`, fix the skill.
+## Skills
 
-## Verification rules
+Use a skill when its guidance helps with the change. A file's location alone does not determine which skill applies; editing crate documentation does not require an implementation skill.
 
-| Goal | Command |
+| Skill | Use when |
 | --- | --- |
-| Compile loop | `./scripts/check-fast.sh` / `./scripts/check-fast.sh --clippy <crate>` |
-| Iterate | `./scripts/test-fast.sh` |
-| Execution risk | `./scripts/test-fast.sh --execution` |
-| Desktop risk | `./scripts/test-fast.sh --desktop` |
+| [openflow-engine-change](../../.cursor/skills/openflow-engine-change/SKILL.md) | Changing execution semantics, validation, or port contracts |
+| [openflow-orchestration-change](../../.cursor/skills/openflow-orchestration-change/SKILL.md) | Changing run hosting, persistence, or backend wiring |
+| [openflow-provider-change](../../.cursor/skills/openflow-provider-change/SKILL.md) | Changing provider transport, auth, streaming, or mapping |
+| [openflow-ui-change](../../.cursor/skills/openflow-ui-change/SKILL.md) | Changing UI interaction/state or desktop seam integration |
+| [rust-hexarc-organizer](../../.cursor/skills/rust-hexarc-organizer/SKILL.md) | Resolving uncertain ownership or dependency violations |
+| [openflow-finish-change](../../.cursor/skills/openflow-finish-change/SKILL.md) | Assessing readiness or selecting missing verification |
+| [product-docs-writer](../../.cursor/skills/product-docs-writer/SKILL.md) | Explicitly requested product documentation workflow |
+| [openflow-deploy-ready](../../.cursor/skills/openflow-deploy-ready/SKILL.md) | Explicit release preparation/execution; completion stops at draft Release |
+
+## Verification
+
+Local edits, builds, linting, and tests needed for the task may proceed without per-step approval. Use temporary persistence fixtures. Live-provider smoke is separate: it can use saved credentials and incur charges, so it needs authorization.
+
+| Purpose | Command |
+| --- | --- |
+| Rust compile / lint | `./scripts/check-fast.sh <crate>` / `./scripts/check-fast.sh --clippy <crate>` |
+| Engine | `./scripts/verify/test-engine.sh` |
+| Providers | `./scripts/verify/test-providers.sh` |
+| Orchestration | `./scripts/verify/test-orchestration-lib.sh` |
+| Execution acceptance | `./scripts/test-fast.sh --execution` |
+| Desktop | `./scripts/test-fast.sh --desktop` |
 | Bedrock / AWS | `./scripts/verify/test-providers-bedrock.sh` |
-| Handoff | `./scripts/verify.sh` |
-| Full workspace Rust | `./scripts/verify.sh test` |
+| UI types | `npm --prefix crates/ui run typecheck` |
+| Focused UI test | `npm --prefix crates/ui run test -- src/api.test.ts` (replace test path) |
+| Changed layer boundaries | `./scripts/check-architecture.sh` |
+| Changed engine public contract | `./scripts/check-engine-public-api.sh` |
+| Code PR readiness, release, cross-layer change, or requested full gate | `./scripts/verify.sh` |
+| Full workspace Rust only | `./scripts/verify.sh test` |
 
-While editing, prefer `./scripts/check-fast.sh` before tests. Use `./scripts/test-fast.sh` for normal iteration. Add flags by risk:
+Docs/instruction-only changes do not need Rust/UI suites unless they affect executable examples or test/build behavior. Choose focused checks for local changes. Do not repeat passing coverage without new changes, failures, or unresolved concerns.
 
-```bash
-./scripts/test-fast.sh --execution
-./scripts/test-fast.sh --desktop
-./scripts/test-fast.sh --execution --desktop
-```
+The default full gate includes workflow acceptance through `test-fast --execution`; no duplicate standalone acceptance run is needed. It excludes desktop/Tauri and Bedrock-specific coverage. Add those lanes when affected. `--deep` adds optional mutation testing. See [testing workflows](testing-workflows.md) for test placement, granular commands, and environment constraints.
 
-Use `./scripts/verify.sh` before handing work off. Default Rust tests match CI (`test-fast --execution`, no desktop). Parallel agents: `VERIFY_ISOLATE_TARGET=1`. Use `./scripts/verify.sh --deep` (or `./scripts/miri.sh`) when you want [Miri](https://github.com/rust-lang/miri) undefined-behavior coverage on `engine` and `orchestration`.
+## Completion
 
-For execution behavior, always add:
+Verify the behavior at the code or UI that consumes it, fix failures caused by the change, and report checks and remaining limitations. Reuse results from checks run against unchanged code; report pending CI and blocked checks as such.
 
-```bash
-cargo nextest run -p orchestration --test workflow_acceptance --no-capture
-```
-
-For architecture-sensitive work, always add:
-
-```bash
-./scripts/check-architecture.sh
-```
+Stop at a requested review point, a decision that needs user input, or an external blocker, and state the exact next action. Completing verification does not authorize publication.

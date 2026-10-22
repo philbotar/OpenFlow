@@ -1,92 +1,47 @@
 # Contributing
 
-How to change code in this repository.
+Start with a [source build](../getting-started/build-from-source.md), then choose the owning area and checks for your change.
 
-## Filesystem
+## Make a change
 
-```text
-contributing/
-├── README.md              # This index
-├── development-lanes.md   # Change classification, skill routing, verification lanes
-├── coding-patterns.md     # Architecture rules, ownership, persistence, conventions
-├── releasing.md           # Desktop version bumps, GitHub tags, updater releases
-└── testing-workflows.md   # Test layers, acceptance rules, when to run each suite
-```
+1. Check the working tree and preserve existing staged, unstaged, and untracked work.
+2. Find the owner in [AGENTS.md](../../AGENTS.md) and read that area’s guide.
+3. Implement the change in that layer. Use [Coding patterns](coding-patterns.md) for ownership, errors, persistence, and test placement.
+4. Run the checks for the affected behavior, then inspect the diff. Update product docs when behavior changes.
+5. Run the full verification gate before a code PR. Report local checks, any live-provider smoke, and remote CI separately.
 
-## Read order
+<a id="filesystem"></a>
 
-1. [`development-lanes.md`](development-lanes.md) - classify the change, pick the matching playbook, and choose verification.
-2. [`coding-patterns.md`](coding-patterns.md) - where logic lives, runtime semantics, change checklist.
-3. [`testing-workflows.md`](testing-workflows.md) - how to verify behavior without the desktop UI.
-4. [`releasing.md`](releasing.md) - when and how to bump desktop version, tag, and publish GitHub Releases.
+## Choose guidance for the change
 
-Also read before larger changes:
-
-- [`../architecture/end-to-end-runtime.md`](../architecture/end-to-end-runtime.md) - code-grounded run path.
-- [`../architecture/contract.md`](../architecture/contract.md) - layer dependency rules.
-- [`../../AGENTS.md`](../../AGENTS.md) - repo map and file-level ownership.
-- [`../glossary.md`](../glossary.md) - engine and app vocabulary.
-- Project skills under [`.cursor/skills/`](../../.cursor/skills/) — routed from [`development-lanes.md`](development-lanes.md).
-
-## Boundary seams
-
-Add a port/trait only when a consumer is typed on that interface. Current seams:
-
-- `crates/engine/src/ports/` - `AiPort`, `ToolPort`
-- `crates/providers/src/client.rs` - `AiClient` implements `AiPort`
-- `crates/ui/src/api.ts` - typed Tauri invoke/event wrappers
-
-## UI layout
-
-| Path | Purpose |
+| Task | Guide |
 | --- | --- |
-| `crates/ui/src/context/` | `AppProvider` / `AppContext` - app state, run listeners, navigation |
-| `crates/ui/src/screens/` | Full-page routes: `EditorScreen`, `AgentsScreen`, `SettingsScreen` |
-| `crates/ui/src/components/` | Shared chrome: `AppHeader`, sidebar primitives, conversation UI |
-| `crates/ui/src/panels/` | Editor overlays: `InspectorPanel`, `WorkflowSettingsPanel`, `DockPanel` |
-| `crates/ui/src/canvas/` | Workflow graph rendering |
-| `crates/ui/src/forms/` | Node/agent configuration editors |
-| `crates/ui/src/lib/types.ts` | Frontend DTO mirror types |
-| `crates/ui/src/api.ts` | Typed Tauri invoke/event wrappers |
+| Launch a local development build | [Build from source](../getting-started/build-from-source.md) |
+| Look up commands | [Development commands](commands.md) |
+| Fix compilation, cache, or test failures | [Build and test troubleshooting](build-troubleshooting.md) |
+| Find the owner and checks | [Development lanes](development-lanes.md) |
+| Place logic and follow runtime conventions | [Coding patterns](coding-patterns.md) |
+| Verify behavior without the desktop UI | [Testing workflows](testing-workflows.md) |
+| Bump versions, tag, and publish a release | [Releasing](releasing.md) |
+| Build or publish the documentation website | [Documentation website](documentation-site.md) |
+| Trace a run across layers | [End-to-end runtime](../architecture/end-to-end-runtime.md) |
+| Check dependency rules | [Architecture contract](../architecture/contract.md) |
+| Look up engine and app vocabulary | [Glossary](../glossary.md) |
 
-`App.tsx` is a thin shell: provider, toaster, sidebar, header, and `ScreenRouter`.
+Project skills under [`.cursor/skills/`](../../.cursor/skills/) provide scoped help; [Development lanes](development-lanes.md) maps them to changes.
 
-## Persistence overview
+## Verify and submit
 
-| Data | Location | Owning module |
-| --- | --- | --- |
-| App workflows | `{data_local}/openflow/workflows.json` | `orchestration/src/adapters/storage/app_workflow_store.rs` |
-| Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/project_store.rs` |
-| Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/agent_store.rs` |
-| Settings | `{data_local}/openflow/settings.json` | `orchestration/src/adapters/storage/settings_store.rs` |
-| Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` | `orchestration/src/adapters/storage/project_workflow_store.rs` |
-| Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) | `orchestration/src/adapters/storage/settings_store.rs` |
-| Skills | Discovered at runtime from Cursor/Claude skill dirs (not persisted) | `orchestration/src/adapters/storage/skill_store.rs` |
+[Development lanes](development-lanes.md) selects the checks; [Development commands](commands.md) provides the command reference. Docs-only edits need link, path, syntax, and diff checks. Runtime changes need execution coverage; desktop changes need the desktop lane.
 
-`AppBackend::load_all_workflows` merges app-store workflows with project-discovered workflows (project files win on ID collision).
+Publishing tags and releases requires explicit authorization. The [release guide](releasing.md) describes versioning and publication.
 
-## Verification quick path
+<a id="boundary-seams"></a>
+<a id="ui-layout"></a>
+<a id="persistence-overview"></a>
 
-| Goal | Command |
-| --- | --- |
-| Compile loop | `./scripts/check-fast.sh` |
-| Iterate | `./scripts/test-fast.sh` (+ `--execution` if touching runs) |
-| Handoff / PR | `./scripts/verify.sh` |
-| Full workspace Rust (incl. desktop) | `./scripts/verify.sh test` |
-| Parallel agents on one machine | `VERIFY_ISOLATE_TARGET=1 ./scripts/verify.sh` |
+For code orientation, use [Ports and public boundaries](../FOLDER_STRUCTURE.md#ports-and-public-boundaries), [UI layout](../FOLDER_STRUCTURE.md#ui-layout), and [Persistence locations](../architecture/orchestration-layout.md#persistence-locations).
 
-```bash
-./scripts/check-fast.sh
-./scripts/test-fast.sh
-./scripts/verify.sh
-```
+<a id="verification-quick-path"></a>
 
-Default verify reuses `./target` and runs the CI-aligned `test-fast` lane (no desktop; Bedrock/AWS off unless desktop/featured). Opt-in full workspace: `./scripts/verify.sh test`.
-
-Intentional changes to engine's public surface require updating `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
-
-See [`testing-workflows.md`](testing-workflows.md) for layered test commands and [Miri](https://github.com/rust-lang/miri) undefined-behavior checks.
-
-## Miri (undefined behavior)
-
-We run [Miri](https://github.com/rust-lang/miri) on **`engine`** and **`orchestration`** to catch invalid memory use and aliasing in pure Rust code. Local: `./scripts/miri.sh` or `./scripts/verify.sh --deep miri`. CI: parallel per-crate Miri matrix in `.github/workflows/ci.yml` (Ubuntu; only changed crates). Requires nightly (`rustup toolchain install nightly --component miri`). Details: [`testing-workflows.md` § Miri](testing-workflows.md#miri).
+The [verification command reference](commands.md#verification-quick-path) includes fast checks, and the full gate.

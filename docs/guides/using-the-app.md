@@ -1,175 +1,72 @@
 # Using the app
 
-Task-oriented map of the OpenFlow desktop UI after install and provider setup. For install and keys, see [`../getting-started/README.md`](../getting-started/README.md). For a first workflow build, see [`first-workflow.md`](first-workflow.md).
+Start a chat or open a workflow from the sidebar. Projects group work by repository; Settings holds provider and integration setup.
 
-## Sidebar
-
-| Control | Purpose |
-| --- | --- |
-| **New chat** | Start a saved, direct AI conversation without creating or opening a workflow. Existing chats appear under **Chats**. |
-| **Agents** | Create and edit saved agent definitions (prompt, model, tools, Markdown or JSON output). |
-| **Schedule** | Enable timed or interval schedules on workflows that already exist in the catalog. |
-| **Workflows** | App-level workflows stored under the OpenFlow data directory. **New workflow** creates one; **Build with AI** opens the authoring chat. Use a workflow row's options menu to rename or delete it. |
-| **Projects** | Bind a repository folder, create or assign workflows under `.flow/workflows/`, and open project workflows in the editor. |
-| **Help** | Replay the guided UI tour. |
-| **Settings** | Appearance, providers ([`provider-setup.md`](provider-setup.md)), web search keys, MCP servers, diagnostics, and about. |
-
-On first launch, OpenFlow explains chats versus workflows, then highlights the real canvas, Inspector, Workflow Settings, run control, and composer. Use **Next** and **Back** to move through the tour, **Skip tour** or Escape to dismiss it, then **Help** to replay it later.
-
-The **Chats**, **Workflows**, and **Projects** headings keep their `+` actions visible. Use them to create a chat or workflow, or select a repository folder to add as a project.
-
-Project workflow files override app workflows when both share the same workflow ID. Paths are listed in [`../reference/README.md#runtime-and-persistence-paths`](../reference/README.md#runtime-and-persistence-paths).
-
-## Direct chats
-
-Select **New chat**, then send a message in the full-page, single-pane composer. OpenFlow saves the Chat separately from the workflow catalog and names it from the first message. Select an existing entry under the separate **Chats** sidebar heading to restore its flat transcript; sending another message resumes its durable run. Open a chat row's options menu to remove it from chat history. Stop its run first when that chat is active.
-
-Use the paperclip, paste an image, or drop files onto the composer to attach up to four files per
-message. A single file can be at most 10 MiB; the message total is 25 MiB. Supported formats:
-JPEG, PNG, GIF, WebP, PDF, plain text, Markdown, CSV, JSON, HTML, CSS, JavaScript, and Python.
-Attachment-only messages are valid.
-
-OpenFlow validates each file, copies it into the durable run, then sends the managed copy to the
-provider. Moving or deleting the original does not break chat replay. Image previews are bounded
-local derivatives; documents render as metadata cards and never as active HTML or scripts. Deleting
-a saved chat also deletes its run-owned copies. If cleanup cannot finish immediately, the chat is
-deleted and the app reports that cleanup remains pending.
-
-Provider serializers support these attachment shapes, but the selected model can still reject an
-image or document. Keep the pending card when import fails. For a model capability error, select a
-media-capable model and retry.
-
-Use the controls below the composer to choose:
-
-- **Project** — scopes file references, execution cwd, and durable run storage to that project. Choose before sending the first message. Select **Add Project…** in this menu to add a repository folder and select it for the chat.
-- **Model** — selects the model for the next assistant turn.
-- **Speed** — selects Standard or Fast for OpenAI and ChatGPT (Codex). Fast changes service priority, not reasoning effort.
-- **Approval mode** — controls which tools require confirmation.
-- **Reasoning effort** — selects a provider-supported effort level and, when required, its token budget.
-
-Without a project, OpenFlow runs the chat in an isolated app-managed workspace. With a project,
-OpenFlow uses that project's configured execution folder and stores run metadata under `.flow/runs/`.
-Adding a project or starting its run checks `.flow` write access first.
-
-Direct chat ends each assistant turn after a normal reply; it does not require a closing question.
-When your answer is required and clear choices help, the assistant can show a multiple-choice card.
-You can always answer that card through the normal composer instead.
-
-The saved Chat contains only chat metadata and its durable run ID. At run start, the backend privately adapts that Chat to the workflow execution engine. This execution detail is not returned in the Chat DTO or written to `chats.json`: direct chats do not expose nodes or appear in **Workflows**, the canvas, project assignments, or `workflows.json`.
-
-## Editor layout
-
-- **Canvas** — nodes, edges, validation errors, and per-node run status.
-- **Inspector** — selected node configuration (instruction, optional provider override, model, handoff, tools, callable agents).
-- **Workflow settings** — shared provider, speed, reasoning effort, shared context, optional Plan → Execute gate, and schedule metadata.
-- **Bottom dock** — **Chat**, **Terminal**, **Run trace**, and **History** tabs.
-
-## Node handoffs
-
-Use the Inspector **Handoff** section to choose what a completed node gives its downstream nodes:
-
-- **Markdown** — default for new nodes. Edit the heading template to match the work. The node must preserve and fill every heading. OpenFlow validates the result, stores `HANDOFF.md`, and passes its `run://` URI plus hash and media type downstream.
-- **JSON** — define a JSON output schema for typed machine data. OpenFlow validates the object, stores `HANDOFF.json`, and passes both the structured output and artifact reference downstream.
-
-Saved workflows created before handoff formats existed load as JSON, preserving their existing output schemas. During execution, downstream nodes receive each direct upstream node's compact output and optional `handoff` manifest. The runtime instructs them to read the immutable `run://` artifact before using its contents.
-
-The **Agents** screen exposes the same format editor. OpenFlow saves the choice with the agent and copies it to workflow nodes created from that agent. Existing saved agents without a format continue to load as JSON.
-
-## Run controls
-
-Use the top bar while a workflow is open in the editor:
-
-- **Run** — start a new run when the provider is ready and no continuable run exists. Optional starter text goes through the chat composer when the workflow expects entrypoint input.
-- **Continue** — resume a paused run that still has pending input or approvals.
-- **Stop** — cancel the selected run. Other active chats/workflows continue.
-
-Nodes inherit the workflow's shared provider unless their Inspector selects an override. A workflow without a shared provider inherits the active Settings provider. Run start validates every provider referenced by the workflow.
-
-Provider readiness failures are covered in [`../troubleshooting/README.md#provider-not-ready`](../troubleshooting/README.md#provider-not-ready).
-
-## Chat composer
-
-During a run, each active node has a chat thread in the dock.
-
-- Type `/` anywhere in the composer to attach a **skill** from discovered `SKILL.md` files (Cursor, Claude, and Agents skill directories on the machine). The skill bubble shows the recognized invocation; OpenFlow removes the command from the user message, resolves the exact file, and loads it into the run context. Skills are read-only catalog entries, not stored inside OpenFlow.
-- Type `@` to reference project files when the workflow is bound to a project.
-
-Tool calls that require approval appear in the thread; approve or deny before execution continues.
-
-After a workflow node changes files, its thread shows a collapsed file-change summary. Expand it,
-then select **View diff** on an edit to load the exact diff. OpenFlow keeps repeated edits to the
-same path in execution order and makes exact diffs available in live runs and replay. Older runs
-show their stored summaries. A warning appears when the node used Bash because shell, external
-tool, and MCP writes cannot always be attributed to that node.
-
-## Tools and approval
-
-Agent nodes can invoke built-in tools (read and edit files, run shell commands, search, and others) according to engine tool policy. In the inspector **Tools** section, **Approval mode** controls how often you are prompted:
-
-| Approval mode | Behavior |
-| --- | --- |
-| **Read only** | Only read-tier tools (for example read, ls, search, find) are offered to the model; write and shell tools are omitted from the catalog. |
-| **Read auto-approve, write prompt** | Read-tier tools run without a prompt; write-tier tools (edit, bash, MCP, …) require approval in chat. Plain `ls` and read-only `find` commands through `bash` also run without a prompt. |
-| **Always ask** | Prompt before each tool call. |
-| **Auto-approve all** | No approval prompts for tools this node is allowed to use. |
-
-Denied tools return an error result to the model; the run can continue unless the agent cannot recover. Callable **Subagents** in the same inspector delegate work to saved agents without redrawing the graph.
-
-Per-tool names, arguments, and limits: [`../reference/tools.md`](../reference/tools.md).
-
-## Run trace, history, and replay
-
-- **Run trace** — structured timeline of node and tool events for the current or replayed run.
-- **History** — durable runs for the active workflow. **Open replay** loads a read-only view; **Resume run** is available when status is `paused`, `stopped`, or `failed`.
-
-See [`../concepts/workflows-and-runs.md`](../concepts/workflows-and-runs.md) for run vocabulary.
-
-## Post-run review
-
-When a run completes successfully, the chat may show **Run review** suggestions: evidence-backed improvements to prompts, tools, workflow structure, models, or coordination. The review uses a separate model pass and does not change whether the run succeeded. If review fails, the UI shows an error message instead of suggestions.
-
-## Build with AI
-
-**Build with AI** starts a workflow authoring session. Its composer uses the same project and model controls as direct chat, including reasoning effort and speed when the provider supports them. You can change the project before the first message; the project then stays fixed for that authoring conversation. Authoring tool access stays fixed, so this composer does not show the direct-chat approval control.
-
-Ask questions or discuss the goal normally; the assistant proposes graph changes only after you explicitly ask to create or edit the workflow. Review the proposed graph, then select **Create Workflow** or **Apply Changes** to save it. Provider readiness is required, same as running a workflow.
-
-## Schedule
-
-Open **Schedule** in the sidebar to attach a schedule to an existing workflow: choose presets (for example daily time or interval), save, or remove. Scheduled runs use the same runtime as manual **Run**; configure entrypoint behavior in the workflow itself.
-
-## Saved agents and callable agents
-
-Saved agents on the **Agents** screen are library entries. To reuse one inside a workflow, add it as a **callable agent** on a node that should delegate work. Snapshots are frozen at run start; editing the library agent later does not change an in-flight run. See [`../architecture/callable-agents.md`](../architecture/callable-agents.md).
-
-To invoke installed skills from a workflow node or saved agent, type one or more `/skill-id` tokens anywhere in its **Task prompt**:
-
-```text
-Implement the approved ticket with /tdd and /code-review
+```mermaid
+flowchart LR
+    Sidebar["Sidebar"] --> Chat["New chat<br/>A saved conversation"]
+    Sidebar --> Workflow["Workflows<br/>Reusable graphs"]
+    Workflow --> Canvas["Canvas<br/>Connect the steps"]
+    Canvas --> Inspector["Inspector<br/>Configure one node"]
+    Canvas --> Dock["Chat · Run trace · History<br/>Follow and review the run"]
+    Sidebar --> Settings["Settings<br/>Providers and integrations"]
 ```
 
-The task-prompt editor lists matching skills after you type `/`, using the same discovered-skill catalog as the bottom composer. Recognized tokens show the same skill name and description bubble as chat. At run start, OpenFlow resolves each installed token to its exact `SKILL.md`, loads the file contents into system context before other work, and freezes the resolved paths for that run. An unknown leading command blocks the run with the node or callable-agent name; unknown inline tokens stay literal.
+## Main navigation
 
-## Settings beyond providers
-
-| Section | Use when |
+| Area | What it does |
 | --- | --- |
-| **Search** | Workflows call web search through bundled search-cli; store per-provider API keys here or export keys in the shell environment. |
-| **MCP Servers** | Discover supported configs, import `mcpServers` JSON, install registry packages, or add stdio/remote servers manually. Review trust before enablement. Test, edit, export, delete, or disable connections. **Disable all** turns off configured servers plus external discovery. |
-| **Diagnostics** | Local debug output and related developer options. |
+| **New chat** | Starts a saved [direct chat](direct-chats.md) without creating a workflow. |
+| **Agents** | Manages saved agent definitions for use as [callable agents](tools-and-integrations.md#saved-and-callable-agents). |
+| **Schedule** | Adds a [timed or interval schedule](scheduling.md) to an existing workflow. |
+| **Workflows** | Lists app-level workflows. Use **New workflow** to create one, or its row menu to rename or delete it. |
+| **Projects** | Registers repository folders and shows [project-local workflows](projects-and-persistence.md). |
+| **Help** | Replays the guided tour. **Next**, **Back**, **Skip tour**, and Escape control the tour. |
+| **Settings** | Contains Appearance, Providers, Search, MCP Servers, Diagnostics, and About. |
 
-OpenFlow supports local stdio, Streamable HTTP, and legacy SSE MCP transports. The embedded Terminal, bash tools, and local MCP probes, installs, and runs share the user's login-shell `PATH`, so GUI launches can resolve runtimes such as `npx` installed by nvm. Explicit per-command or MCP environment entries override that inherited `PATH`. Remote auth supports static secret-backed headers plus OAuth discovery, PKCE, callback validation, token refresh, and disconnect. Any failed remote test exposes **Authenticate OAuth**, even when the transport could not classify the failure as a standard OAuth challenge. Discovery and client registration must complete before the browser can open; failures remain visible on the server row with the failed stage. MCP inputs and OAuth tokens stay in `{data_local}/openflow/mcp-secrets.json`; the file is plaintext with mode `0600` on Unix. Settings and exports contain opaque refs, never credential values. Remote URLs pass HTTPS, redirect, DNS/IP, and localhost policy checks before connection.
+The **Chats**, **Workflows**, and **Projects** headings keep their `+` actions visible. A project row menu contains **New workflow**, **Create with AI**, **Copy from…**, and **Remove project**.
 
-Server-to-client capabilities default to off per server. Enable **Expose selected project root**, **Allow approved sampling reqs**, or **Allow approved form/URL elicitation**, then run **Approve & Test** again. OpenFlow exposes only the selected project's canonical folder as an MCP root; app-managed workspaces stay hidden. Sampling and elicitation stay bound to the originating node and MCP tool call.
+## Common screens
 
-Every sampling or elicitation req appears in chat for one-time approval. Sampling uses the originating node's effective provider without tools, human-input tools, or recursive MCP access. Per-req and per-run request/token budgets apply, plus hard app ceilings. Form replies must match the server's primitive JSON schema. URL elicitation accepts credential-free HTTPS URLs, opens them in the system browser, then reports the user's decision. Stopping the run cancels pending callbacks.
+[Direct chats](direct-chats.md) use a full-page composer and have durable run history. They do not appear in the workflow catalog or canvas.
 
-Use **Approve & Test** after import or any security-relevant change. Each row shows its current lifecycle state, last stage/error, check time, and attempt count. Use **Retry**, **Restart & Test**, **Disable**, **Copy diagnostics**, or **Open source** as available. OpenFlow reports a missing executable directly and stops waiting after 15 seconds when a server does not start or list tools. During run setup and shutdown, it handles up to four MCP servers concurrently, so one stalled server does not serialize the full server list. MCP tool calls stop waiting after 120 seconds and send the protocol cancellation notification. OpenFlow does not automatically retry a timed-out call because the server may already have completed it.
+The [workflow editor](workflow-authoring.md) contains the Canvas, Inspector, Workflow Settings, and a bottom dock with **Chat**, **Terminal**, **Run trace**, and **History**. Use **Chat**, **Run trace**, and **History** for [conversation, inspection, and recovery](runs.md).
 
-Per-server policy defaults every tool to **Write** and serializes calls as **Exclusive**. After a successful test, you can allowlist individual discovered tools, classify the whole server as user-reviewed **Read**, or opt into **Shared** concurrency. These are user decisions: OpenFlow never trusts a server's own read-only annotation. Every policy change revokes trust and requires another test.
+## Composer controls
 
-MCP tools become available to nodes that advertise MCP access during a run. If an enabled server cannot connect or list tools, OpenFlow skips that server, shows a system message in chat, and continues the run without its tools.
+Depending on the screen and provider, the composer can expose **Project**, **Model**, **Speed**, **Approval mode**, and **Reasoning effort**. `/` invokes a discovered skill and `@` references project files. Approval prompts appear in the conversation when a tool needs confirmation. The [configuration reference](../reference/configuration.md) lists limits and defaults.
 
-To add MCP resources or prompts to a node, open its Inspector, expand **MCP context**, choose an enabled server, then select each resource or prompt explicitly. OpenFlow does not inject catalog content merely because you loaded it. Preview shows source provenance, included size, and truncation. Each selection has a byte cap; the combined node cap is 1 MiB.
+## Provider readiness
 
-At run start, OpenFlow reads selected resources and renders selected prompts once, stores that bounded snapshot with the durable run, then labels it as untrusted data in provider context. Resume and replay use the same immutable snapshot. OpenFlow does not subscribe to resource updates because provider context stays frozen for the run.
+The header shows **Provider ready** or **Connect provider**. A workflow can inherit the active provider, use a workflow provider, or override it on a node. Every provider referenced at run start must be ready. Follow [Provider setup](provider-setup.md) to connect one, or [Troubleshooting](../troubleshooting/README.md#provider-not-ready) if readiness fails.
+
+## Workflow controls
+
+| Capability | What you do in the app | Read |
+| --- | --- | --- |
+| Visual workflow editor | Add nodes on the canvas, connect edges, configure the inspector, fix validation errors before **Run** | [First workflow](first-workflow.md), [Using the app](using-the-app.md) |
+| Parallel agent layers | Wire independent branches from the same upstream node; same-depth nodes run concurrently | [Workflows and runs](../concepts/workflows-and-runs.md#parallel-layers) |
+| Multi-provider models | **Settings → Providers** for credentials; per-node model in the inspector | [Provider setup](provider-setup.md) |
+| Tools (files, shell, search, …) | Inspector **Tools** → **Approval mode**; approve or deny in chat when prompted | [Tools reference](../reference/tools.md), [Tools and integrations](tools-and-integrations.md#approval-modes) |
+| Subagents (callable agents) | **Agents** screen to save configs; inspector **Subagents** to attach them to a node | [Tools and integrations](tools-and-integrations.md#saved-and-callable-agents), [Callable agents](../architecture/callable-agents.md) |
+| Interactive vs hands-off runs | Approval mode **Always ask** vs **Auto-approve all** on each node | [Tools and integrations](tools-and-integrations.md#approval-modes) |
+| Project-aware workflows | **Projects** → add repo folder; workflows under `.flow/workflows/`; `@` file refs in chat | [Using the app](using-the-app.md), [Storage paths](../reference/README.md#runtime-and-persistence-paths) |
+| Create with AI | Choose **Create with AI** to draft a graph from chat | [Workflow authoring](workflow-authoring.md#create-with-ai-safely) |
+| Schedules | Sidebar **Schedule** on saved workflows | [Scheduling](scheduling.md) |
+| Run history & resume | Dock **History** → replay or resume | [Runs and recovery](runs.md#review-and-replay), [Workflows and runs](../concepts/workflows-and-runs.md#run) |
+| Post-run suggestions | After success, **Run review** in chat | [Workflows and runs](../concepts/workflows-and-runs.md#run) |
+| Plan → Execute | Workflow settings → **Plan → Execute** | [Workflows and runs](../concepts/workflows-and-runs.md#plan--execute) |
+| MCP servers | **Settings → MCP Servers** | [MCP servers](tools-and-integrations.md#mcp-servers) |
+| Web search keys | **Settings → Search** (for search-cli during runs) | [Web search](tools-and-integrations.md#web-search) |
+| Terminal in the dock | Dock **Terminal** tab | [App screens](using-the-app.md#common-screens) |
+
+## Replay the guided tour
+
+The in-app **Help** tour demonstrates **Create with AI**, node inspection, and **Run** / **Stop**.
+
+<figure class="product-shot product-shot--detail" style="--shot-width: 555px">
+
+[![Help highlighted at the bottom of the sidebar beside the final quick-tour card, with Skip tour, Back, and Done buttons.](../public/media/screenshots/help-tour-replay.png)](../public/media/screenshots/help-tour-replay.png)
+
+<figcaption>Reopen the guided tour with Help at the bottom of the sidebar. Done closes its final step. Select the image for the full-resolution detail.</figcaption>
+</figure>

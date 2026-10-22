@@ -1,19 +1,36 @@
 # README workflow demo GIF
 
-Use one short story: a request enters a visual workflow, two agents run in
-parallel, then a final agent combines their work.
-
-The GIF should prove OpenFlow's main claim without requiring the viewer to read
-small text:
+Record a request entering the workflow, two agents running in parallel, and a final agent combining their work. Keep the graph large enough to follow without reading the prompt text:
 
 ```text
 idea -> clarify -> plan + risk (parallel) -> final brief
 ```
 
 Use [`../../examples/feature_plan.workflow.json`](../../examples/feature_plan.workflow.json).
-Do not build a new workflow during the recording. Editing a graph and running a
-graph are two different stories; combining both makes the GIF long and hard to
-follow.
+Do not build a new workflow during the recording. Keep graph editing out of this recording so the viewer can follow the run.
+
+## Website video
+
+The landing page now uses a real product screenshot; see [Product screenshots](documentation-site.md#product-screenshots) for capture provenance and asset handling. The earlier `docs/public/media/workflow-demo.mp4` and `workflow-demo-poster.png` remain available, and the README keeps the GIF for GitHub compatibility.
+
+The earlier MP4 comes from the existing 1280 × 800, 12 fps GIF. It adds native playback controls and reduces the download size, but retains the GIF's limited detail. The repository's capture script, `crates/desktop/e2e/walkthroughs/readme-demo.capture.ts`, supplies scripted run events; the README labels that demo accordingly. Its original MP4 output, `test-results/readme-demo/openflow-workflow-demo.mp4`, is not included in the repository.
+
+For a sharper replacement, record the current installed app at native resolution and at least 30 fps. Prefer a 2560 × 1600 capture, with the graph and conversation sized so labels remain readable at the website's 1120-pixel display width. Keep the original recording. Export the website video from that recording, never from the GIF.
+
+After trimming the recording to the sequence below, export an H.264 MP4 with fast start and a still frame:
+
+```bash
+mkdir -p docs/public/media
+
+ffmpeg -i openflow-demo.mov \
+  -an -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p \
+  -movflags +faststart docs/public/media/workflow-demo.mp4
+
+ffmpeg -ss 7 -i docs/public/media/workflow-demo.mp4 \
+  -frames:v 1 docs/public/media/workflow-demo-poster.png
+```
+
+Check the export before replacing either asset. The commands ask before overwriting an existing file. If you reintroduce video in `docs/.vitepress/theme/LandingPage.vue`, add native playback controls and captions that match the new recording. Keep the demo label accurate: only call it a real provider run if the capture actually uses a provider.
 
 ## Target
 
@@ -60,7 +77,7 @@ Plan undo and redo for a visual workflow editor.
 | 0.0-1.5 s | Hold on the centered four-node diamond. | OpenFlow is a visual workflow editor. |
 | 1.5-3.5 s | Type or paste the starter message, then click the composer arrow. | A normal request starts the workflow. |
 | 3.5-6.0 s | Hold while **Clarify idea** changes from running to completed. | Nodes expose live execution state. |
-| 6.0-10.0 s | Hold long enough to show **Create plan** and **Find risks** running together. | Independent agents run in parallel. This is the hero moment. |
+| 6.0-10.0 s | Hold long enough to show **Create plan** and **Find risks** running together. | Independent agents run in parallel. |
 | 10.0-13.0 s | Show both parallel nodes complete, then **Final brief** run. | Downstream work waits for its dependencies. |
 | 13.0-16.0 s | Let **Final brief** complete. Open **Run trace** and hold on the completed events. | The run produces inspectable output and trace history. |
 
@@ -107,7 +124,7 @@ Store the final asset at:
 docs/assets/openflow-workflow-demo.gif
 ```
 
-Place it after **What is OpenFlow?** and before **Install**:
+Place it after the overview text and before **Install**:
 
 ```html
 <p align="center">

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Use this page for setup, provider, run, and verification failures. Capture the exact error and reproduce through the narrowest command before changing code.
+Find the matching symptom below and keep the exact error when retrying or reporting it. For control locations, use [Using the app](../guides/using-the-app.md); for recovery actions and limits, use [Runs and recovery](../guides/runs.md) and [Configuration](../reference/configuration.md).
 
 ## ChatGPT Codex sign-in
 
@@ -24,13 +24,7 @@ OAuth credentials are plaintext in the local OpenFlow `settings.json`, matching 
 | ChatGPT (Codex) not ready | No stored OAuth session or expired login | **Settings → Providers** with **ChatGPT (Codex)** active → **Sign in with ChatGPT**, or **Disconnect** and sign in again. See [ChatGPT Codex sign-in](#chatgpt-codex-sign-in). |
 | Bedrock not ready | AWS credentials or region misconfigured | Set profile/region in the Bedrock provider panel and verify the credential chain. |
 
-Key order for API-key providers: transient run input, stored `settings.json` key, then environment variable. Details: [`../reference/README.md#provider-key-resolution`](../reference/README.md#provider-key-resolution).
-
-## Provider readiness
-
-- API-key providers resolve transient input, then stored profile key, then their environment variable.
-- ChatGPT (Codex) requires a stored refreshable ChatGPT login and ignores `OPENAI_API_KEY`.
-- Bedrock uses the AWS credential chain and configured region/profile.
+API-key providers resolve transient run input, then the stored `settings.json` key, then the environment variable. ChatGPT (Codex) requires a stored refreshable login and ignores `OPENAI_API_KEY`; Bedrock uses the AWS credential chain and configured region/profile. [Provider key resolution](../reference/providers.md#provider-key-resolution) defines the full rules.
 
 ## Chat attachments
 
@@ -47,7 +41,7 @@ Key order for API-key providers: transient run input, stored `settings.json` key
 | State / symptom | Likely cause | Fix |
 | --- | --- | --- |
 | **Not installed** | Registry package metadata exists without a completed exact-version install | Review the package/version/command, install it, then run **Approve & Test**. |
-| **Needs config** | Command or required env/header input is empty | Store inputs in `{data_local}/openflow/mcp-secrets.json`. Credential values must not appear in settings/export. |
+| **Needs config** | Command or required environment/header input is empty | Enter the required value on the server row in **Settings → MCP Servers**, then save and test again. OpenFlow stores credential values in `mcp-secrets.json` and keeps them out of settings payloads and exports. |
 | **Auth required** | OAuth token is absent, expired without refresh, revoked, or rejected | Use **Connect OAuth** or **Re-authenticate**. Verify displayed scopes and issuer, then test again. |
 | **MCP command `npx` was not found** | OpenFlow was launched outside the user's interactive shell, so the GUI inherited a minimal `PATH` | Confirm `command -v npx` in the embedded **Terminal**, then retry the MCP test. The Terminal, bash tools, and MCP probes, installs, and runs resolve the same login-shell `PATH`; explicit command or MCP `PATH` config still wins. |
 | **OAuth browser does not open** | Protected-resource discovery, authorization-server discovery, PKCE validation, or client registration failed before browser launch | Read the OAuth setup error on the server row. Retry **Authenticate OAuth** for any remote server. Fix the server's OAuth metadata; if dynamic registration is unavailable, enter its pre-registered client ID. A changed authorization-server issuer automatically triggers fresh registration. |
@@ -56,43 +50,28 @@ Key order for API-key providers: transient run input, stored `settings.json` key
 | **Failed · Preflight** | Executable missing, remote URL rejected, secret ref unavailable, or trust stale | Read the exact row error. Fix config/runtime, then **Retry**. Security-relevant changes require fresh approval. |
 | **Failed · Connect/List tools/Close** | Process/HTTP initialization, capability negotiation, pagination, or shutdown failed | Use **Copy diagnostics**. Retry only as a user action; OpenFlow does not replay ambiguous tool calls automatically. |
 | Enabled server skipped during a run | That server failed setup; other servers continue | Read the system chat message, disable/fix the named server, then restart the run if its tools are required. |
-| Sampling/elicitation card appears | An allowed server made a server-to-client req from an active MCP tool | Review server + originating tool. Approve once or deny. Stop cancels pending callbacks. |
+| Sampling/elicitation card appears | An allowed server made a server-to-client request from an active MCP tool | Review the server and originating tool, then approve once or deny. **Stop** cancels pending callbacks. |
 
 Local children run only during probes/runs. OpenFlow keeps no background MCP process. Remote endpoints require HTTPS unless explicit loopback development is enabled; private/link-local targets and unsafe redirects remain blocked.
 
-Run the deterministic local protocol lane:
+## Workflow validation and authoring
 
-```bash
-./scripts/verify/mcp-live.sh
-```
+| Symptom | Likely cause | Fix and verification |
+| --- | --- | --- |
+| **Run** is disabled or the canvas shows validation errors | The graph is empty, has a cycle, has a missing endpoint, or contains an invalid schema or handoff | Fix the highlighted node or edge, preserve every Markdown handoff heading, and confirm the validation state clears before selecting **Run**. See [Workflow authoring](../guides/workflow-authoring.md). |
+| **Create with AI** produced a proposal but no workflow | A proposal is not persisted until **Create Workflow** or **Apply Changes** succeeds | Review the graph and use the explicit action. If the draft was left open, choose **Resume AI workflow draft**. |
+| A project workflow cannot be saved or run | `.flow` is missing or not writable, or the project is being removed while active | Confirm the selected folder is writable, stop the active run, and retry. Project files remain under `.flow/`; see [Projects and persistence](../guides/projects-and-persistence.md). |
 
-## Focused verification
+## Runs, recovery, and schedules
 
-```bash
-cargo nextest run -p providers
-cargo nextest run -p orchestration --lib
-cargo nextest run -p desktop
-npm --prefix crates/ui run typecheck
-./scripts/check-architecture.sh
-```
+| Symptom | Likely cause | Fix and verification |
+| --- | --- | --- |
+| A node failed or was interrupted, but the run is still active | The node is waiting for manual retry | Read the error, adjust the model if needed, then select **Retry** or send a correction in that node's composer. See [Retry a node](../guides/runs.md#retry-a-failed-or-interrupted-node). |
+| **Continue** is not available | The run is still active, the current app session has no recoverable checkpoint, a different run is selected, or the run completed | Answer active questions and approvals in the conversation. For a durable paused, stopped, or failed run, open **History** and use **Resume run** when offered. |
+| A scheduled workflow did not start | The app was closed, the schedule is Off, the workflow/provider is not ready, or the project `.flow` directory is not writable | Start OpenFlow, turn the row On, check **Next**, confirm readiness and project write access, then inspect **Last** and History. See [Scheduling](../guides/scheduling.md). |
+| A run pauses on a tool or question | Human input or tool approval is pending | Answer the question or approve/deny the tool in the node conversation. Submission resumes the active run without **Continue**. Stopping the run cancels pending callbacks. |
 
-Run `./scripts/verify.sh` for the canonical full gate. Provider fixture tests cannot prove a real account's Codex entitlement; record the interactive live smoke separately.
+<a id="focused-verification"></a>
+<a id="rust-build-disk-usage"></a>
 
-## Rust build disk usage
-
-This repo disables Cargo incremental compilation because workspace feature/test variants previously
-grew `target/debug/incremental` without a bound. Compiled dependencies and sccache remain reusable.
-
-Scripted Cargo entrypoints refuse to start when `target/debug` exceeds 64 GiB or free space falls
-below 24 GiB locally (8 GiB on GitHub Actions). Override the limits with
-`OPENFLOW_MAX_DEBUG_CACHE_GIB` and `OPENFLOW_MIN_BUILD_SPACE_GIB`; use `0` only to disable the
-corresponding guard intentionally.
-
-Delete only the rebuildable debug cache when the guard trips:
-
-```bash
-./scripts/clean-rust-cache.sh --yes
-```
-
-The command preserves source files, Git state, release artifacts, `target/miri`, and cross-compiled
-targets. The next Rust build is cold.
+For source-checkout failures, use [Build and test troubleshooting](../contributing/build-troubleshooting.md).

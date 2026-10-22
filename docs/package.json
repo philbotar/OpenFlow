@@ -1,0 +1,30 @@
+{
+  "name": "openflow-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev . --host 127.0.0.1",
+    "build": "vitepress build .",
+    "preview": "vitepress preview . --host 127.0.0.1",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/mdast": "4.0.4",
+    "@types/node": "22",
+    "@types/unist": "3.0.3",
+    "cheerio": "1.2.0",
+    "es-module-lexer": "2.3.2",
+    "github-slugger": "2.0.0",
+    "gray-matter": "4.0.3",
+    "happy-dom": "20.14.0",
+    "mermaid": "11.16.0",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "typescript": "5.9.3",
+    "unified": "11.0.5",
+    "vite": "5.4.21",
+    "vitepress": "1.6.4",
+    "vue": "3.5.30",
+    "vue-tsc": "3.3.11"
+  }
+}

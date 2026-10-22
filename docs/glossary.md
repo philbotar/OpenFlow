@@ -1,8 +1,8 @@
 # Glossary
 
-Engine and app vocabulary for OpenFlow. Use these terms in code, docs, and UI copy. Avoid the listed aliases.
+Use these terms consistently in code, documentation, and UI copy. The final column lists aliases to avoid.
 
-For where terms live in code, see [Engine modules](#engine-modules), [Orchestration modules](#orchestration-modules), and [orchestration crate layout](architecture/orchestration-layout.md).
+[Engine modules](#engine-modules) and [Orchestration modules](#orchestration-modules) map the terms to code; [orchestration crate layout](architecture/orchestration-layout.md) gives the full module map.
 
 ## Graph structure
 
@@ -62,7 +62,6 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | --- | --- | --- |
 | **Template** | Reusable node definition with default `AgentNodeConfig` and locked fields | Node preset, blueprint |
 | **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`) | Protected field, frozen field |
-| **TemplateStore** | Engine-level seam for listing and mutating templates | |
 
 ## Execution model
 
@@ -129,12 +128,12 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 
 ## Engine modules
 
-Map glossary buckets to `crates/engine/src/`:
+Modules under `crates/engine/src/` own these terms:
 
 | Module | Terms |
 | --- | --- |
 | `graph/` | Workflow, Node, Edge, ids, settings, `CallableAgent`, `resolve_callable_agent_snapshots`, `validate_workflow`, execution layers |
-| `template/` | Template, LockedField, TemplateStore trait, builtin presets |
+| `template/` | Template, locked fields, builtin presets |
 | `execution/` | InteractiveEngine, RunReport, RunTelemetry, subagent_runtime, NodeInvocation |
 | `conversation/` | ChatMessage, ChatRole, AgentTranscriptItem |
 | `tools/` | NodeToolConfig, ApprovalMode, ToolCall, ToolResult, policy helpers |
@@ -150,7 +149,7 @@ Persistence adapters outside engine:
 
 ## Orchestration modules
 
-See [orchestration crate layout](architecture/orchestration-layout.md) for the crate overview.
+The [orchestration layout](architecture/orchestration-layout.md) explains how these modules work together.
 
 | Module | Terms |
 | --- | --- |
@@ -169,27 +168,21 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 - An **AgentNodeConfig** belongs to one **Node** and may include **NodeToolConfig**.
 - A **ChatMessage** or **AgentTranscriptItem** belongs to one **Node**'s transcript.
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
-- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools — never both in the same batch.
+- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools: never both in the same batch.
 - **AgentTurnOutcome** selects completion, executable tool work, human input, or a plain message.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
 - **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.
 - Headless acceptance runs use the same **InteractiveEngine** via `run_workflow_headless` in orchestration.
 
-## Example dialogue
+## Examples
 
-> **Dev:** "If a **Node** has two incoming **Edges**, how do we determine its **Execution layer**?"
->
-> **Domain expert:** "Topological order - layer is one more than the max layer of upstream nodes."
+A node with two incoming edges belongs to the layer one greater than the highest layer of its upstream nodes. This follows the graph's topological order.
 
-> **Dev:** "What happens when the model returns **ToolCalls**?"
->
-> **Domain expert:** "**InteractiveEngine** returns **NeedsInteraction** with **EngineAwaitApproval** when policy requires a prompt (auto-allowed calls run inside **run**). Approved calls execute; **ToolResult** feeds the same **Node** for another turn."
+When the model returns `ToolCalls`, `InteractiveEngine` returns `NeedsInteraction` with `EngineAwaitApproval` if policy requires a prompt. Auto-allowed calls run inside `run`; after execution, `ToolResult` feeds the same node's next turn.
 
-> **Dev:** "How do headless tests run workflows?"
->
-> **Domain expert:** **`run_workflow_headless`** in orchestration constructs **InteractiveEngine** with scripted inputs and approvals — same state machine as the desktop app, no separate batch runner.
+Headless tests use orchestration's `run_workflow_headless` to construct `InteractiveEngine` with scripted inputs and approvals. They exercise the desktop app's state machine without a separate batch runner.
 
-## Flagged ambiguities
+## Terms with multiple meanings
 
 - **Layer** - in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here: execution layer only.
 - **Event** - **RunTelemetry** / **ExecutionEvent** (interactive UI stream) vs OS/Tauri IPC events. Lifecycle detail lives in telemetry, not **RunReport**.

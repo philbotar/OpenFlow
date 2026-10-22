@@ -1,12 +1,14 @@
-# OpenFlow End-to-End Runtime
+# Run lifecycle
 
-Code-grounded reference for how a Workflow run moves from UI action through desktop IPC, orchestration, `InteractiveEngine`, provider LLM calls, tool/subagent execution, pause/resume gates, persistence, and back to UI events.
+<a id="openflow-end-to-end-runtime"></a>
 
-**Sources:** `docs/glossary.md`, `docs/architecture/contract.md`, and the cited Rust/TypeScript paths below. Where older docs disagree with code, this document trusts code.
+A workflow run starts with a UI command addressed to a run ID. Desktop passes it to orchestration, which hosts `InteractiveEngine`, connects providers and tools, persists checkpoints, and returns state changes to the UI.
+
+`docs/glossary.md` defines the terms used here; `docs/architecture/contract.md` defines ownership. The tables below identify the source files for each part of the run.
 
 ---
 
-## 1. One-page mental model
+## 1. Runtime boundaries
 
 ```mermaid
 flowchart TB
@@ -55,7 +57,7 @@ flowchart TB
 
 ---
 
-## 2. Lifecycle overview (sequence)
+## 2. Run lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -106,8 +108,6 @@ sequenceDiagram
         BE->>DT: final run-state
     end
 ```
-
-### Phase summary
 
 | Phase | Entry | Key symbols | Owner |
 | --- | --- | --- | --- |
@@ -166,9 +166,9 @@ stateDiagram-v2
     Ready --> PendingTools: ToolCalls (executable only)
     PendingTools --> RunningTools: auto-allow OR approved
     RunningTools --> Ready: on_tool_results / queued live user message
-    Ready --> Completed: AgentTurnOutcome::Completed
+    Ready --> Completed: AgentTurnOutcome#58;#58;Completed
     Ready --> Failed: non-retryable AgentError
-    Ready --> Backoff: AgentError::Transient
+    Ready --> Backoff: AgentError#58;#58;Transient
     Ready --> Ready: MixedToolTurn retry feedback
     Backoff --> Ready: retry_after elapsed
     Completed --> [*]
@@ -182,7 +182,7 @@ stateDiagram-v2
 | **Harness** | `openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question` |
 | **Executable** | Catalog tools from registry (+ `ToolPort::augment_request`) |
 
-Batch rule: exactly one harness tool alone, **or** one or more executable tools — never mix. Mixed batches become `AgentError::MixedToolTurn`.
+A batch contains exactly one harness tool or one or more executable tools. Mixing them produces `AgentError::MixedToolTurn`.
 
 **`AgentTurnOutcome` routing (`completion.rs`):**
 
@@ -264,7 +264,7 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 
 ---
 
-## 4. Gates & decision matrix
+## 4. Validation, pauses, and recovery
 
 | Gate | Trigger | Owner | Blocks? | Resume API | Failure mode | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -277,8 +277,8 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | Retryable node / `RetryPolicy` | `AgentError::Transient`, interrupt, recoverable fail | **engine** | Yes (pause) | `retry_node` | Exhaust → `failed_nodes` / run fail | `completion.rs`, `RetryPolicy` in `WorkflowSettings` |
 | Cancel | User stops an addressed run | **orchestration** + token | Yes (terminal) | New run / continue | `EngineRunResult::Cancelled` | `CancellationToken`, `stop_run(run_id)` |
 | Structured output / completion protocol | Invalid `openflow_submit_node_output` JSON | **engine** | No (nudge retry) | Auto (≤3 nudges) | Then `failed_nodes` | `AgentError::MalformedSubmitOutput` |
-| DAG layer readiness | Upstream node lacks output | **engine** | No (wait) | Auto when upstream completes | — | `is_node_blocked`, `gather_call_ai_actions` |
-| Checkpoint restore | User stop / durable resume | **orchestration** | — | `continue_run` / `resume_durable_run` | Hash / stale node mismatch | `checkpoint.rs`, `run_checkpoint_store.rs` |
+| DAG layer readiness | Upstream node lacks output | **engine** | No (wait) | Auto when upstream completes |: | `is_node_blocked`, `gather_call_ai_actions` |
+| Checkpoint restore | User stop / durable resume | **orchestration** |: | `continue_run` / `resume_durable_run` | Hash / stale node mismatch | `checkpoint.rs`, `run_checkpoint_store.rs` |
 | Callable agent snapshot | Unknown agent id at run start | **engine** | Yes (prep) | Fix workflow/agents | Prep error | `resolve_callable_agent_snapshots` |
 
 **Provider resolution order:** node `AgentNodeConfig.provider_id` → workflow `WorkflowSettings.provider_id` → active settings provider. Run prep creates clients for every referenced provider. Requests do not fail over across providers.
@@ -328,7 +328,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 | App workflows | `{data_local}/openflow/workflows.json` | `app_workflow_store` | Unassigned workflows only on save |
 | Chats | `{data_local}/openflow/chats.json` | `chat_store` | Chat identity, title, project/runtime config, timestamps, and durable run ID; separate from workflow catalog |
 | Project workflows | `{project}/.flow/workflows/{id}.workflow.json` | `project_workflow_store` | Wins on ID collision at load |
-| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` | workspace resolver | Isolated cwd for runs without a project |
+| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows\|chats}/{id}` | workspace resolver | Isolated cwd for runs without a project |
 | Settings + API keys | `{data_local}/openflow/settings.json` | `settings_store` | Plaintext keys |
 | Projects registry | `{data_local}/openflow/projects.json` | `project_store` | Bindings + assigned workflow ids |
 | Saved agents (`CallableAgent`) | `{data_local}/openflow/agents.json` | `agent_store` | Snapshotted at run start |
@@ -364,7 +364,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 
 ---
 
-## 8. Worked scenarios (step-by-step with types)
+## 8. Worked scenarios
 
 ### A. Linear 2-node readiness happy path
 
@@ -510,19 +510,53 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 | Item | Notes |
 | --- | --- |
 | `ToolDecision::Deny` | Reserved in `decision_from_mode`; not emitted today. |
-| No header Run button | Runs start via ⌘/Ctrl+Enter or chat kickoff composer (`useRunSession.ts`). |
+| Run entry points | The header **Run** button starts without a starter message (`AppHeader.tsx`). Runs can also start through ⌘/Ctrl+Enter or the chat kickoff composer (`useRunSession.ts`). |
 | `AiInvokeFailed` | Emitted but `apply_event_to_run_state` intentionally no-ops (incident hook). |
 | Stale pause actions | Wrong-node input/approval logged as `"ignored …"` `Error` event; skipped non-fatally. |
 | `ReadOnly` approval matrix | Engine `decision_from_mode` auto-allows all tiers; write blocking is enforced by orchestration tool catalog filtering. |
 
-### D. Suggested follow-up deep dives
+### D. Related implementation
 
-- [`run-persistence.md`](run-persistence.md) — durable replay and resume edge cases
-- [`callable-agents.md`](callable-agents.md) — snapshot rules and subagent model
-- [`technical-overview.md`](technical-overview.md) — complementary architecture narrative
-- [`threading-concurrency.md`](threading-concurrency.md) — runtime topology and layer concurrency
-- `crates/orchestration/tests/workflow_acceptance.rs` — headless scenario catalog
+- [`run-persistence.md`](run-persistence.md): durable replay and resume edge cases
+- [`callable-agents.md`](callable-agents.md): snapshot rules and subagent model
+- [`technical-overview.md`](technical-overview.md): complementary architecture narrative
+- [`threading-concurrency.md`](threading-concurrency.md): runtime topology and layer concurrency
+- `crates/orchestration/tests/workflow_acceptance.rs`: headless scenario catalog
 
 ---
 
 *Spot-check (2026-07-18): verified `EngineRunResult` variants (`mod.rs:62–72`), `validate_workflow` delegation (`validation.rs:64–66`), `ApprovalMode` + `decision_from_mode` (`config.rs:69–77`), `RunStatus` variants (`persistence.rs:9–14`), and `RunTelemetry` terminal variants (`telemetry.rs:126–128`).*
+
+## Run preparation and dispatch
+
+### Runtime path
+
+```text
+UI
+  -> Desktop IPC
+    -> Orchestration
+      -> Engine
+      -> Providers
+      -> Tools and storage adapters
+```
+
+1. The UI sends a start, continue, or resume command through the desktop IPC seam.
+2. Orchestration resolves settings, provider readiness, workflow storage, run root, and execution cwd.
+3. Orchestration creates the provider adapter through `providers::create_provider`.
+4. The engine validates and advances the workflow.
+5. Agent nodes assemble an `AgentRequest`, including system prompt, upstream input, shared context, tools, and callable-agent snapshots.
+6. The provider returns model output, tool calls, or terminal output.
+7. Tool calls go through `ToolPortImpl` in orchestration and can pause for approval.
+8. Orchestration projects engine events into run state, trace entries, chat logs, and desktop events.
+9. Durable run data supports history and read-only replay. Paused, stopped, and failed runs can resume when their latest checkpoint is recoverable; completed workflow runs are replay-only. [Run persistence](run-persistence.md) describes the saved records and checkpoints.
+
+### Ports
+
+Add a port only when a consumer is typed against its interface. OpenFlow uses:
+
+- `AiPort` and `AgentRequest` for model invocation.
+- `ToolPort` for tool and subagent execution.
+- `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision` methods for resuming interaction pauses.
+- `api.ts` wrappers for UI-to-desktop calls.
+
+If there is no typed consumer, prefer calling the concrete type directly instead of adding a trait.
