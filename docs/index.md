@@ -3,12 +3,11 @@ layout: home
 title: OpenFlow documentation
 description: Install OpenFlow, connect a model provider, and build multi-agent workflows.
 hero:
-  name: OpenFlow
   text: Run AI agents as a workflow
   tagline: Chain agents on a canvas. Each gets its own task, model, and tools, and passes its result to the next. You can read every conversation and step in at any point.
   image:
     src: /logo.png
-    alt: OpenFlow
+    alt: ''
   actions:
     - theme: brand
       text: Install
@@ -19,16 +18,14 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/philbotar/OpenFlow
-features:
-  - title: Draw the workflow
-    details: Each step is an agent with a prompt, a model, and tools. Connect steps to say which results feed which.
-  - title: Run steps in parallel
-    details: Steps that don't depend on each other run at the same time. A step starts when everything it needs is ready.
-  - title: Stay in control
-    details: Open any agent's conversation to answer its questions, approve a tool call, or retry a failed step.
-  - title: Bring your own model
-    details: Use OpenAI, Anthropic, ChatGPT sign-in, Amazon Bedrock, OpenRouter, or a local model such as Ollama.
 ---
+
+<dl class="home-points">
+  <div><dt>Draw the workflow</dt><dd>Each step is an agent with a prompt, a model, and tools. Connect steps to say which results feed which.</dd></div>
+  <div><dt>Run steps in parallel</dt><dd>Steps that don't depend on each other run at the same time. A step starts when everything it needs is ready.</dd></div>
+  <div><dt>Stay in control</dt><dd>Open any agent's conversation to answer its questions, approve a tool call, or retry a failed step.</dd></div>
+  <div><dt>Bring your own model</dt><dd>Use OpenAI, Anthropic, ChatGPT sign-in, Amazon Bedrock, OpenRouter, or a local model such as Ollama.</dd></div>
+</dl>
 
 ## See it
 

@@ -17,7 +17,30 @@ async function draw() {
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
-      theme: dark ? 'dark' : 'neutral',
+      theme: 'base',
+      themeVariables: dark
+        ? {
+            background: '#101010',
+            primaryColor: '#202021',
+            primaryTextColor: '#f2f2f3',
+            primaryBorderColor: '#85858b',
+            secondaryColor: '#181818',
+            tertiaryColor: '#181818',
+            lineColor: '#b0b0b3',
+            textColor: '#f2f2f3',
+            edgeLabelBackground: '#101010',
+          }
+        : {
+            background: '#fcfbf8',
+            primaryColor: '#f6f3ed',
+            primaryTextColor: '#18181b',
+            primaryBorderColor: '#8a877f',
+            secondaryColor: '#f6f3ed',
+            tertiaryColor: '#fcfbf8',
+            lineColor: '#66645d',
+            textColor: '#18181b',
+            edgeLabelBackground: '#fcfbf8',
+          },
       fontFamily: getComputedStyle(document.body).fontFamily,
     })
     const id = `mermaid-${Math.random().toString(36).slice(2)}-${counter++}`
