@@ -560,6 +560,10 @@ mod tests {
         assert_eq!(declared["sub-1"].status, SubagentStatus::Declared);
     }
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[test]
     fn declare_subagents_rejects_malformed_arguments() {
         let mut declared = std::collections::BTreeMap::new();

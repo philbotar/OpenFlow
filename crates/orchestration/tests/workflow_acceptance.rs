@@ -477,7 +477,10 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         snapshot.outputs[&NodeId("tool-node".into())],
         json!({"summary": "tool verified ORCHID-91"})
     );
-    assert!(!snapshot.tool_calls_by_node[&NodeId("tool-node".into())].is_empty());
+    assert_ne!(
+        snapshot.tool_calls_by_node[&NodeId("tool-node".into())].len(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -1063,6 +1066,10 @@ fn root_down_workflow(overseer_model: Option<&str>) -> Workflow {
     workflow
 }
 
+#[allow(
+    clippy::assert_is_empty,
+    reason = "asserting on the field keeps the failure message readable"
+)]
 #[tokio::test]
 async fn output_repair_propagates_repaired_output_downstream() {
     let ai = OutputRepairAcceptanceAi::success();

@@ -502,6 +502,10 @@ pub trait AiStreamSink: Send + Sync {
     fn on_stream_event(&self, event: AiStreamEvent);
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait expands to a bare must_use on the boxed future"
+)]
 #[async_trait]
 pub trait AiPort: Send + Sync {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError>;
@@ -591,6 +595,10 @@ pub struct ToolBatchOutput {
     pub effects: ToolBatchEffects,
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait expands to a bare must_use on the boxed future"
+)]
 #[async_trait]
 pub trait ToolPort: Send + Sync {
     /// Execute a batch of tool calls (including subagent calls) for a given node.

@@ -630,6 +630,10 @@ mod tests {
         );
     }
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[tokio::test]
     async fn synthetic_request_excludes_transcript_and_tools() {
         let inner = ScriptedInner::new(vec![

@@ -316,6 +316,10 @@ mod tests {
         }
     }
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[test]
     fn legacy_user_messages_default_attachments_to_empty() {
         let message: ChatMessage = serde_json::from_value(json!({

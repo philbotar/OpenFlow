@@ -1438,6 +1438,10 @@ fn entrypoint_attachments_are_exposed_on_first_request_and_checkpoint() {
     assert_eq!(request.entrypoint_attachments, vec![attachment]);
 }
 
+#[allow(
+    clippy::assert_is_empty,
+    reason = "asserting on the field keeps the failure message readable"
+)]
 #[test]
 fn legacy_checkpoint_defaults_entrypoint_attachments_to_empty() {
     let mut workflow = Workflow::new("legacy-checkpoint");

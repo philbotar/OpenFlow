@@ -393,14 +393,13 @@ fn normalize_arguments_field(field: &mut Value) -> bool {
                 return false;
             }
             *raw = repaired;
-            true
         }
         Err(detail) => {
             let marker = malformed_tool_args_marker_value(raw, &detail);
             *field = Value::String(marker.to_string());
-            true
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -509,7 +508,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(args).unwrap();
         let marker = extract_malformed_tool_args_marker(&parsed).expect("marker");
         assert!(marker.raw.contains(secret));
-        assert!(!args.is_empty());
+        assert_ne!(args, "");
     }
 
     #[test]

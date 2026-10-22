@@ -575,6 +575,10 @@ impl Edge {
 mod tests {
     use super::*;
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[test]
     fn new_workflow_starts_empty_with_name() {
         let workflow = Workflow::new("Feature planner");
@@ -630,6 +634,10 @@ mod tests {
         assert_eq!(node.agent.tools.approval_mode, None);
     }
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[test]
     fn agent_node_config_serde_backfills_new_tool_fields() {
         let config: AgentNodeConfig = serde_json::from_value(json!({
