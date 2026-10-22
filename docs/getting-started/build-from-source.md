@@ -1,23 +1,23 @@
 # Build from source
 
-Build OpenFlow locally to change the app or test a source checkout. To use the packaged macOS release, follow [Install OpenFlow](README.md).
+Build locally to change the app or test a source checkout. For the packaged macOS release, see [Install OpenFlow](README.md).
 
 ## Prerequisites
 
 - Rust toolchain for the workspace crates.
-- Node.js 22.12+ with npm, matching the Node 22 CI setup. The locked Vite toolchain accepts `^20.19.0 || >=22.12.0`; Node 18 is unsupported even though the setup script still mentions it.
-- Platform build tools required by Tauri.
-- A model provider for model-backed actions: hosted-provider credentials, a ChatGPT account with Codex access, AWS credentials for Bedrock, or a running local Ollama / LM Studio server. Local profiles do not require an API key.
+- Node.js 22.12+ with npm (CI uses Node 22). The locked Vite toolchain accepts `^20.19.0 || >=22.12.0`. Node 18 is unsupported, though the setup script still names it.
+- Tauri's platform build tools.
+- A model provider for model-backed actions: hosted-provider credentials, a ChatGPT account with Codex access, AWS credentials for Bedrock, or a running local Ollama or LM Studio server (no API key needed).
 
 ## Start the development app
 
-Run these commands from the repository root.
+Run both scripts on this page from the repository root.
 
 ```bash
 ./scripts/start.sh
 ```
 
-The script installs dependencies on first run, then starts the Tauri desktop app and UI dev server together.
+It installs dependencies on first run, then starts the Tauri desktop app and UI dev server together.
 
 ## Build a macOS installer
 
@@ -25,8 +25,10 @@ The script installs dependencies on first run, then starts the Tauri desktop app
 ./scripts/install.sh
 ```
 
-The script builds a `.dmg` installer and opens it. Drag **OpenFlow** to **Applications** to install.
+It builds a `.dmg` installer and opens it. Drag **OpenFlow** to **Applications**.
 
 ## Verify changes
 
-Use [Development commands](../contributing/commands.md) for the compile and test commands, then [Testing workflows](../contributing/testing-workflows.md) to select coverage. If compilation or a test runner fails, use [Build and test troubleshooting](../contributing/build-troubleshooting.md).
+- Compile and test commands: [Development commands](../contributing/commands.md)
+- Choosing coverage: [Testing workflows](../contributing/testing-workflows.md)
+- Compiler or test runner failures: [Build and test troubleshooting](../contributing/build-troubleshooting.md)
