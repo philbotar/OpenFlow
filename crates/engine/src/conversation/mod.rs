@@ -84,52 +84,34 @@ impl ChatMessage {
     #[must_use]
     pub fn streaming_assistant(id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
-            role: ChatRole::Assistant,
-            content: content.into(),
-            attachments: Vec::new(),
             id: Some(id.into()),
             streaming: true,
-            tool_call_id: None,
-            message_kind: None,
+            ..Self::text(ChatRole::Assistant, content)
         }
     }
 
     #[must_use]
     pub fn streaming_thinking(id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
-            role: ChatRole::Thinking,
-            content: content.into(),
-            attachments: Vec::new(),
             id: Some(id.into()),
             streaming: true,
-            tool_call_id: None,
-            message_kind: None,
+            ..Self::text(ChatRole::Thinking, content)
         }
     }
 
     #[must_use]
     pub fn tool_marker(tool_call_id: impl Into<String>) -> Self {
         Self {
-            role: ChatRole::Thinking,
-            content: String::new(),
-            attachments: Vec::new(),
-            id: None,
-            streaming: false,
             tool_call_id: Some(tool_call_id.into()),
-            message_kind: None,
+            ..Self::text(ChatRole::Thinking, String::new())
         }
     }
 
     #[must_use]
     pub fn node_completed(summary: impl Into<String>) -> Self {
         Self {
-            role: ChatRole::Assistant,
-            content: summary.into(),
-            attachments: Vec::new(),
-            id: None,
-            streaming: false,
-            tool_call_id: None,
             message_kind: Some(ChatMessageKind::NodeCompleted),
+            ..Self::text(ChatRole::Assistant, summary)
         }
     }
 }
@@ -276,44 +258,12 @@ pub struct AgentReasoning {
 }
 
 /// Opaque reasoning payload from provider APIs (text, signature, encrypted, etc.).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentReasoningContent {
     Text {
         text: String,
-        signature: Option<String>,
-    },
-    Encrypted(String),
-    Redacted {
-        data: String,
-    },
-    Summary(String),
-}
-
-#[derive(Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum AgentReasoningContentRef<'a> {
-    Text {
-        text: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        signature: Option<&'a str>,
-    },
-    Encrypted {
-        data: &'a str,
-    },
-    Redacted {
-        data: &'a str,
-    },
-    Summary {
-        text: &'a str,
-    },
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum AgentReasoningContentValue {
-    Text {
-        text: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
     },
     Encrypted {
@@ -325,42 +275,6 @@ enum AgentReasoningContentValue {
     Summary {
         text: String,
     },
-}
-
-impl Serialize for AgentReasoningContent {
-    fn serialize<__S>(&self, serializer: __S) -> Result<__S::Ok, __S::Error>
-    where
-        __S: serde::Serializer,
-    {
-        match self {
-            Self::Text { text, signature } => AgentReasoningContentRef::Text {
-                text,
-                signature: signature.as_deref(),
-            },
-            Self::Encrypted(data) => AgentReasoningContentRef::Encrypted { data },
-            Self::Redacted { data } => AgentReasoningContentRef::Redacted { data },
-            Self::Summary(text) => AgentReasoningContentRef::Summary { text },
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for AgentReasoningContent {
-    fn deserialize<__D>(deserializer: __D) -> Result<Self, __D::Error>
-    where
-        __D: serde::Deserializer<'de>,
-    {
-        Ok(
-            match AgentReasoningContentValue::deserialize(deserializer)? {
-                AgentReasoningContentValue::Text { text, signature } => {
-                    Self::Text { text, signature }
-                }
-                AgentReasoningContentValue::Encrypted { data } => Self::Encrypted(data),
-                AgentReasoningContentValue::Redacted { data } => Self::Redacted { data },
-                AgentReasoningContentValue::Summary { text } => Self::Summary(text),
-            },
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -402,6 +316,10 @@ mod tests {
         }
     }
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[test]
     fn legacy_user_messages_default_attachments_to_empty() {
         let message: ChatMessage = serde_json::from_value(json!({
@@ -490,11 +408,15 @@ mod tests {
                     text: "Inspecting the request.".to_string(),
                     signature: Some("signature".to_string()),
                 },
-                AgentReasoningContent::Encrypted("opaque".to_string()),
+                AgentReasoningContent::Encrypted {
+                    data: "opaque".to_string(),
+                },
                 AgentReasoningContent::Redacted {
                     data: "redacted".to_string(),
                 },
-                AgentReasoningContent::Summary("Choosing the next action.".to_string()),
+                AgentReasoningContent::Summary {
+                    text: "Choosing the next action.".to_string(),
+                },
             ],
         };
 
@@ -513,6 +435,28 @@ mod tests {
             Some(r#"{"summary":"Done."}"#.to_string())
         );
         assert_eq!(summary_from_node_output(&Value::Null), None);
+    }
+
+    #[test]
+    fn reasoning_reads_legacy_json_without_optional_signature() {
+        let value = json!({
+            "content": [
+                {"type": "text", "text": "thinking"},
+                {"type": "encrypted", "data": "opaque"},
+                {"type": "redacted", "data": "hidden"},
+                {"type": "summary", "text": "next"}
+            ]
+        });
+        let reasoning: AgentReasoning = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(reasoning.id, None);
+        assert!(matches!(
+            &reasoning.content[0],
+            AgentReasoningContent::Text {
+                signature: None,
+                ..
+            }
+        ));
+        assert_eq!(serde_json::to_value(reasoning).unwrap(), value);
     }
 
     #[test]

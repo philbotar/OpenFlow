@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 /// At most one overseer call per primary invocation.
+#[cfg(test)]
 const MAX_OUTPUT_REPAIR_ATTEMPTS_PER_INVOCATION: u8 = 1;
 
 const OUTPUT_REPAIR_NODE_SUFFIX: &str = "__output_repair";
@@ -133,19 +134,6 @@ where
         if !candidate.is_repairable() {
             return Err(primary_error);
         }
-        // Re-check length before building the overseer request.
-        if candidate.raw_arguments().len() > 64 * 1024 {
-            emit_failed(
-                sink,
-                &request.node_id,
-                "candidate exceeds repair size limit",
-            );
-            return Err(primary_error);
-        }
-        if MAX_OUTPUT_REPAIR_ATTEMPTS_PER_INVOCATION == 0 {
-            return Err(primary_error);
-        }
-
         let model = self
             .policy
             .model
@@ -410,7 +398,6 @@ mod tests {
 
     fn good_repair_outcome() -> AgentTurnOutcome {
         AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: json!({
                 "repaired_arguments": {
                     "output": { "summary": "fixed" },
@@ -419,8 +406,7 @@ mod tests {
             }),
             raw_text: "{}".into(),
             assistant_message: Some("overseer prose".into()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         })
     }
 
@@ -536,12 +522,9 @@ mod tests {
         let inner = ScriptedInner::new(vec![
             Err(primary),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                handoff: None,
                 output: json!({"not_repaired": true}),
                 raw_text: "{}".into(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
+                ..Default::default()
             })),
         ]);
         let port = RepairingAiPort::new(inner, OutputRepairPolicy::default());
@@ -647,6 +630,10 @@ mod tests {
         );
     }
 
+    #[allow(
+        clippy::assert_is_empty,
+        reason = "asserting on the field keeps the failure message readable"
+    )]
     #[tokio::test]
     async fn synthetic_request_excludes_transcript_and_tools() {
         let inner = ScriptedInner::new(vec![

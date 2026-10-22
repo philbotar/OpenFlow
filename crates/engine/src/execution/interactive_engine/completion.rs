@@ -1,3 +1,4 @@
+use super::recovery::try_spend;
 use super::{
     looks_like_narrated_file_mutation, InteractiveEngine, PendingToolBatch, RunError,
     AUTONOMOUS_CONTINUE_FEEDBACK, EMPTY_AFTER_NARRATED_WRITE_FEEDBACK,
@@ -185,30 +186,21 @@ impl InteractiveEngine {
             },
         );
 
-        let retry_count = self
-            .submit_output_retries_by_node
-            .entry(node_id.clone())
-            .or_default();
-
-        if *retry_count >= MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES {
+        if !try_spend(
+            &mut self.recovery.submit_output_retries_by_node,
+            node_id,
+            MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
+        ) {
             return false;
         }
 
-        *retry_count += 1;
-
-        self.transcripts
-            .entry(node_id.clone())
-            .or_default()
-            .push(AgentTranscriptItem::UserMessage {
-                content: format!(
+        self.append_feedback(node_id, format!(
                     "Your openflow_submit_node_output call was invalid ({error}). \
                      Call openflow_submit_node_output again with arguments shaped as \
                      {{\"output\": <object matching the node output schema>, \"assistant_message\": null}}. \
                      Put schema fields under \"output\", not at the top level. \
                     Node output schema: {schema_hint}"
-                ),
-                attachments: Vec::new(),
-            });
+                ));
         true
     }
 
@@ -225,12 +217,11 @@ impl InteractiveEngine {
             return false;
         }
 
-        let retry_count = self
-            .request_input_retries_by_node
-            .entry(node_id.clone())
-            .or_default();
-
-        if *retry_count >= MAX_MALFORMED_REQUEST_INPUT_RETRIES {
+        if !try_spend(
+            &mut self.recovery.request_input_retries_by_node,
+            node_id,
+            MAX_MALFORMED_REQUEST_INPUT_RETRIES,
+        ) {
             self.failed_nodes.insert(
                 node_id.clone(),
                 format!(
@@ -241,18 +232,12 @@ impl InteractiveEngine {
             return true;
         }
 
-        *retry_count += 1;
         let feedback = if self.allows_structured_user_input(node_id) {
             MALFORMED_REQUEST_INPUT_FEEDBACK
         } else {
             FREE_TEXT_REQUEST_INPUT_FEEDBACK
         };
-        self.transcripts.entry(node_id.clone()).or_default().push(
-            AgentTranscriptItem::UserMessage {
-                content: feedback.to_string(),
-                attachments: Vec::new(),
-            },
-        );
+        self.append_feedback(node_id, feedback);
         true
     }
 
@@ -261,14 +246,13 @@ impl InteractiveEngine {
             return false;
         };
 
-        let retry_count = self
-            .mixed_tool_turn_retries_by_node
-            .entry(node_id.clone())
-            .or_default();
-        if *retry_count >= MAX_MIXED_TOOL_TURN_RETRIES {
+        if !try_spend(
+            &mut self.recovery.mixed_tool_turn_retries_by_node,
+            node_id,
+            MAX_MIXED_TOOL_TURN_RETRIES,
+        ) {
             return false;
         }
-        *retry_count += 1;
 
         let mut harness_tools = vec!["openflow_submit_node_output when complete".to_string()];
         if self.allows_free_text_user_input(node_id) {
@@ -285,12 +269,7 @@ impl InteractiveEngine {
         let content = format!(
             "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself ({harness_tools}), or one or more executable tools with no harness tools in the same batch."
         );
-        self.transcripts.entry(node_id.clone()).or_default().push(
-            AgentTranscriptItem::UserMessage {
-                content,
-                attachments: Vec::new(),
-            },
-        );
+        self.append_feedback(node_id, content);
         true
     }
 
@@ -299,14 +278,13 @@ impl InteractiveEngine {
             return false;
         };
 
-        let retry_count = self
-            .output_truncation_retries_by_node
-            .entry(node_id.clone())
-            .or_default();
-        if *retry_count >= MAX_OUTPUT_TRUNCATION_RETRIES {
+        if !try_spend(
+            &mut self.recovery.output_truncation_retries_by_node,
+            node_id,
+            MAX_OUTPUT_TRUNCATION_RETRIES,
+        ) {
             return false;
         }
-        *retry_count += 1;
 
         let tool_names = partial_tool_calls
             .iter()
@@ -320,18 +298,16 @@ impl InteractiveEngine {
         } else {
             format!("your {tool_names} tool call")
         };
-        self.transcripts.entry(node_id.clone()).or_default().push(
-            AgentTranscriptItem::UserMessage {
-                content: format!(
-                    "The provider stopped {interrupted_work} at its output token limit. No tool \
+        self.append_feedback(
+            node_id,
+            format!(
+                "The provider stopped {interrupted_work} at its output token limit. No tool \
                      calls from that response were executed. Retry now using smaller file \
                      mutations. For a large new file, write a short valid skeleton first, then \
                      expand it with focused edit calls of roughly 40 lines. Use one small file \
                      mutation call per turn until complete. Never resend the whole file in one \
                      tool call."
-                ),
-                attachments: Vec::new(),
-            },
+            ),
         );
         true
     }
@@ -358,12 +334,11 @@ impl InteractiveEngine {
             AUTONOMOUS_CONTINUE_FEEDBACK
         };
 
-        let retry_count = self
-            .empty_turn_retries_by_node
-            .entry(node_id.clone())
-            .or_default();
-
-        if *retry_count >= MAX_EMPTY_PROVIDER_TURN_RETRIES {
+        if !try_spend(
+            &mut self.recovery.empty_turn_retries_by_node,
+            node_id,
+            MAX_EMPTY_PROVIDER_TURN_RETRIES,
+        ) {
             // Conversational nodes: hand off to the human instead of hard-failing a flaky model.
             if conversational {
                 self.apply_conversational_turn(
@@ -376,14 +351,7 @@ impl InteractiveEngine {
             }
             return false;
         }
-
-        *retry_count += 1;
-        self.transcripts.entry(node_id.clone()).or_default().push(
-            AgentTranscriptItem::UserMessage {
-                content: continue_feedback.to_string(),
-                attachments: Vec::new(),
-            },
-        );
+        self.append_feedback(node_id, continue_feedback);
         true
     }
 
@@ -451,11 +419,13 @@ impl InteractiveEngine {
         reasoning: &[AgentReasoning],
         usage: Option<&UsageReport>,
     ) {
-        self.transient_streaks_by_node.remove(node_id);
-        self.empty_turn_retries_by_node.remove(node_id);
-        self.request_input_retries_by_node.remove(node_id);
-        self.submit_output_retries_by_node.remove(node_id);
-        self.output_truncation_retries_by_node.remove(node_id);
+        self.recovery.transient_streaks_by_node.remove(node_id);
+        self.recovery.empty_turn_retries_by_node.remove(node_id);
+        self.recovery.request_input_retries_by_node.remove(node_id);
+        self.recovery.submit_output_retries_by_node.remove(node_id);
+        self.recovery
+            .output_truncation_retries_by_node
+            .remove(node_id);
         if let Some(usage) = usage {
             self.note_usage(usage);
         }
@@ -473,6 +443,7 @@ impl InteractiveEngine {
             transcript.push(AgentTranscriptItem::AssistantMessage { content: narration });
         }
         let streak = self
+            .recovery
             .auto_continue_streaks_by_node
             .get(node_id)
             .copied()
@@ -497,6 +468,7 @@ impl InteractiveEngine {
             return;
         }
         *self
+            .recovery
             .auto_continue_streaks_by_node
             .entry(node_id.clone())
             .or_default() += 1;
@@ -515,12 +487,7 @@ impl InteractiveEngine {
         } else {
             AUTONOMOUS_CONTINUE_FEEDBACK
         };
-        self.transcripts.entry(node_id.clone()).or_default().push(
-            AgentTranscriptItem::UserMessage {
-                content: feedback.to_string(),
-                attachments: Vec::new(),
-            },
-        );
+        self.append_feedback(node_id, feedback);
     }
 
     fn handle_transient_retry(&mut self, node_id: &NodeId, error: &AgentError) -> bool {
@@ -528,6 +495,7 @@ impl InteractiveEngine {
             return false;
         }
         let streak = self
+            .recovery
             .transient_streaks_by_node
             .entry(node_id.clone())
             .or_default();
@@ -536,7 +504,11 @@ impl InteractiveEngine {
         };
         // retries_by_node stays monotonic: model_attempt must only grow so the
         // AI adapter mints a fresh cancellation token per attempt.
-        let attempts = self.retries_by_node.entry(node_id.clone()).or_default();
+        let attempts = self
+            .recovery
+            .retries_by_node
+            .entry(node_id.clone())
+            .or_default();
         *attempts = attempts.saturating_add(1);
         self.retry_after_by_node.insert(
             node_id.clone(),
@@ -560,7 +532,7 @@ impl InteractiveEngine {
 
     fn apply_completion(&mut self, node_id: &NodeId, success: AgentTurnSuccess) {
         self.retry_after_by_node.remove(node_id);
-        self.transient_streaks_by_node.remove(node_id);
+        self.recovery.transient_streaks_by_node.remove(node_id);
         self.reset_protocol_recovery(node_id);
         if let Some(usage) = &success.usage {
             self.note_usage(usage);
@@ -588,7 +560,7 @@ impl InteractiveEngine {
     }
 
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {
-        self.transient_streaks_by_node.remove(node_id);
+        self.recovery.transient_streaks_by_node.remove(node_id);
         self.reset_protocol_recovery(node_id);
         if let Some(usage) = &batch.usage {
             self.note_usage(usage);
@@ -670,11 +642,6 @@ impl InteractiveEngine {
                     requires_approval_for_batch = true;
                     pending_calls.push(call);
                 }
-                ToolDecision::Deny => {
-                    transcript.push(AgentTranscriptItem::ToolResult {
-                        result: denied_tool_result(&call, Some("denied by policy")),
-                    });
-                }
             }
         }
         self.finish_tool_call_batch(
@@ -750,7 +717,7 @@ impl InteractiveEngine {
         reasoning: Vec<AgentReasoning>,
         usage: Option<&UsageReport>,
     ) {
-        self.transient_streaks_by_node.remove(node_id);
+        self.recovery.transient_streaks_by_node.remove(node_id);
         self.reset_protocol_recovery(node_id);
         if let Some(usage) = usage {
             self.note_usage(usage);
@@ -765,13 +732,26 @@ impl InteractiveEngine {
         self.awaiting_nodes.insert(node_id.clone());
     }
 
+    fn append_feedback(&mut self, node_id: &NodeId, content: impl Into<String>) {
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content: content.into(),
+                attachments: Vec::new(),
+            },
+        );
+    }
+
     fn reset_protocol_recovery(&mut self, node_id: &NodeId) {
-        self.submit_output_retries_by_node.remove(node_id);
-        self.request_input_retries_by_node.remove(node_id);
-        self.empty_turn_retries_by_node.remove(node_id);
-        self.mixed_tool_turn_retries_by_node.remove(node_id);
-        self.output_truncation_retries_by_node.remove(node_id);
-        self.auto_continue_streaks_by_node.remove(node_id);
+        self.recovery.submit_output_retries_by_node.remove(node_id);
+        self.recovery.request_input_retries_by_node.remove(node_id);
+        self.recovery.empty_turn_retries_by_node.remove(node_id);
+        self.recovery
+            .mixed_tool_turn_retries_by_node
+            .remove(node_id);
+        self.recovery
+            .output_truncation_retries_by_node
+            .remove(node_id);
+        self.recovery.auto_continue_streaks_by_node.remove(node_id);
     }
 }
 

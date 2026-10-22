@@ -12,6 +12,7 @@ const request: StructuredUserInput = {
       id: "target_env",
       header: "Target",
       question: "Which environment should I target?",
+      selectionMode: "single",
       options: [
         {
           label: "Staging",
@@ -26,7 +27,8 @@ const request: StructuredUserInput = {
     {
       id: "rollout",
       header: "Rollout",
-      question: "How should I release it?",
+      question: "Which rollout methods should I use?",
+      selectionMode: "multiple",
       options: [
         {
           label: "Gradual",
@@ -71,20 +73,39 @@ function radioWithValue(container: HTMLElement, value: string) {
   );
 }
 
+function checkboxWithValue(container: HTMLElement, value: string) {
+  return container.querySelector<HTMLInputElement>(
+    `input[type="checkbox"][value="${value}"]`,
+  );
+}
+
 describe("StructuredAskCard", () => {
-  it("renders each question as a plain list of native radio options", () => {
+  it("paginates questions while keeping each question a plain list of radio options", () => {
     const { container, dispose } = renderCard();
     try {
-      const optionLists = Array.from(
-        container.querySelectorAll<HTMLUListElement>("ul.structured-ask-options"),
-      );
-
-      expect(optionLists).toHaveLength(2);
-      expect(optionLists.map((list) => list.querySelectorAll(":scope > li").length)).toEqual([
-        2, 2,
-      ]);
-      expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(4);
+      expect(container.textContent).toContain("Question 1 of 2");
+      expect(container.textContent).toContain("Which environment should I target?");
+      expect(container.textContent).not.toContain("Which rollout methods should I use?");
+      expect(container.querySelectorAll("ul.structured-ask-options")).toHaveLength(1);
+      expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+      expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
       expect(container.textContent).not.toContain("Other");
+
+      const next = buttonNamed(container, "Next");
+      expect(next?.disabled).toBe(true);
+      radioWithValue(container, "Production")?.click();
+      expect(next?.disabled).toBe(false);
+      next?.click();
+
+      expect(container.textContent).toContain("Question 2 of 2");
+      expect(container.textContent).toContain("Which rollout methods should I use?");
+      expect(container.textContent).toContain("Select one or more.");
+      expect(container.textContent).not.toContain("Which environment should I target?");
+      expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+      expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+
+      buttonNamed(container, "Back")?.click();
+      expect(radioWithValue(container, "Production")?.checked).toBe(true);
     } finally {
       dispose();
       container.remove();
@@ -94,11 +115,20 @@ describe("StructuredAskCard", () => {
   it("requires every question, then submits stable ids with selected labels", async () => {
     const { container, dispose, handleSubmitStructuredInput } = renderCard();
     try {
+      expect(buttonNamed(container, "Submit answers")).toBeUndefined();
+
+      radioWithValue(container, "Production")?.click();
+      buttonNamed(container, "Next")?.click();
       const submit = buttonNamed(container, "Submit answers");
       expect(submit?.disabled).toBe(true);
 
-      radioWithValue(container, "Production")?.click();
-      radioWithValue(container, "Gradual")?.click();
+      checkboxWithValue(container, "Gradual")?.click();
+      expect(submit?.disabled).toBe(false);
+      checkboxWithValue(container, "Gradual")?.click();
+      expect(submit?.disabled).toBe(true);
+
+      checkboxWithValue(container, "Immediate")?.click();
+      checkboxWithValue(container, "Gradual")?.click();
       expect(submit?.disabled).toBe(false);
 
       submit?.click();
@@ -106,7 +136,7 @@ describe("StructuredAskCard", () => {
 
       expect(handleSubmitStructuredInput).toHaveBeenCalledWith(
         "builder",
-        "Structured answers:\n- target_env: Production\n- rollout: Gradual",
+        'Structured answers:\n- target_env: Production\n- rollout: ["Gradual","Immediate"]',
       );
     } finally {
       dispose();
@@ -134,11 +164,14 @@ describe("StructuredAskCard", () => {
 
     try {
       radioWithValue(container, "Production")?.click();
-      radioWithValue(container, "Gradual")?.click();
+      buttonNamed(container, "Next")?.click();
+      checkboxWithValue(container, "Gradual")?.click();
       setCurrentRequest(structuredClone(request));
 
+      expect(container.textContent).toContain("Question 2 of 2");
+      expect(checkboxWithValue(container, "Gradual")?.checked).toBe(true);
+      buttonNamed(container, "Back")?.click();
       expect(radioWithValue(container, "Production")?.checked).toBe(true);
-      expect(radioWithValue(container, "Gradual")?.checked).toBe(true);
     } finally {
       dispose();
       container.remove();

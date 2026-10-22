@@ -1,4 +1,4 @@
-use crate::adapters::storage::json_file_store::{write_json_file, OPENFLOW_DATA_DIR_SLUG};
+use crate::adapters::storage::json_file_store::{app_data_dir, write_json_file};
 use crate::mcp::model::{McpAuth, McpConnection, PersistedValue};
 use crate::mcp::ports::{mcp_secret_ref, McpSecretRef, SecretStore};
 use crate::settings::model::{merge_preserved_secrets, AppSettings};
@@ -74,84 +74,7 @@ impl FileSettingsStore {
 
     #[must_use]
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(OPENFLOW_DATA_DIR_SLUG)
-            .join("settings.json")
-    }
-
-    /// # Errors
-    /// Returns an error if the settings file cannot be read or parsed.
-    pub fn load(&self) -> io::Result<AppSettings> {
-        if !self.path.exists() {
-            return Ok(AppSettings::default());
-        }
-        let text = fs::read_to_string(&self.path)?;
-        match parse_settings_json(&text) {
-            Ok(mut settings) => {
-                if let Some(migration) = self.legacy_secret_migration.as_ref() {
-                    migrate_legacy_mcp_secrets(&settings, migration)?;
-                }
-                let mutations = secure_mcp_values(&mut settings, self.secret_store.as_ref())?;
-                if !mutations.is_empty() {
-                    if let Err(error) = write_json_file(&self.path, &settings, "settings") {
-                        rollback_secret_mutations(self.secret_store.as_ref(), &mutations);
-                        return Err(error);
-                    }
-                }
-                Ok(settings)
-            }
-            Err(_error) => {
-                let stamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                let stamped = self
-                    .path
-                    .with_file_name(format!("settings.json.bak.{stamp}"));
-                fs::rename(&self.path, &stamped)?;
-                let defaults = AppSettings::default();
-                write_json_file(&self.path, &defaults, "settings")?;
-                Ok(defaults)
-            }
-        }
-    }
-
-    /// # Errors
-    /// Returns an error if the settings cannot be serialized or written to disk.
-    pub fn save_raw(&self, settings: &AppSettings) -> io::Result<()> {
-        let mut secured = settings.clone();
-        if let Some(migration) = self.legacy_secret_migration.as_ref() {
-            migrate_legacy_mcp_secrets(&secured, migration)?;
-        }
-        let mutations = secure_mcp_values(&mut secured, self.secret_store.as_ref())?;
-        if let Err(error) = write_json_file(&self.path, &secured, "settings") {
-            rollback_secret_mutations(self.secret_store.as_ref(), &mutations);
-            return Err(error);
-        }
-        Ok(())
-    }
-
-    /// # Errors
-    /// Returns an error if the settings cannot be serialized or written to disk.
-    pub fn save(&self, settings: &AppSettings) -> io::Result<()> {
-        let mut to_save = settings.clone();
-        let mut existing_settings = None;
-        if self.path.exists() {
-            let existing = self.load()?;
-            merge_preserved_secrets(&mut to_save, &existing);
-            existing_settings = Some(existing);
-        }
-        let removed = if let Some(existing) = existing_settings.as_ref() {
-            delete_removed_mcp_secrets(self.secret_store.as_ref(), existing, &to_save)?
-        } else {
-            Vec::new()
-        };
-        if let Err(error) = self.save_raw(&to_save) {
-            restore_deleted_mcp_secrets(self.secret_store.as_ref(), &removed);
-            return Err(error);
-        }
-        Ok(())
+        app_data_dir().join("settings.json")
     }
 
     #[must_use]
@@ -447,16 +370,78 @@ fn collect_mcp_secret_refs(
 }
 
 impl SettingsStore for FileSettingsStore {
+    /// # Errors
+    /// Returns an error if the settings file cannot be read or parsed.
     fn load(&self) -> io::Result<AppSettings> {
-        FileSettingsStore::load(self)
+        if !self.path.exists() {
+            return Ok(AppSettings::default());
+        }
+        let text = fs::read_to_string(&self.path)?;
+        match parse_settings_json(&text) {
+            Ok(mut settings) => {
+                if let Some(migration) = self.legacy_secret_migration.as_ref() {
+                    migrate_legacy_mcp_secrets(&settings, migration)?;
+                }
+                let mutations = secure_mcp_values(&mut settings, self.secret_store.as_ref())?;
+                if !mutations.is_empty() {
+                    if let Err(error) = write_json_file(&self.path, &settings, "settings") {
+                        rollback_secret_mutations(self.secret_store.as_ref(), &mutations);
+                        return Err(error);
+                    }
+                }
+                Ok(settings)
+            }
+            Err(_error) => {
+                let stamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let stamped = self
+                    .path
+                    .with_file_name(format!("settings.json.bak.{stamp}"));
+                fs::rename(&self.path, &stamped)?;
+                let defaults = AppSettings::default();
+                write_json_file(&self.path, &defaults, "settings")?;
+                Ok(defaults)
+            }
+        }
     }
 
+    /// # Errors
+    /// Returns an error if the settings cannot be serialized or written to disk.
     fn save(&self, settings: &AppSettings) -> io::Result<()> {
-        FileSettingsStore::save(self, settings)
+        let mut to_save = settings.clone();
+        let mut existing_settings = None;
+        if self.path.exists() {
+            let existing = self.load()?;
+            merge_preserved_secrets(&mut to_save, &existing);
+            existing_settings = Some(existing);
+        }
+        let removed = if let Some(existing) = existing_settings.as_ref() {
+            delete_removed_mcp_secrets(self.secret_store.as_ref(), existing, &to_save)?
+        } else {
+            Vec::new()
+        };
+        if let Err(error) = self.save_raw(&to_save) {
+            restore_deleted_mcp_secrets(self.secret_store.as_ref(), &removed);
+            return Err(error);
+        }
+        Ok(())
     }
 
+    /// # Errors
+    /// Returns an error if the settings cannot be serialized or written to disk.
     fn save_raw(&self, settings: &AppSettings) -> io::Result<()> {
-        FileSettingsStore::save_raw(self, settings)
+        let mut secured = settings.clone();
+        if let Some(migration) = self.legacy_secret_migration.as_ref() {
+            migrate_legacy_mcp_secrets(&secured, migration)?;
+        }
+        let mutations = secure_mcp_values(&mut secured, self.secret_store.as_ref())?;
+        if let Err(error) = write_json_file(&self.path, &secured, "settings") {
+            rollback_secret_mutations(self.secret_store.as_ref(), &mutations);
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn set_mcp_secret(&self, secret_ref: &McpSecretRef, value: &str) -> io::Result<()> {

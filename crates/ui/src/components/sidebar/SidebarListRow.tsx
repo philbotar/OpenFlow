@@ -21,7 +21,7 @@ export function SidebarListRow(props: SidebarListRowProps) {
         when={!props.editing}
         fallback={<div class="workflow-row-main">{props.editSlot}</div>}
       >
-        <button type="button" class="workflow-row-main" onClick={() => props.onSelect()}>
+        <button type="button" class="workflow-row-main" aria-current={props.active ? "true" : undefined} onClick={() => props.onSelect()}>
           <div class="workflow-row-details">
             <span class="workflow-row-title">{props.title}</span>
           </div>

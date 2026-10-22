@@ -190,7 +190,9 @@ export function reconcileFlowEdges(
       current.selected === incoming.selected &&
       current.source === incoming.source &&
       current.target === incoming.target &&
-      current.animated === incoming.animated
+      current.animated === incoming.animated &&
+      current.style?.stroke === incoming.style?.stroke &&
+      current.style?.strokeWidth === incoming.style?.strokeWidth
     ) {
       result.push(current);
       continue;

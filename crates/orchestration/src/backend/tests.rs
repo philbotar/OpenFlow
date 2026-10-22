@@ -130,33 +130,53 @@ fn mcp_probe_ignores_blank_import_source_path() {
 fn empty_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
     InteractiveEngineCheckpoint {
         workflow_id: workflow.id.clone(),
-        layer_idx: 0,
-        outputs: Default::default(),
-        handoffs: Default::default(),
-        changed_files_by_node: Default::default(),
-        reads_by_node: Default::default(),
-        transcripts: Default::default(),
-        awaiting_nodes: Default::default(),
-        structured_input_by_node: Default::default(),
-        plan_mode_source_node_id: None,
-        frozen_change_evidence_packet: None,
-        pending_tool_batches: Default::default(),
-        retries_by_node: Default::default(),
-        transient_streaks_by_node: Default::default(),
-        submit_output_retries_by_node: Default::default(),
-        request_input_retries_by_node: Default::default(),
-        empty_turn_retries_by_node: Default::default(),
-        mixed_tool_turn_retries_by_node: Default::default(),
-        output_truncation_retries_by_node: Default::default(),
-        auto_continue_streaks_by_node: Default::default(),
-        entrypoint_text: None,
-        entrypoint_attachments: Vec::new(),
-        interrupted_nodes: Default::default(),
-        failed_nodes: Default::default(),
+        ..Default::default()
     }
 }
 
-#[cfg_attr(miri, ignore)]
+#[test]
+fn durable_resume_refreshes_runtime_fields_without_replacing_the_run_snapshot() {
+    let mut snapshot = default_workflow("Durable runtime refresh");
+    snapshot.nodes[0].agent.model = "broken-model".to_string();
+    snapshot.nodes[0].agent.system_prompt = "Pinned run prompt".to_string();
+    snapshot.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    let pinned_label = snapshot.nodes[0].label.clone();
+
+    let mut current = snapshot.clone();
+    current.nodes[0].label = "Edited label".to_string();
+    current.nodes[0].agent.model = "working-model".to_string();
+    current.nodes[0].agent.system_prompt = "Edited workflow prompt".to_string();
+    current.nodes[0].agent.reasoning_effort = Some("high".to_string());
+    current.nodes[0].agent.reasoning_budget_tokens = Some(32_000);
+    current.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    current.settings.fast_mode = true;
+
+    assert!(super::runs::refresh_runtime_config_from_workflow(
+        &current,
+        &mut snapshot,
+    ));
+    assert_eq!(snapshot.nodes[0].label, pinned_label);
+    assert_eq!(snapshot.nodes[0].agent.system_prompt, "Pinned run prompt");
+    assert_eq!(snapshot.nodes[0].agent.model, "working-model");
+    assert_eq!(
+        snapshot.nodes[0].agent.reasoning_effort.as_deref(),
+        Some("high")
+    );
+    assert_eq!(
+        snapshot.nodes[0].agent.reasoning_budget_tokens,
+        Some(32_000)
+    );
+    assert_eq!(
+        snapshot.nodes[0].agent.tools.approval_mode,
+        Some(ApprovalMode::Yolo)
+    );
+    assert!(snapshot.settings.fast_mode);
+    assert!(!super::runs::refresh_runtime_config_from_workflow(
+        &current,
+        &mut snapshot,
+    ));
+}
+
 #[test]
 fn file_change_diff_loader_requires_run_projection_membership() {
     let (backend, dir) = backend();
@@ -272,7 +292,6 @@ impl ChatStore for Arc<FailingChatStore> {
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn fresh_profile_includes_matt_pocock_idea_to_ship_example() {
     let (backend, _dir) = backend();
@@ -287,7 +306,6 @@ fn fresh_profile_includes_matt_pocock_idea_to_ship_example() {
     assert_eq!(example.nodes.len(), 4);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn existing_workflow_with_seed_id_is_not_overwritten() {
     let (backend, dir) = backend();
@@ -304,7 +322,6 @@ fn existing_workflow_with_seed_id_is_not_overwritten() {
     assert_eq!(loaded, existing);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn incomplete_matt_pocock_seed_is_repaired() {
     let (backend, dir) = backend();
@@ -349,7 +366,6 @@ fn incomplete_matt_pocock_seed_is_repaired() {
     assert_eq!(repaired.edges.len(), 3);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn deleted_seeded_example_stays_deleted() {
     let (backend, _dir) = backend();
@@ -366,7 +382,6 @@ fn deleted_seeded_example_stays_deleted() {
         .all(|workflow| workflow.id != "matt-pocock-idea-to-ship"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn create_chat_is_valid_and_does_not_create_a_workflow() {
     let (backend, _dir) = backend();
@@ -399,7 +414,6 @@ fn create_chat_is_valid_and_does_not_create_a_workflow() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn delete_chat_removes_only_the_requested_chat() {
     let (backend, _dir) = backend();
@@ -417,7 +431,6 @@ fn delete_chat_removes_only_the_requested_chat() {
     ));
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn chat_runtime_config_persists_with_project_scope() {
     let (backend, dir) = backend();
@@ -448,7 +461,6 @@ fn chat_runtime_config_persists_with_project_scope() {
     assert_eq!(reopened.config, config);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn removing_project_detaches_scoped_chats() {
     let (backend, dir) = backend();
@@ -478,7 +490,6 @@ fn removing_project_detaches_scoped_chats() {
     assert!(backend.list_projects().expect("list projects").is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn start_chat_attaches_a_durable_run_without_creating_a_workflow() {
     let (backend, dir) = backend();
@@ -537,7 +548,6 @@ fn start_chat_attaches_a_durable_run_without_creating_a_workflow() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn app_chat_uses_an_isolated_managed_workspace() {
     let (backend, dir) = backend();
@@ -570,7 +580,6 @@ fn app_chat_uses_an_isolated_managed_workspace() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn starting_a_second_chat_keeps_the_first_chat_active() {
     let (backend, _dir) = backend();
@@ -636,7 +645,6 @@ fn starting_a_second_chat_keeps_the_first_chat_active() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn start_chat_stops_run_when_chat_attachment_fails() {
     let chat = Chat {
@@ -673,7 +681,6 @@ fn start_chat_stops_run_when_chat_attachment_fails() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn start_workflow_authoring_returns_session_id() {
     let (backend, _dir) = backend();
@@ -684,7 +691,6 @@ fn start_workflow_authoring_returns_session_id() {
     assert_eq!(started.draft.as_ref().expect("draft").nodes.len(), 4);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn create_and_load_workflow_round_trips() {
     let (backend, _dir) = backend();
@@ -702,7 +708,6 @@ fn create_and_load_workflow_round_trips() {
     assert_eq!(loaded.nodes.len(), 1);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn save_workflows_overwrites_store() {
     let (backend, _dir) = backend();
@@ -729,7 +734,6 @@ fn save_workflows_overwrites_store() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn create_and_load_agents_round_trip() {
     let (backend, _dir) = backend();
@@ -745,7 +749,6 @@ fn create_and_load_agents_round_trip() {
     assert_eq!(loaded, vec![agent]);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn save_agents_overwrites_store() {
     let (backend, _dir) = backend();
@@ -767,7 +770,6 @@ fn save_agents_overwrites_store() {
     assert_eq!(loaded, vec![first]);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn create_agent_node_without_template_uses_default_node() {
     let (backend, _dir) = backend();
@@ -782,7 +784,6 @@ fn create_agent_node_without_template_uses_default_node() {
     assert_eq!(node.agent, engine::AgentNodeConfig::default());
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn create_agent_node_from_template_id_copies_agent_config() {
     let (backend, _dir) = backend();
@@ -830,7 +831,6 @@ fn create_agent_node_from_template_id_copies_agent_config() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn custom_provider_readiness_allows_a_trusted_endpoint_without_a_key() {
     let mut settings = AppSettings {
@@ -872,7 +872,6 @@ fn custom_provider_readiness_allows_a_trusted_endpoint_without_a_key() {
     assert_eq!(readiness.env_var, "OPENAI_COMPATIBLE_API_KEY");
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn start_run_ignores_legacy_non_auto_start_flag() {
     let (backend, dir) = backend();
@@ -926,7 +925,6 @@ fn start_run_ignores_legacy_non_auto_start_flag() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn selected_project_controls_run_workspace_and_persistence_root() {
     let (backend, dir) = backend();
@@ -988,7 +986,6 @@ fn selected_project_controls_run_workspace_and_persistence_root() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn project_registration_rejects_an_unwritable_flow_location_before_persisting() {
     let (backend, dir) = backend();
@@ -1006,7 +1003,6 @@ fn project_registration_rejects_an_unwritable_flow_location_before_persisting() 
     assert!(backend.list_projects().expect("list projects").is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn start_run_with_entrypoint_records_chat_for_legacy_non_auto_start_root() {
     let (backend, _dir) = backend();
@@ -1040,7 +1036,6 @@ fn start_run_with_entrypoint_records_chat_for_legacy_non_auto_start_root() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn start_run_with_entrypoint_records_chat_for_auto_start_root() {
     let (backend, _dir) = backend();
@@ -1073,7 +1068,6 @@ fn start_run_with_entrypoint_records_chat_for_auto_start_root() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn stop_run_is_idempotent_when_inactive() {
     let (backend, _dir) = backend();
@@ -1093,7 +1087,6 @@ fn stop_run_is_idempotent_when_inactive() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn stop_run_aborts_orphaned_active_session_without_handle() {
     let (backend, _dir) = backend();
@@ -1118,7 +1111,6 @@ fn stop_run_aborts_orphaned_active_session_without_handle() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn apply_execution_event_ignores_events_after_run_stopped() {
     let (backend, _dir) = backend();
@@ -1153,7 +1145,6 @@ fn apply_execution_event_ignores_events_after_run_stopped() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn submit_user_input_updates_snapshot_and_sends_action() {
     let (backend, _dir) = backend();
@@ -1209,7 +1200,6 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn submit_tool_approval_updates_snapshot_and_sends_action() {
     let (backend, _dir) = backend();
@@ -1261,7 +1251,6 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn copy_workflow_to_project_creates_independent_copy() {
     let (backend, dir) = backend();
@@ -1317,7 +1306,6 @@ fn copy_workflow_to_project_creates_independent_copy() {
     assert_eq!(copy.name, "Source Flow copy");
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn assign_workflow_to_project_round_trips() {
     let (backend, dir) = backend();
@@ -1337,7 +1325,6 @@ fn assign_workflow_to_project_round_trips() {
     assert_eq!(loaded[0].workflow_ids, vec![workflow.id.to_string()]);
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn rename_workflow_updates_list_and_load() {
     let (backend, _dir) = backend();
@@ -1363,7 +1350,6 @@ fn rename_workflow_updates_list_and_load() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn load_and_save_settings_round_trip() {
     let (backend, _dir) = backend();
@@ -1380,7 +1366,6 @@ fn load_and_save_settings_round_trip() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn get_run_state_is_none_when_idle() {
     let (backend, _dir) = backend();
@@ -1390,7 +1375,6 @@ fn get_run_state_is_none_when_idle() {
     });
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn unassign_workflow_from_project_round_trips() {
     let (backend, dir) = backend();
@@ -1411,7 +1395,6 @@ fn unassign_workflow_from_project_round_trips() {
     assert!(projects[0].workflow_ids.is_empty());
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn delete_workflow_removes_independent_workflow() {
     let (backend, _dir) = backend();
@@ -1435,7 +1418,6 @@ fn delete_workflow_removes_independent_workflow() {
         .contains("not found"));
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn delete_workflow_removes_project_assigned_workflow() {
     let (backend, dir) = backend();
@@ -1461,7 +1443,6 @@ fn delete_workflow_removes_project_assigned_workflow() {
         .all(|item| item.id != workflow.id.to_string()));
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn submit_tool_approval_denied_forwards_reason() {
     let (backend, _dir) = backend();
@@ -1510,7 +1491,6 @@ fn submit_tool_approval_denied_forwards_reason() {
     });
 }
 
-#[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
 #[test]
 fn list_project_file_references_returns_gitignore_aware_matches() {
     let dir = tempfile::TempDir::new().expect("tempdir");
@@ -1537,7 +1517,6 @@ fn list_project_file_references_returns_gitignore_aware_matches() {
     assert_eq!(refs[0].path, "src/main.rs");
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn saving_workflow_refreshes_schedule_statuses() {
     let (backend, _dir) = backend();
@@ -1558,7 +1537,6 @@ fn saving_workflow_refreshes_schedule_statuses() {
     assert!(statuses[0].next_run_at.is_some());
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn tick_schedules_advances_next_run_without_reload() {
     let (backend, _dir) = backend();
@@ -1584,7 +1562,6 @@ fn tick_schedules_advances_next_run_without_reload() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[test]
 fn due_schedule_candidate_uses_workflow_id() {
     let (backend, _dir) = backend();

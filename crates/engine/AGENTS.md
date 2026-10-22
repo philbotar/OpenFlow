@@ -35,7 +35,7 @@ Pure domain hexagon. No filesystem, HTTP, provider, or UI code.
 | `execution/` | `InteractiveEngine`, `HandoffArtifact`, subagent runtime, telemetry | RunTelemetry, node handoffs, subagent builtins |
 | `ports/outbound.rs` | `AiPort`, `ToolPort`, `AgentRequest` | LLM + tool seams |
 | `conversation/` | `ChatMessage`, `AgentTranscriptItem` | Transcript DTOs |
-| `template/` | `Template`, `TemplateStore` trait | Node presets |
+| `template/` | `Template`, builtin presets | Node presets |
 | `tools/` | `NodeToolConfig`, approval tiers, truncation | ToolPolicy, ApprovalMode |
 
 ### Execution modes
@@ -120,18 +120,9 @@ These rules live here; orchestration wires them — do not duplicate in UI:
 ```bash
 cargo nextest run -p engine
 cargo clippy -p engine -- -D warnings
-./scripts/miri.sh   # undefined-behavior interpreter (nightly miri)
 ```
 
 Mock ports with inline `impl AiPort` / `impl ToolPort` stubs. Test behavior, not private helpers.
-
-## Change checklist
-
-1. Does this stay free of I/O and upward imports?
-2. Is vocabulary aligned with `glossary.md`?
-3. Did provider/orchestration-specific logic stay out of engine?
-4. Are tests colocated and behavior-focused?
-5. Run `./scripts/verify.sh test-fast clippy arch` after changes.
 
 ## Related docs
 

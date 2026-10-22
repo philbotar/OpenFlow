@@ -16,10 +16,7 @@ pub struct FileRunCheckpointStore;
 impl FileRunCheckpointStore {
     #[must_use]
     pub fn app_runs_root() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(crate::adapters::storage::json_file_store::OPENFLOW_DATA_DIR_SLUG)
-            .join("runs")
+        crate::adapters::storage::json_file_store::app_data_dir().join("runs")
     }
 }
 
@@ -280,7 +277,6 @@ mod tests {
     use crate::run::persistence::{RunCheckpointPayload, RunCheckpointReason};
     use crate::run::state::WorkflowRunState;
     use engine::{InteractiveEngineCheckpoint, Workflow};
-    use std::collections::{BTreeMap, BTreeSet};
 
     fn root(base: &Path) -> RunStoreRoot {
         RunStoreRoot {
@@ -321,29 +317,7 @@ mod tests {
             projection: WorkflowRunState::running_for_workflow(&workflow),
             engine: InteractiveEngineCheckpoint {
                 workflow_id: workflow.id,
-                entrypoint_attachments: Vec::new(),
-                layer_idx: 0,
-                outputs: BTreeMap::new(),
-                handoffs: BTreeMap::new(),
-                changed_files_by_node: BTreeMap::new(),
-                reads_by_node: BTreeMap::new(),
-                transcripts: BTreeMap::new(),
-                awaiting_nodes: BTreeSet::new(),
-                structured_input_by_node: BTreeMap::new(),
-                pending_tool_batches: BTreeMap::new(),
-                retries_by_node: BTreeMap::new(),
-                transient_streaks_by_node: BTreeMap::new(),
-                submit_output_retries_by_node: BTreeMap::new(),
-                request_input_retries_by_node: BTreeMap::new(),
-                empty_turn_retries_by_node: BTreeMap::new(),
-                mixed_tool_turn_retries_by_node: BTreeMap::new(),
-                output_truncation_retries_by_node: BTreeMap::new(),
-                auto_continue_streaks_by_node: BTreeMap::new(),
-                entrypoint_text: None,
-                interrupted_nodes: BTreeSet::new(),
-                failed_nodes: BTreeMap::new(),
-                plan_mode_source_node_id: None,
-                frozen_change_evidence_packet: None,
+                ..Default::default()
             },
         }
     }

@@ -11,6 +11,67 @@ describe("TextSelect", () => {
   let scrollHost: HTMLDivElement | undefined;
   let dispose: () => void;
 
+  test.each([1, 1.5])("keeps a menu inside the right viewport edge at zoom %s", async (scale) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 300 });
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(() => <TextSelect value="a" options={[{ value: "a", label: "A" }]} />, container);
+    const trigger = container.querySelector<HTMLButtonElement>(".text-select-trigger")!;
+    Object.defineProperty(trigger, "offsetWidth", { value: 100 });
+    trigger.getBoundingClientRect = () => ({ left: 250, right: 250 + 100 * scale, top: 40, bottom: 60, width: 100 * scale, height: 20 }) as DOMRect;
+    trigger.click();
+    await Promise.resolve();
+    const menu = container.querySelector<HTMLElement>(".text-select-menu")!;
+    expect(parseFloat(menu.style.left)).toBeGreaterThanOrEqual(0);
+    expect((parseFloat(menu.style.left) + parseFloat(menu.style.width)) * scale).toBeLessThanOrEqual(300);
+  });
+
+  test.each([false, true])("supports keyboard navigation and Escape (portal=%s)", async (portalMenu) => {
+    const onChange = vi.fn();
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(() => <TextSelect value="b" portalMenu={portalMenu}
+      options={[{ value: "a", label: "A" }, { value: "b", label: "B" }, { value: "c", label: "C" }]}
+      onChange={onChange} />, container);
+    const trigger = container.querySelector<HTMLButtonElement>(".text-select-trigger")!;
+    const key = (name: string) => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+    trigger.focus();
+    key("ArrowDown");
+    await Promise.resolve();
+    expect(document.activeElement?.textContent).toBe("B");
+    key("ArrowDown");
+    expect(document.activeElement?.textContent).toBe("C");
+    key("Home");
+    expect(document.activeElement?.textContent).toBe("A");
+    key("End");
+    expect(document.activeElement?.textContent).toBe("C");
+    key("Escape");
+    expect(document.body.querySelector(".text-select-menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(onChange).not.toHaveBeenCalled();
+    key("ArrowUp");
+    await Promise.resolve();
+    key("Home");
+    (document.activeElement as HTMLButtonElement).click();
+    expect(onChange).toHaveBeenCalledWith({ currentTarget: { value: "a" } });
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  test("closes an open select when disabled and rejects a stale option click", () => {
+    const [disabled, setDisabled] = createSignal(false);
+    const onChange = vi.fn();
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(() => <TextSelect value="a" disabled={disabled()}
+      options={[{ value: "a", label: "A" }]} onChange={onChange} />, container);
+    container.querySelector<HTMLButtonElement>(".text-select-trigger")!.click();
+    const option = container.querySelector<HTMLButtonElement>(".text-select-option")!;
+    setDisabled(true);
+    expect(container.querySelector(".text-select-menu")).toBeNull();
+    option.click();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     dispose?.();
     container?.remove();

@@ -119,7 +119,7 @@ fn preview_hashline_edit(
         .map_err(|error| format!("invalid hashline edit args: {error}"))?;
     use super::hashline::execute::EditHashlineFs;
     use super::hashline::input::Patch;
-    use super::hashline::patcher::{Patcher, PatcherOptions};
+    use super::hashline::patcher::Patcher;
     use super::hashline::types::SplitOptions;
 
     let cwd_display = cwd.to_string_lossy().into_owned();
@@ -135,11 +135,11 @@ fn preview_hashline_edit(
     }
 
     let fs = EditHashlineFs::new(EditIo::new(cwd));
-    let patcher = Patcher::new(PatcherOptions {
+    let patcher = Patcher {
         fs,
         snapshots,
         block_resolver: None,
-    });
+    };
     patcher.preflight(&patch)?;
 
     let mut entries = Vec::new();

@@ -91,6 +91,7 @@ pub async fn resume_durable_run(
     settings: AppSettings,
     transient_api_key: Option<String>,
     continuation: Option<DurableRunContinuationInput>,
+    runtime_workflow: Option<Workflow>,
 ) -> Result<WorkflowRunState, CommandError> {
     let (initial_state, event_rx, workflow_name) = backend
         .resume_durable_run_with_continuation(
@@ -98,6 +99,7 @@ pub async fn resume_durable_run(
             &settings,
             transient_api_key.as_deref(),
             continuation,
+            runtime_workflow,
         )
         .await?;
     spawn_run_event_bridge(app, workflow_name, event_rx, initial_state.run_id.clone());

@@ -433,32 +433,19 @@ pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
         Vec::new()
     };
 
+    let mut payload = json!({ "upstream": upstream });
     if upstream.is_empty() {
         let text = entrypoint_text
             .filter(|text| !text.trim().is_empty())
             .unwrap_or_default();
         if !text.is_empty() || !entrypoint_attachments.is_empty() {
-            let mut payload = json!({
-                "entrypoint": { "text": text },
-                "upstream": []
-            });
+            payload["entrypoint"] = json!({ "text": text });
             if !entrypoint_attachments.is_empty() {
                 payload["entrypoint"]["attachments"] = json!(entrypoint_attachments);
             }
-            if !changed_files.is_empty() {
-                payload["changed_files"] = json!(changed_files);
-            }
-            if !reads.is_empty() {
-                payload["reads"] = json!(reads);
-            }
-            if let Some(packet) = change_evidence_packet {
-                payload["change_evidence_packet"] = json!(packet);
-            }
-            return payload;
         }
     }
 
-    let mut payload = json!({ "upstream": upstream });
     if !changed_files.is_empty() {
         payload["changed_files"] = json!(changed_files);
     }
@@ -505,9 +492,8 @@ pub(crate) fn effective_node_provider_id(workflow: &Workflow, node: &Node) -> Op
 pub(crate) fn build_agent_request(
     ctx: &NodeInvocationContext<'_>,
     node: &Node,
-    require_model: bool,
 ) -> Result<AgentRequest, RunError> {
-    if require_model && node.agent.model.trim().is_empty() {
+    if node.agent.model.trim().is_empty() {
         return Err(RunError::NodeFailed {
             node_id: node.id.clone(),
             kind: crate::execution::NodeFailureKind::NoModelConfigured {
@@ -1006,7 +992,7 @@ mod tests {
             project_repository_root: None,
             frozen_change_evidence_packet: None,
         };
-        let request = build_agent_request(&ctx, &node, true).unwrap();
+        let request = build_agent_request(&ctx, &node).unwrap();
         assert_eq!(request.reasoning_effort, Some("adaptive".to_string()));
         assert_eq!(request.reasoning_budget_tokens, Some(40960));
         assert!(request.fast_mode);
@@ -1034,7 +1020,7 @@ mod tests {
             frozen_change_evidence_packet: None,
         };
 
-        let request = build_agent_request(&ctx, &node, true).unwrap();
+        let request = build_agent_request(&ctx, &node).unwrap();
 
         assert_eq!(request.output_schema["required"], json!(["markdown"]));
         assert!(request
@@ -1067,11 +1053,11 @@ mod tests {
             frozen_change_evidence_packet: None,
         };
 
-        let overridden = build_agent_request(&ctx, &node, true).unwrap();
+        let overridden = build_agent_request(&ctx, &node).unwrap();
         assert_eq!(overridden.provider_id.as_deref(), Some("anthropic"));
 
         node.agent.provider_id = None;
-        let inherited = build_agent_request(&ctx, &node, true).unwrap();
+        let inherited = build_agent_request(&ctx, &node).unwrap();
         assert_eq!(inherited.provider_id.as_deref(), Some("openai"));
     }
 
@@ -1098,13 +1084,13 @@ mod tests {
             project_repository_root: None,
             frozen_change_evidence_packet: None,
         };
-        let request = build_agent_request(&ctx, &node, true).unwrap();
+        let request = build_agent_request(&ctx, &node).unwrap();
         assert!(request.allow_user_input);
         assert!(request.conversation_mode);
 
         node.agent.request_user_input = false;
         node.agent.conversation_mode = false;
-        let request = build_agent_request(&ctx, &node, true).unwrap();
+        let request = build_agent_request(&ctx, &node).unwrap();
         assert!(!request.allow_user_input);
         assert!(!request.conversation_mode);
     }

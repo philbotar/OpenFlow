@@ -14,7 +14,15 @@ describe("chat layout", () => {
 
   it("keeps workflow message text flush with the composer lane", () => {
     const style = document.createElement("style");
-    style.textContent = `${indexCss}\n${chatCss}`;
+    // JSDOM does not resolve custom properties in margin shorthands.
+    // Load spacing from the real token file; keep the geometry assertions.
+    const spacing = new Map(
+      [...tokensCss.matchAll(/(--space-[\w-]+):\s*([^;]+);/g)].map((match) => [match[1], match[2]]),
+    );
+    style.textContent = `${indexCss}\n${chatCss}`.replace(
+      /var\((--space-[\w-]+)\)/g,
+      (original, name: string) => spacing.get(name) ?? original,
+    );
     document.head.append(style);
 
     const segment = document.createElement("section");

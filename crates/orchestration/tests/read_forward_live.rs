@@ -178,7 +178,6 @@ async fn run_live_variant(
     })
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "requires STEP_WORKFLOW_LIVE_AI=1, API key, and STEP_WORKFLOW_LIVE_MODEL"]
 async fn live_read_forward_ab_reports_metrics() {
@@ -229,7 +228,6 @@ async fn live_read_forward_ab_reports_metrics() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "debug helper for live provider failures"]
 async fn debug_live_reader_events() {

@@ -29,16 +29,11 @@ pub struct HandoffArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeFailureKind {
     MissingUpstreamOutput(Vec<NodeId>),
-    NodeIdFromLayersNotFound,
-    PendingToolNodeNotFound,
-    AwaitingNodeNotFound,
-    LayerStalledInFlight,
     NoRunnableNodesInLayer,
     ToolCallNodeNotFound,
     NodeMustExist,
     MisroutedCompletion(String),
     NoModelConfigured { label: String },
-    Agent(String),
     EngineInput(String),
 }
 
@@ -53,19 +48,10 @@ impl fmt::Display for NodeFailureKind {
                     .join(", ");
                 write!(f, "upstream output missing from: {upstream_list}")
             }
-            Self::NodeIdFromLayersNotFound => {
-                f.write_str("node id from layers not found in workflow")
-            }
-            Self::PendingToolNodeNotFound => f.write_str("pending tool node no longer exists"),
-            Self::AwaitingNodeNotFound => f.write_str("awaiting node no longer exists"),
-            Self::LayerStalledInFlight => {
-                f.write_str("layer stalled waiting for in-flight model calls")
-            }
             Self::NoRunnableNodesInLayer => f.write_str("no runnable nodes in current layer"),
             Self::ToolCallNodeNotFound => f.write_str("tool-call node no longer exists"),
             Self::NodeMustExist => f.write_str("node must exist"),
             Self::MisroutedCompletion(message)
-            | Self::Agent(message)
             | Self::EngineInput(message) => f.write_str(message),
             Self::NoModelConfigured { label } => write!(
                 f,

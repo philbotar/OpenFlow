@@ -466,23 +466,11 @@ fn apply_event_to_run_state_at(
             error,
         } => record_node_failure(state, node_id, label, error, true, now_ms),
         ExecutionEvent::Finished(report) => {
-            state.active = false;
-            state.awaiting_node_id = None;
-            state.awaiting_node_ids.clear();
-            state.structured_input_by_node.clear();
-            state.active_manual_node_id = None;
-            state.active_tool_call_id = None;
-            state.pending_approvals.clear();
+            clear_terminal_interactions(state);
             state.last_report = Some(report);
         }
         ExecutionEvent::Aborted => {
-            state.active = false;
-            state.awaiting_node_id = None;
-            state.awaiting_node_ids.clear();
-            state.structured_input_by_node.clear();
-            state.active_manual_node_id = None;
-            state.active_tool_call_id = None;
-            state.pending_approvals.clear();
+            clear_terminal_interactions(state);
             abort_in_progress_tools(state, now_ms);
             if let Some((node_id, label)) = running_node_snapshot(state) {
                 state
@@ -513,13 +501,7 @@ fn apply_event_to_run_state_at(
             log::warn!("stale run action: {error}");
         }
         ExecutionEvent::Error(error) => {
-            state.active = false;
-            state.awaiting_node_id = None;
-            state.awaiting_node_ids.clear();
-            state.structured_input_by_node.clear();
-            state.active_manual_node_id = None;
-            state.active_tool_call_id = None;
-            state.pending_approvals.clear();
+            clear_terminal_interactions(state);
             state.last_error = Some(error);
         }
         ExecutionEvent::SubagentsDeclared { node_id, summaries } => {
@@ -666,6 +648,16 @@ fn apply_event_to_run_state_at(
     }
 }
 
+fn clear_terminal_interactions(state: &mut WorkflowRunState) {
+    state.active = false;
+    state.awaiting_node_id = None;
+    state.awaiting_node_ids.clear();
+    state.structured_input_by_node.clear();
+    state.active_manual_node_id = None;
+    state.active_tool_call_id = None;
+    state.pending_approvals.clear();
+}
+
 fn format_phase_timed_message(phase: &str, label: &str, duration_ms: u64) -> String {
     let duration = if duration_ms >= 1000 {
         format!("{:.1}s", duration_ms as f64 / 1000.0)
@@ -774,13 +766,7 @@ fn update_tool_status(
     content: Option<String>,
     is_error: bool,
 ) {
-    if let Some(call) = state
-        .tool_calls_by_node
-        .entry(node_id.clone())
-        .or_default()
-        .iter_mut()
-        .find(|call| call.tool_call_id == tool_call_id)
-    {
+    if let Some(call) = find_tool_call_mut(state, node_id, tool_call_id) {
         call.status = status;
         call.is_error = is_error;
         if let Some(content) = content {
@@ -1125,12 +1111,7 @@ mod tests {
             approval_id: "approval-1".to_string(),
             node_id: NodeId("plan".to_string()),
             node_label: "Plan".to_string(),
-            tool_call: ToolCall {
-                id: "call-1".to_string(),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: serde_json::json!({}),
-            },
+            tool_call: ToolCall::new("call-1", "bash", serde_json::json!({})),
             tier: ToolTier::Read,
         });
 

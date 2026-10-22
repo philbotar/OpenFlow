@@ -537,15 +537,14 @@ async fn custom_chat_submits_large_file_backed_output_without_document_duplicati
     }];
     request.transcript = vec![
         engine::AgentTranscriptItem::ToolCall {
-            call: ToolCall {
-                id: "write-large-spec".into(),
-                provider_call_id: None,
-                name: "write".into(),
-                arguments: json!({
+            call: ToolCall::new(
+                "write-large-spec",
+                "write",
+                json!({
                     "path": "artifacts/0005-implementation-spec.md",
                     "content": "<large document omitted from this fixture>"
                 }),
-            },
+            ),
         },
         engine::AgentTranscriptItem::ToolResult {
             result: engine::ToolResult {
@@ -894,12 +893,11 @@ async fn chat_completions_external_tool_call_batch() {
         AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: "I need to inspect the README.".into(),
             assistant_message: Some("I need to inspect the README.".into()),
-            tool_calls: vec![ToolCall {
-                id: "call-7".into(),
-                provider_call_id: None,
-                name: "read".into(),
-                arguments: json!({"path": "README.md"}),
-            }],
+            tool_calls: vec![ToolCall::new(
+                "call-7",
+                "read",
+                json!({"path": "README.md"})
+            )],
             reasoning: vec![],
             usage: None,
         })
@@ -935,20 +933,10 @@ async fn multi_tool_call_history_reaches_wire_as_single_assistant_message() {
     let mut request = test_request();
     request.transcript = vec![
         engine::AgentTranscriptItem::ToolCall {
-            call: ToolCall {
-                id: "c1".into(),
-                provider_call_id: None,
-                name: "read".into(),
-                arguments: json!({}),
-            },
+            call: ToolCall::new("c1", "read", json!({})),
         },
         engine::AgentTranscriptItem::ToolCall {
-            call: ToolCall {
-                id: "c2".into(),
-                provider_call_id: None,
-                name: "read".into(),
-                arguments: json!({}),
-            },
+            call: ToolCall::new("c2", "read", json!({})),
         },
         engine::AgentTranscriptItem::ToolResult {
             result: engine::ToolResult {

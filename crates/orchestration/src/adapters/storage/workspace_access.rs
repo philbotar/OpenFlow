@@ -5,10 +5,7 @@ use std::path::{Path, PathBuf};
 /// Default root for app-managed workflow and chat execution folders.
 #[must_use]
 pub fn default_managed_workspace_root() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(crate::adapters::storage::json_file_store::OPENFLOW_DATA_DIR_SLUG)
-        .join("workspaces")
+    crate::adapters::storage::json_file_store::app_data_dir().join("workspaces")
 }
 
 /// Creates `directory`, then proves create/write/rename/delete access inside it.

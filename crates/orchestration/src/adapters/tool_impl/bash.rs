@@ -1,4 +1,7 @@
 //! Bash command execution for the agent `bash` tool (oh-my-pi–aligned semantics).
+use crate::adapters::infrastructure::process::kill_process_group;
+#[cfg(unix)]
+use crate::adapters::infrastructure::process::ProcessGroupKillGuard;
 
 use crate::tool::ToolExecutionUpdate;
 use crate::tools::edit::path::{resolve_writable, PathEscapeError};
@@ -466,54 +469,6 @@ fn build_shell_command(
     command_builder
 }
 
-#[cfg(unix)]
-struct ProcessGroupKillGuard {
-    pgid: Option<i32>,
-}
-
-#[cfg(unix)]
-impl ProcessGroupKillGuard {
-    fn new(child: &tokio::process::Child) -> Self {
-        Self {
-            pgid: child.id().and_then(|pid| i32::try_from(pid).ok()),
-        }
-    }
-
-    fn disarm(&mut self) {
-        self.pgid = None;
-    }
-}
-
-#[cfg(unix)]
-impl Drop for ProcessGroupKillGuard {
-    fn drop(&mut self) {
-        let Some(pgid) = self.pgid else {
-            return;
-        };
-        use nix::sys::signal::{kill, killpg, Signal};
-        use nix::unistd::Pid;
-        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
-        let _ = kill(Pid::from_raw(-pgid), Signal::SIGKILL);
-    }
-}
-
-#[cfg(unix)]
-async fn kill_process_group(child: &mut tokio::process::Child) {
-    if let Some(pid) = child.id() {
-        use nix::sys::signal::{kill, killpg, Signal};
-        use nix::unistd::Pid;
-        let pgid = pid as i32;
-        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
-        let _ = kill(Pid::from_raw(-pgid), Signal::SIGKILL);
-    }
-    let _ = child.kill().await;
-}
-
-#[cfg(not(unix))]
-async fn kill_process_group(child: &mut tokio::process::Child) {
-    let _ = child.kill().await;
-}
-
 fn resolve_bash_cwd(execution_cwd: &Path, cwd: Option<&str>) -> Result<PathBuf, ToolError> {
     match cwd {
         Some(path) if !path.trim().is_empty() => {
@@ -627,7 +582,6 @@ mod tests {
         assert!(err.to_string().contains("escapes execution folder"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_timeout_preserves_output_emitted_before_timeout() {
         let temp = TempDir::new().expect("tempdir");
@@ -675,7 +629,6 @@ mod tests {
         }
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_incremental_read_collects_output_before_exit() {
         let temp = TempDir::new().expect("tempdir");
@@ -695,7 +648,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_timeout_kills_process_group() {
         let temp = TempDir::new().expect("tempdir");
@@ -716,7 +668,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_cancellation_kills_process_group() {
         use nix::sys::signal::{kill, killpg, Signal};
@@ -780,7 +731,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn dropping_bash_future_kills_process_group() {
         use nix::sys::signal::{kill, killpg, Signal};
@@ -840,7 +790,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_bash_runs_command_in_cwd() {
         let temp = TempDir::new().expect("tempdir");
@@ -859,7 +808,6 @@ mod tests {
         assert!(!outcome.is_error);
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_bash_surfaces_non_zero_exit_as_error() {
         let temp = TempDir::new().expect("tempdir");
@@ -877,7 +825,6 @@ mod tests {
         assert!(outcome.output.contains("Command exited with code 7"));
     }
 
-    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_bash_merges_stderr() {
         let temp = TempDir::new().expect("tempdir");

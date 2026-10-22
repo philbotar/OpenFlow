@@ -10,7 +10,7 @@ usage() {
 Usage: ./scripts/clean-rust-cache.sh --yes
 
 Delete this checkout's rebuildable target/debug cache. Source files, Git state,
-release artifacts, target/miri, and cross-compiled targets remain untouched.
+release artifacts, and cross-compiled targets remain untouched.
 EOF
 }
 

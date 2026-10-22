@@ -1,6 +1,4 @@
-use crate::adapters::storage::json_file_store::{
-    read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
-};
+use crate::adapters::storage::json_file_store::{app_data_dir, read_json_file, write_json_file};
 use crate::workflow::ports::{WorkflowStore, WorkflowStoreState};
 use engine::Workflow;
 use serde::{Deserialize, Serialize};
@@ -27,22 +25,7 @@ impl FileWorkflowStore {
 
     #[must_use]
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(OPENFLOW_DATA_DIR_SLUG)
-            .join("workflows.json")
-    }
-
-    /// # Errors
-    /// Returns an error if the file cannot be read or parsed.
-    pub fn load(&self) -> io::Result<Vec<Workflow>> {
-        WorkflowStore::load(self)
-    }
-
-    /// # Errors
-    /// Returns an error if the file cannot be serialized or written.
-    pub fn save(&self, workflows: &[Workflow]) -> io::Result<()> {
-        WorkflowStore::save(self, workflows)
+        app_data_dir().join("workflows.json")
     }
 
     #[must_use]

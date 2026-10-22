@@ -1,9 +1,8 @@
 //! Per-run file snapshot store for hashline section tags.
 
 use std::path::Path;
-use std::sync::Arc;
 
-use super::hashline::snapshots::{InMemorySnapshotStore, SnapshotStore};
+use super::hashline::snapshots::InMemorySnapshotStore;
 use super::normalize::{normalize_to_lf, strip_bom};
 use super::path::{resolve_writable, PathEscapeError};
 
@@ -27,28 +26,6 @@ pub fn record_file_snapshot(
     let stripped = strip_bom(raw_text);
     let normalized = normalize_to_lf(&stripped.text);
     Some(store.record(canonical_path, &normalized))
-}
-
-impl SnapshotStore for Arc<InMemorySnapshotStore> {
-    fn head(&self, path: &str) -> Option<super::hashline::snapshots::Snapshot> {
-        self.as_ref().head(path)
-    }
-
-    fn by_hash(&self, path: &str, hash: &str) -> Option<super::hashline::snapshots::Snapshot> {
-        self.as_ref().by_hash(path, hash)
-    }
-
-    fn record(&self, path: &str, full_text: &str) -> String {
-        self.as_ref().record(path, full_text)
-    }
-
-    fn invalidate(&self, path: &str) {
-        self.as_ref().invalidate(path);
-    }
-
-    fn clear(&self) {
-        self.as_ref().clear();
-    }
 }
 
 #[cfg(test)]

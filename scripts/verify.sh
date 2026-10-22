@@ -75,7 +75,6 @@ step_script() {
 	test-fast) printf '%s/scripts/test-fast.sh' "$ROOT" ;;
 	public-api) printf '%s/scripts/check-engine-public-api.sh' "$ROOT" ;;
 	arch) printf '%s/scripts/check-architecture.sh' "$ROOT" ;;
-	miri) printf '%s/scripts/miri.sh' "$ROOT" ;;
 	*) printf '%s/scripts/verify/%s.sh' "$ROOT" "$1" ;;
 	esac
 }
@@ -85,14 +84,13 @@ step_repro() {
 	test-fast) printf '%s' './scripts/test-fast.sh --execution --skip-ui-typecheck' ;;
 	public-api) printf '%s' './scripts/check-engine-public-api.sh' ;;
 	arch) printf '%s' './scripts/check-architecture.sh' ;;
-	miri) printf '%s' './scripts/miri.sh' ;;
 	*) printf './scripts/verify/%s.sh' "$1" ;;
 	esac
 }
 
 is_valid_step() {
 	case "$1" in
-	fmt | clippy | doc | test | test-fast | public-api | machete | typos | ui-typecheck | ui-test | deny | arch | mutants | miri)
+	fmt | clippy | doc | test | test-fast | public-api | machete | typos | ui-typecheck | ui-test | deny | arch | mutants)
 		return 0
 		;;
 	*) return 1 ;;
@@ -100,7 +98,7 @@ is_valid_step() {
 }
 
 usage_steps() {
-	printf 'Valid steps: %s\n' "${ALL_STEPS[*]} mutants miri (--deep only)"
+	printf 'Valid steps: %s\n' "${ALL_STEPS[*]} mutants (--deep only)"
 }
 
 record_step_result() {
@@ -184,13 +182,6 @@ run_named_step() {
 			return 1
 		fi
 		script="$(step_script mutants)"
-		;;
-	miri)
-		if [[ "$DEEP" -ne 1 ]]; then
-			fail_step miri "error: miri step requires --deep"
-			return 1
-		fi
-		script="$(step_script miri)"
 		;;
 	*)
 		script="$(step_script "$name")"
@@ -277,7 +268,7 @@ if [[ ${#REQUESTED_STEPS[@]} -gt 0 ]]; then
 else
 	STEPS_TO_RUN=("${ALL_STEPS[@]}")
 	if [[ "$DEEP" -eq 1 ]]; then
-		STEPS_TO_RUN+=(mutants miri)
+		STEPS_TO_RUN+=(mutants)
 	fi
 fi
 

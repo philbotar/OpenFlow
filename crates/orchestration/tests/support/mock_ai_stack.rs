@@ -87,12 +87,11 @@ impl MockTurn {
     #[must_use]
     pub fn tool_read(path: &str) -> Self {
         Self::ToolCalls {
-            calls: vec![ToolCall {
-                id: "call-read".to_string(),
-                provider_call_id: None,
-                name: "read".to_string(),
-                arguments: serde_json::json!({ "path": path }),
-            }],
+            calls: vec![ToolCall::new(
+                "call-read",
+                "read",
+                serde_json::json!({ "path": path }),
+            )],
             assistant: None,
         }
     }
@@ -100,12 +99,11 @@ impl MockTurn {
     #[must_use]
     pub fn tool_bash(command: &str, timeout: u32) -> Self {
         Self::ToolCalls {
-            calls: vec![ToolCall {
-                id: "call-bash".to_string(),
-                provider_call_id: None,
-                name: "bash".to_string(),
-                arguments: serde_json::json!({ "command": command, "timeout": timeout }),
-            }],
+            calls: vec![ToolCall::new(
+                "call-bash",
+                "bash",
+                serde_json::json!({ "command": command, "timeout": timeout }),
+            )],
             assistant: None,
         }
     }

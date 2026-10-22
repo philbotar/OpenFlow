@@ -1,17 +1,6 @@
 //! rig `CompletionResponse` → `AgentTurnOutcome`, reusing the mapping.rs node protocol.
 
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "rig migration: wired when AiClient switches to rig_adapter"
-    )
-)]
-
-use crate::mapping::{
-    attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, NoToolCallsPolicy,
-    ResolveToolTurnParams,
-};
+use crate::mapping::{resolve_tool_turn_outcome, NoToolCallsPolicy, ResolveToolTurnParams};
 use crate::prompt_cache::unpack_openai_cache_usage;
 use crate::rig_adapter::reasoning_convert;
 use crate::spec::WireApi;
@@ -72,10 +61,7 @@ pub fn to_usage_report(usage: &Usage) -> Option<UsageReport> {
     })
 }
 
-pub const fn no_tool_calls_policy(
-    _request: &engine::AgentRequest,
-    wire_api: Option<WireApi>,
-) -> NoToolCallsPolicy {
+pub const fn no_tool_calls_policy(wire_api: Option<WireApi>) -> NoToolCallsPolicy {
     if matches!(wire_api, Some(WireApi::Responses)) {
         NoToolCallsPolicy::Error("OpenAI response did not contain a function call")
     } else {
@@ -106,27 +92,7 @@ pub fn resolve_outcome(
         output_schema,
         provider_label,
         usage: to_usage_report(&usage),
-        filter_assistant_on_external_batch: true,
     })
-}
-
-/// Streaming/raw-wire path where tool arguments are still unparsed strings.
-pub fn resolve_outcome_raw_tool_call(
-    tool_name: &str,
-    arguments: &str,
-    usage: Usage,
-    provider_label: &str,
-    output_schema: Option<&serde_json::Value>,
-) -> Result<AgentTurnOutcome, AgentError> {
-    parse_internal_tool_outcome(
-        tool_name,
-        arguments,
-        None,
-        provider_label,
-        output_schema,
-        Vec::new(),
-    )
-    .map(|outcome| attach_usage(outcome, to_usage_report(&usage)))
 }
 
 pub(super) fn partition_choice(
@@ -327,13 +293,15 @@ mod tests {
 
     #[test]
     fn malformed_submit_output_json_recovers_via_jsonrepair() {
-        let outcome = resolve_outcome_raw_tool_call(
+        let outcome = crate::mapping::parse_internal_tool_outcome(
             SUBMIT_OUTPUT_TOOL,
             r#"{"output": {"r": "done"}, "assistant_message": null,}"#,
-            usage(),
+            None,
             "Test provider",
             Some(&json!({"type": "object"})),
-        );
+            Vec::new(),
+        )
+        .map(|outcome| crate::mapping::attach_usage(outcome, to_usage_report(&usage())));
         assert!(outcome.is_ok());
     }
 

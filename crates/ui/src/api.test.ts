@@ -610,11 +610,12 @@ describe("api desktop seam", () => {
 
   test("passes settings to resume_durable_run", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({ active: true });
-    await resumeDurableRun("run-1", settings, "key");
+    await resumeDurableRun("run-1", settings, "key", undefined, workflow);
     expect(invoke).toHaveBeenCalledWith("resume_durable_run", {
       runId: "run-1",
       settings,
       transientApiKey: "key",
+      runtimeWorkflow: workflow,
     });
   });
 
@@ -627,13 +628,14 @@ describe("api desktop seam", () => {
     };
     vi.mocked(invoke).mockResolvedValueOnce({ active: true });
 
-    await resumeDurableRun("run-1", settings, "key", continuation);
+    await resumeDurableRun("run-1", settings, "key", continuation, workflow);
 
     expect(invoke).toHaveBeenCalledWith("resume_durable_run", {
       runId: "run-1",
       settings,
       transientApiKey: "key",
       continuation,
+      runtimeWorkflow: workflow,
     });
   });
 });

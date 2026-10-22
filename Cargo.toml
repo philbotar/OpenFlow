@@ -48,8 +48,8 @@ uuid = { version = "1.23.1", features = ["v4", "serde"] }
 wiremock = "0.6.5"
 rmcp = { version = "1.7", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest"] }
 aws-config = { version = "1.8", features = ["behavior-version-latest", "credentials-login"] }
-aws-sdk-bedrock = "1.146"
-aws-sdk-bedrockruntime = "1.116"
+aws-sdk-bedrock = { version = "1.146", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-bedrockruntime = { version = "1.116", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-smithy-types = "1.3"
 rig-core = { version = "=0.39.0", default-features = false, features = ["reqwest", "rustls"] }
 rig-bedrock = "=0.39.0"

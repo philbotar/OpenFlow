@@ -133,23 +133,11 @@ fn parse_rfc3339(timestamp: &str) -> Option<std::time::SystemTime> {
 /// (IAM Identity Center support is partial in aws-config; the CLI handles all shapes).
 async fn cli_export_credentials(profile: Option<&str>) -> Option<Credentials> {
     let mut command = tokio::process::Command::new("aws");
-    command.kill_on_drop(true);
-    // Child PATH drives the exec-time binary lookup, so the augmented value
-    // also covers grandchildren (credential_process helpers in ~/.aws/config).
-    command.env("PATH", augmented_path_env());
     command.args(["configure", "export-credentials", "--format", "process"]);
     if let Some(name) = profile {
         command.args(["--profile", name]);
     }
-    // ponytail: 30s cap — export should be fast; kill_on_drop cleans up on timeout
-    let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
-        .await
-        .ok()?
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    parse_cli_export_credentials(&output.stdout)
+    command_credentials(command).await
 }
 
 /// Runs a user-configured shell command and parses its stdout as
@@ -158,22 +146,26 @@ async fn cli_export_credentials(profile: Option<&str>) -> Option<Credentials> {
 /// partial); same pattern Claude Code uses for `awsAuthRefresh`.
 async fn custom_command_credentials(command_line: &str) -> Option<Credentials> {
     #[cfg(windows)]
-    let mut command = {
+    let command = {
         let mut c = tokio::process::Command::new("cmd");
         c.args(["/C", command_line]);
         c
     };
     #[cfg(not(windows))]
-    let mut command = {
+    let command = {
         let mut c = tokio::process::Command::new("sh");
         c.args(["-c", command_line]);
         c
     };
+    command_credentials(command).await
+}
+
+async fn command_credentials(mut command: tokio::process::Command) -> Option<Credentials> {
     command.kill_on_drop(true);
     // GUI-launched apps get launchd's minimal PATH; extend it so the user's
     // command can find aws/asdf/mise binaries the way it does in a terminal.
     command.env("PATH", augmented_path_env());
-    // ponytail: 30s cap, same budget as cli_export_credentials
+    // ponytail: 30s cap; kill_on_drop cleans up on timeout or cancellation.
     let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
         .await
         .ok()?

@@ -535,7 +535,6 @@ fn fixed_smoke_node(id: &str, label: &str, task: &str, model: &str) -> Node {
     node
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "manual only: probes direct chat through AppBackend using the saved provider"]
 async fn saved_provider_direct_chat_probe() {
@@ -640,7 +639,6 @@ async fn saved_provider_direct_chat_probe() {
     backend.stop_run().await.expect("stop chat");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "manual only: probes concurrent direct chats through the saved provider"]
 async fn saved_provider_concurrent_direct_chat_probe() {
@@ -741,7 +739,6 @@ async fn saved_provider_concurrent_direct_chat_probe() {
     );
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "manual only: probes image attachment replay through the saved provider"]
 async fn saved_provider_attachment_replay_probe() {
@@ -785,7 +782,6 @@ async fn saved_provider_attachment_replay_probe() {
     .expect("PNG attachment smoke");
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "manual only: probes PDF attachment replay through the saved provider"]
 async fn saved_provider_pdf_attachment_replay_probe() {
@@ -893,7 +889,6 @@ fn record_result(name: &str, result: Result<(), String>, failures: &mut Vec<Stri
     }
 }
 
-#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "manual only: run ./scripts/smoke-live-ai.sh"]
 async fn saved_provider_supports_every_live_ai_surface() {

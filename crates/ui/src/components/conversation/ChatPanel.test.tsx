@@ -360,6 +360,7 @@ describe("ChatPanel replay mode", () => {
                   id: "target_env",
                   header: "Target",
                   question: "Which environment should I target?",
+                  selectionMode: "single",
                   options: [
                     {
                       label: "Staging",
@@ -437,6 +438,7 @@ describe("ChatPanel replay mode", () => {
                   id: "topic",
                   header: "Topic",
                   question: "What should we chat about?",
+                  selectionMode: "single",
                   options: [
                     {
                       label: "Something personal",

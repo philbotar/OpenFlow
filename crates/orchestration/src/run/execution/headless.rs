@@ -59,6 +59,7 @@ where
     };
 
     let cancel_token = CancellationToken::new();
+    let _cancel_on_drop = cancel_token.clone().drop_guard();
 
     let snapshot_store =
         Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
@@ -68,212 +69,222 @@ where
     let node_interrupts: NodeInterrupts = Arc::new(parking_lot::Mutex::new(BTreeMap::new()));
     let attachment_root = super::new_artifact_root().join("attachments");
 
-    let handle = tokio::spawn(drive_interactive_workflow(
-        InteractiveWorkflowRunParams {
-            workflow: workflow.clone(),
-            entrypoint,
-            entrypoint_attachments: Vec::new(),
-            execution_cwd,
-            project_repository_root: None,
-            artifact_root: super::new_artifact_root(),
-            attachment_root,
-            attachment_store: Arc::new(
-                crate::adapters::storage::run_attachment_store::FileRunAttachmentStore::default(),
-            ),
-            resume_checkpoint: None,
-            resume_continuation: None,
-            checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
-            ai,
-            agent_snapshots,
-            snapshot_store,
-            lsp: crate::lsp::LspSettings::from_env(),
-            pending_engine_reverts,
-            node_interrupts,
-            context_window_sizes: BTreeMap::new(),
-            mcp: McpSettings {
-                discover_external: false,
-                ..McpSettings::default()
+    let handle =
+        tokio_util::task::AbortOnDropHandle::new(tokio::spawn(drive_interactive_workflow(
+            InteractiveWorkflowRunParams {
+                workflow: workflow.clone(),
+                entrypoint,
+                entrypoint_attachments: Vec::new(),
+                execution_cwd,
+                project_repository_root: None,
+                artifact_root: super::new_artifact_root(),
+                attachment_root,
+                attachment_store: Arc::new(
+                    crate::adapters::storage::run_attachment_store::FileRunAttachmentStore::default(
+                    ),
+                ),
+                resume_checkpoint: None,
+                resume_continuation: None,
+                checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
+                ai,
+                agent_snapshots,
+                snapshot_store,
+                lsp: crate::lsp::LspSettings::from_env(),
+                pending_engine_reverts,
+                node_interrupts,
+                context_window_sizes: BTreeMap::new(),
+                mcp: McpSettings {
+                    discover_external: false,
+                    ..McpSettings::default()
+                },
+                prepared_mcp: None,
+                search: crate::settings::model::SearchSettings::default(),
+                runtime_config_store: engine::new_runtime_config_store(),
+                tool_budget: crate::run::resources::SharedRunResources::default().tool_budget(),
+                mutation_gate: None,
             },
-            prepared_mcp: None,
-            search: crate::settings::model::SearchSettings::default(),
-            runtime_config_store: engine::new_runtime_config_store(),
-            tool_budget: crate::run::resources::SharedRunResources::default().tool_budget(),
-            mutation_gate: None,
-        },
-        event_tx,
-        action_rx,
-        cancel_token,
-    ));
-    let mut manual_inputs = VecDeque::from(manual_inputs);
-    let mut approvals = VecDeque::from(approvals);
-    let mut state = WorkflowRunState::running_for_workflow(&workflow);
-    let mut auto_retries: HashMap<NodeId, u8> = HashMap::new();
+            event_tx,
+            action_rx,
+            cancel_token.clone(),
+        )));
+    let result = async {
+        let mut manual_inputs = VecDeque::from(manual_inputs);
+        let mut approvals = VecDeque::from(approvals);
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+        let mut auto_retries: HashMap<NodeId, u8> = HashMap::new();
 
-    while let Some(event) = event_rx.recv().await {
-        let awaiting_input = matches!(
-            &event,
-            ExecutionEvent::NodeAwaitingInput { node_id, .. }
-                if manual_inputs
-                    .iter()
-                    .any(|next| next.node_id == *node_id)
-        );
-        let awaiting_approval = matches!(
-            &event,
-            ExecutionEvent::ToolApprovalRequested { request }
-                if approvals.iter().any(|next| {
-                    next.approval_id.is_empty() || next.approval_id == request.approval_id
-                })
-        );
+        while let Some(event) = event_rx.recv().await {
+            let awaiting_input = matches!(
+                &event,
+                ExecutionEvent::NodeAwaitingInput { node_id, .. }
+                    if manual_inputs
+                        .iter()
+                        .any(|next| next.node_id == *node_id)
+            );
+            let awaiting_approval = matches!(
+                &event,
+                ExecutionEvent::ToolApprovalRequested { request }
+                    if approvals.iter().any(|next| {
+                        next.approval_id.is_empty() || next.approval_id == request.approval_id
+                    })
+            );
 
-        apply_event_to_run_state(&workflow, &mut state, event.clone());
+            apply_event_to_run_state(&workflow, &mut state, event.clone());
 
-        if matches!(
-            &event,
-            ExecutionEvent::NodeErrored { .. } | ExecutionEvent::NodeInterrupted { .. }
-        ) && state.active
-        {
-            let (node_id, error) = match &event {
-                ExecutionEvent::NodeErrored { node_id, error, .. } => {
-                    (node_id.clone(), error.clone())
+            if matches!(
+                &event,
+                ExecutionEvent::NodeErrored { .. } | ExecutionEvent::NodeInterrupted { .. }
+            ) && state.active
+            {
+                let (node_id, error) = match &event {
+                    ExecutionEvent::NodeErrored { node_id, error, .. } => {
+                        (node_id.clone(), error.clone())
+                    }
+                    ExecutionEvent::NodeInterrupted { node_id, .. } => {
+                        (node_id.clone(), "interrupted".to_string())
+                    }
+                    _ => unreachable!(),
+                };
+                let count = auto_retries.entry(node_id.clone()).or_default();
+                *count += 1;
+                if should_auto_retry_node(&workflow, *count, &error) {
+                    action_tx
+                        .send(ExecutionAction::RetryNode { node_id })
+                        .map_err(|_| {
+                            WorkflowExecutionError::Execution("run channel closed".to_string())
+                        })?;
+                    continue;
                 }
-                ExecutionEvent::NodeInterrupted { node_id, .. } => {
-                    (node_id.clone(), "interrupted".to_string())
-                }
-                _ => unreachable!(),
-            };
-            let count = auto_retries.entry(node_id.clone()).or_default();
-            *count += 1;
-            if should_auto_retry_node(&workflow, *count, &error) {
-                action_tx
-                    .send(ExecutionAction::RetryNode { node_id })
-                    .map_err(|_| {
-                        WorkflowExecutionError::Execution("run channel closed".to_string())
-                    })?;
-                continue;
+                return Err(WorkflowExecutionError::MissingRetry(node_id));
             }
-            return Err(WorkflowExecutionError::MissingRetry(node_id));
-        }
 
-        if let ExecutionEvent::NodeAwaitingInput { node_id, .. } = &event {
-            if awaiting_input {
-                let Some(position) = manual_inputs
-                    .iter()
-                    .position(|next| next.node_id == *node_id)
-                else {
-                    return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
-                };
-                let Some(input) = manual_inputs.remove(position) else {
-                    return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
-                };
+            if let ExecutionEvent::NodeAwaitingInput { node_id, .. } = &event {
+                if awaiting_input {
+                    let Some(position) = manual_inputs
+                        .iter()
+                        .position(|next| next.node_id == *node_id)
+                    else {
+                        return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
+                    };
+                    let Some(input) = manual_inputs.remove(position) else {
+                        return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
+                    };
+                    action_tx
+                        .send(ExecutionAction::ProvideInput {
+                            node_id: input.node_id.clone(),
+                            text: input.text.clone(),
+                            attachments: Vec::new(),
+                            skill_prompt: None,
+                        })
+                        .map_err(|_| {
+                            WorkflowExecutionError::Execution("run channel closed".to_string())
+                        })?;
+                    record_user_input(&mut state, &input.node_id, input.text);
+                }
+            }
+            if let ExecutionEvent::ToolApprovalRequested { request } = &event {
+                if awaiting_approval {
+                    let Some(position) = approvals.iter().position(|next| {
+                        next.approval_id.is_empty() || next.approval_id == request.approval_id
+                    }) else {
+                        return Err(WorkflowExecutionError::MissingApproval(
+                            request.approval_id.clone(),
+                        ));
+                    };
+                    let Some(approval) = approvals.remove(position) else {
+                        return Err(WorkflowExecutionError::MissingApproval(
+                            request.approval_id.clone(),
+                        ));
+                    };
+                    let approval_id = if approval.approval_id.is_empty() {
+                        request.approval_id.clone()
+                    } else {
+                        approval.approval_id
+                    };
+                    action_tx
+                        .send(ExecutionAction::ResolveApproval {
+                            approval_id: approval_id.clone(),
+                            allow: approval.allow,
+                            reason: approval.reason.clone(),
+                        })
+                        .map_err(|_| {
+                            WorkflowExecutionError::Execution("run channel closed".to_string())
+                        })?;
+                    state
+                        .pending_approvals
+                        .retain(|pending| pending.approval_id != approval_id);
+                }
+            }
+            if let ExecutionEvent::McpClientRequestCreated { request } = &event {
                 action_tx
-                    .send(ExecutionAction::ProvideInput {
-                        node_id: input.node_id.clone(),
-                        text: input.text.clone(),
-                        attachments: Vec::new(),
-                        skill_prompt: None,
+                    .send(ExecutionAction::ResolveMcpClientRequest {
+                        request_id: request.request_id.clone(),
+                        decision: crate::mcp::client_capabilities::McpClientRequestDecision {
+                            allow: false,
+                            content: None,
+                        },
                     })
                     .map_err(|_| {
                         WorkflowExecutionError::Execution("run channel closed".to_string())
                     })?;
-                record_user_input(&mut state, &input.node_id, input.text);
+            }
+
+            if !state.active {
+                break;
+            }
+
+            for node_id in &state.awaiting_node_ids {
+                if !manual_inputs.iter().any(|item| item.node_id == *node_id) {
+                    return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
+                }
+            }
+            for pending in &state.pending_approvals {
+                let matches_next = approvals.iter().any(|item| {
+                    item.approval_id.is_empty() || item.approval_id == pending.approval_id
+                });
+                if !matches_next {
+                    return Err(WorkflowExecutionError::MissingApproval(
+                        pending.approval_id.clone(),
+                    ));
+                }
             }
         }
-        if let ExecutionEvent::ToolApprovalRequested { request } = &event {
-            if awaiting_approval {
-                let Some(position) = approvals.iter().position(|next| {
-                    next.approval_id.is_empty() || next.approval_id == request.approval_id
-                }) else {
-                    return Err(WorkflowExecutionError::MissingApproval(
-                        request.approval_id.clone(),
-                    ));
-                };
-                let Some(approval) = approvals.remove(position) else {
-                    return Err(WorkflowExecutionError::MissingApproval(
-                        request.approval_id.clone(),
-                    ));
-                };
-                let approval_id = if approval.approval_id.is_empty() {
-                    request.approval_id.clone()
-                } else {
-                    approval.approval_id
-                };
-                action_tx
-                    .send(ExecutionAction::ResolveApproval {
-                        approval_id: approval_id.clone(),
-                        allow: approval.allow,
-                        reason: approval.reason.clone(),
+
+        if let Some(report) = state.last_report.clone() {
+            return Ok(WorkflowRunSnapshot {
+                report,
+                run_trace: state.run_trace,
+                chat_logs: state
+                    .chat_logs
+                    .into_iter()
+                    .map(|(node_id, messages)| {
+                        (
+                            node_id,
+                            messages
+                                .into_iter()
+                                .map(|projected| projected.message)
+                                .collect(),
+                        )
                     })
-                    .map_err(|_| {
-                        WorkflowExecutionError::Execution("run channel closed".to_string())
-                    })?;
-                state
-                    .pending_approvals
-                    .retain(|pending| pending.approval_id != approval_id);
-            }
+                    .collect(),
+                outputs: state.outputs,
+                pending_approvals: state.pending_approvals,
+                tool_calls_by_node: state.tool_calls_by_node,
+                tool_artifacts: state.tool_artifacts,
+                changed_files: state.changed_files,
+                edit_batches: state.edit_batches,
+            });
         }
-        if let ExecutionEvent::McpClientRequestCreated { request } = &event {
-            action_tx
-                .send(ExecutionAction::ResolveMcpClientRequest {
-                    request_id: request.request_id.clone(),
-                    decision: crate::mcp::client_capabilities::McpClientRequestDecision {
-                        allow: false,
-                        content: None,
-                    },
-                })
-                .map_err(|_| WorkflowExecutionError::Execution("run channel closed".to_string()))?;
+        if let Some(error) = state.last_error.clone() {
+            return Err(WorkflowExecutionError::Execution(error));
         }
-
-        if !state.active {
-            break;
-        }
-
-        for node_id in &state.awaiting_node_ids {
-            if !manual_inputs.iter().any(|item| item.node_id == *node_id) {
-                return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
-            }
-        }
-        for pending in &state.pending_approvals {
-            let matches_next = approvals
-                .iter()
-                .any(|item| item.approval_id.is_empty() || item.approval_id == pending.approval_id);
-            if !matches_next {
-                return Err(WorkflowExecutionError::MissingApproval(
-                    pending.approval_id.clone(),
-                ));
-            }
-        }
+        Err(WorkflowExecutionError::Execution(
+            "run did not finish".to_string(),
+        ))
     }
-
+    .await;
+    cancel_token.cancel();
     handle.abort();
-    if let Some(report) = state.last_report.clone() {
-        return Ok(WorkflowRunSnapshot {
-            report,
-            run_trace: state.run_trace,
-            chat_logs: state
-                .chat_logs
-                .into_iter()
-                .map(|(node_id, messages)| {
-                    (
-                        node_id,
-                        messages
-                            .into_iter()
-                            .map(|projected| projected.message)
-                            .collect(),
-                    )
-                })
-                .collect(),
-            outputs: state.outputs,
-            pending_approvals: state.pending_approvals,
-            tool_calls_by_node: state.tool_calls_by_node,
-            tool_artifacts: state.tool_artifacts,
-            changed_files: state.changed_files,
-            edit_batches: state.edit_batches,
-        });
-    }
-    if let Some(error) = state.last_error.clone() {
-        return Err(WorkflowExecutionError::Execution(error));
-    }
-    Err(WorkflowExecutionError::Execution(
-        "run did not finish".to_string(),
-    ))
+    let _ = handle.await;
+    result
 }

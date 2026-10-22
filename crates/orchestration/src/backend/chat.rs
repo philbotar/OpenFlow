@@ -52,6 +52,10 @@ pub(super) fn refresh_execution_workflow_for_chat(chat: &Chat, workflow: &mut Wo
         || !agent.conversation_mode
         || agent.tools.allow_free_text_user_input
         || !agent.tools.allow_structured_user_input
+        || agent.model != chat.config.model.clone().unwrap_or_default()
+        || agent.tools.approval_mode != Some(chat.config.approval_mode)
+        || agent.reasoning_effort != chat.config.reasoning_effort
+        || agent.reasoning_budget_tokens != chat.config.reasoning_budget_tokens
         || workflow.settings.fast_mode != chat.config.fast_mode;
     if !changed {
         return false;
@@ -62,6 +66,12 @@ pub(super) fn refresh_execution_workflow_for_chat(chat: &Chat, workflow: &mut Wo
     agent.conversation_mode = true;
     agent.tools.allow_free_text_user_input = false;
     agent.tools.allow_structured_user_input = true;
+    agent.model = chat.config.model.clone().unwrap_or_default();
+    agent.tools.approval_mode = Some(chat.config.approval_mode);
+    agent
+        .reasoning_effort
+        .clone_from(&chat.config.reasoning_effort);
+    agent.reasoning_budget_tokens = chat.config.reasoning_budget_tokens;
     workflow.settings.fast_mode = chat.config.fast_mode;
     true
 }
@@ -299,6 +309,11 @@ mod tests {
         workflow.nodes[0].agent.conversation_mode = false;
         workflow.nodes[0].agent.tools.allow_free_text_user_input = true;
         workflow.nodes[0].agent.tools.allow_structured_user_input = false;
+        workflow.nodes[0].agent.model = "legacy-model".to_string();
+        workflow.nodes[0].agent.tools.approval_mode = Some(engine::ApprovalMode::AlwaysAsk);
+        workflow.nodes[0].agent.reasoning_effort = Some("high".to_string());
+        workflow.nodes[0].agent.reasoning_budget_tokens = Some(32_000);
+        workflow.settings.fast_mode = true;
 
         assert!(refresh_execution_workflow_for_chat(&chat, &mut workflow));
         assert_eq!(workflow.nodes[0].agent.system_prompt, CHAT_SYSTEM_PROMPT);
@@ -306,6 +321,14 @@ mod tests {
         assert!(workflow.nodes[0].agent.conversation_mode);
         assert!(!workflow.nodes[0].agent.tools.allow_free_text_user_input);
         assert!(workflow.nodes[0].agent.tools.allow_structured_user_input);
+        assert!(workflow.nodes[0].agent.model.is_empty());
+        assert_eq!(
+            workflow.nodes[0].agent.tools.approval_mode,
+            Some(engine::ApprovalMode::ReadOnly)
+        );
+        assert!(workflow.nodes[0].agent.reasoning_effort.is_none());
+        assert!(workflow.nodes[0].agent.reasoning_budget_tokens.is_none());
+        assert!(!workflow.settings.fast_mode);
         assert!(!refresh_execution_workflow_for_chat(&chat, &mut workflow));
     }
 }

@@ -208,12 +208,11 @@ mod tests {
         let tools =
             ProjectReadTools::new(&project_dir.path().display().to_string()).expect("read tools");
         let result = tools
-            .execute(&ToolCall {
-                id: "find-project-files".to_string(),
-                provider_call_id: None,
-                name: "find".to_string(),
-                arguments: json!({ "paths": "*.md" }),
-            })
+            .execute(&ToolCall::new(
+                "find-project-files",
+                "find",
+                json!({ "paths": "*.md" }),
+            ))
             .await;
 
         assert!(!result.is_error, "{}", result.content);
@@ -228,12 +227,11 @@ mod tests {
         let tools =
             ProjectReadTools::new(&project_dir.path().display().to_string()).expect("read tools");
         let result = tools
-            .execute(&ToolCall {
-                id: "ls-project-files".to_string(),
-                provider_call_id: None,
-                name: "ls".to_string(),
-                arguments: json!({ "path": "." }),
-            })
+            .execute(&ToolCall::new(
+                "ls-project-files",
+                "ls",
+                json!({ "path": "." }),
+            ))
             .await;
 
         assert!(!result.is_error, "{}", result.content);

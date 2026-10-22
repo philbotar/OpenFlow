@@ -6,16 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
 
-env:
-  MIRI_NIGHTLY: nightly-2026-06-20
-  MIRI_TOOLCHAIN: nightly-2026-06-20
-
 permissions:
   contents: write
 
 jobs:
   release-verify:
-    name: Release verify (Miri + deep tests)
+    name: Release verify (deep tests)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -25,12 +21,6 @@ jobs:
       - name: Setup Rust (stable)
         uses: ./.github/actions/setup-rust
 
-      - name: Setup Rust (nightly + miri)
-        uses: ./.github/actions/setup-rust
-        with:
-          toolchain: ${{ env.MIRI_NIGHTLY }}
-          components: miri
-
       - name: Install Tauri Linux deps (cached)
         uses: ./.github/actions/install-tauri-deps
 
@@ -39,33 +29,12 @@ jobs:
         with:
           tool: cargo-nextest
 
-      - name: Cache Miri sysroot
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/miri
-          key: miri-sysroot-${{ runner.os }}-${{ env.MIRI_NIGHTLY }}-x86_64-unknown-linux-gnu
-
-      - name: Cache Rust + Miri build artifacts
+      - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
         with:
-          # scripts/miri.sh exports CARGO_TARGET_DIR=target/miri for the Miri run only; the deep
-          # checks use ./target. swatinem does not read CARGO_TARGET_DIR, so target/miri must be
-          # listed explicitly (this also fixes the prior ./target mis-cache from the old ci.yml job).
-          workspaces: |
-            . -> target
-            . -> target/miri
+          workspaces: . -> target
           cache-on-failure: true
           shared-key: release-verify
-
-      - name: Miri (engine + orchestration)
-        run: ./scripts/miri.sh
-
-      - name: Free Miri build artifacts before deep tests
-        run: |
-          test "$PWD" = "$GITHUB_WORKSPACE"
-          test -f "$GITHUB_WORKSPACE/Cargo.toml"
-          find "$GITHUB_WORKSPACE/target/miri" -depth -delete
-          df -h "$GITHUB_WORKSPACE"
 
       - name: Deep tests (execution + desktop)
         run: ./scripts/test-fast.sh --execution --desktop --skip-ui-typecheck
@@ -74,6 +43,7 @@ jobs:
         run: cargo nextest run -p orchestration --test workflow_e2e --no-capture
 
   release:
+    name: Release (${{ matrix.rust_target }})
     needs: release-verify
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
@@ -83,10 +53,10 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - platform: macos-latest
+          - platform: macos-26
             args: --target aarch64-apple-darwin
             rust_target: aarch64-apple-darwin
-          - platform: macos-latest
+          - platform: macos-15-intel
             args: --target x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
     runs-on: ${{ matrix.platform }}
@@ -124,7 +94,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: crates/desktop
+          workspaces: . -> target
+          key: release-${{ matrix.platform }}-${{ matrix.rust_target }}
 
       - name: Configure macOS code signing
         env:

@@ -1,10 +1,13 @@
 mod checkpoint;
 mod completion;
+mod recovery;
 #[cfg(test)]
 mod tests;
 mod tools;
 
 pub use checkpoint::{validate_checkpoint_against_workflow, InteractiveEngineCheckpoint};
+
+use recovery::RecoveryCounters;
 
 use crate::conversation::{AgentTranscriptItem, ChatAttachmentRef, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
@@ -117,14 +120,7 @@ impl EngineInputError {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct PendingToolBatch {
-    approval_id: String,
-    node_id: NodeId,
-    tool_calls: Vec<ToolCall>,
-    requires_approval: bool,
-    tool_access_policy: ToolAccessPolicy,
-}
+use checkpoint::CheckpointPendingToolBatch as PendingToolBatch;
 
 /// Immutable change contract frozen when a Plan Mode source node completes.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -226,19 +222,9 @@ pub struct InteractiveEngine {
     /// Approval ids of tool batches currently executing (not persisted; a
     /// restored engine re-dispatches any pending non-approval batch).
     in_flight_tools: BTreeSet<String>,
-    retries_by_node: BTreeMap<NodeId, u8>,
-    /// Consecutive transient failures since the node's last successful turn.
-    transient_streaks_by_node: BTreeMap<NodeId, u8>,
+    recovery: RecoveryCounters,
     /// Per-node: do not dispatch AI again until this instant (transient retry backoff).
     retry_after_by_node: BTreeMap<NodeId, Instant>,
-    submit_output_retries_by_node: BTreeMap<NodeId, u8>,
-    request_input_retries_by_node: BTreeMap<NodeId, u8>,
-    empty_turn_retries_by_node: BTreeMap<NodeId, u8>,
-    mixed_tool_turn_retries_by_node: BTreeMap<NodeId, u8>,
-    output_truncation_retries_by_node: BTreeMap<NodeId, u8>,
-    /// Consecutive auto-continued text-only turns for nodes that disallow
-    /// user input; reset whenever the node makes tool-call progress.
-    auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
     entrypoint_attachments: Vec<ChatAttachmentRef>,
     project_repository_root: Option<String>,
@@ -406,15 +392,8 @@ impl InteractiveEngine {
             frozen_change_evidence_packet: None,
             pending_tool_batches: BTreeMap::new(),
             in_flight_tools: BTreeSet::new(),
-            retries_by_node: BTreeMap::new(),
-            transient_streaks_by_node: BTreeMap::new(),
+            recovery: RecoveryCounters::default(),
             retry_after_by_node: BTreeMap::new(),
-            submit_output_retries_by_node: BTreeMap::new(),
-            request_input_retries_by_node: BTreeMap::new(),
-            empty_turn_retries_by_node: BTreeMap::new(),
-            mixed_tool_turn_retries_by_node: BTreeMap::new(),
-            output_truncation_retries_by_node: BTreeMap::new(),
-            auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
             entrypoint_attachments,
             project_repository_root,
@@ -631,37 +610,26 @@ impl InteractiveEngine {
                 return self.idle_result();
             }
 
-            if user_messages_open {
-                tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                    message = user_messages.recv() => {
-                        match message {
-                            Some(message) => {
-                                if let Err(error) = self.apply_user_message(message) {
-                                    return EngineRunResult::Failed(RunError::NodeFailed {
-                                        node_id: error.node_id(),
-                                        kind: NodeFailureKind::EngineInput(error.to_string()),
-                                    });
-                                }
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                message = user_messages.recv(), if user_messages_open => {
+                    match message {
+                        Some(message) => {
+                            if let Err(error) = self.apply_user_message(message) {
+                                return EngineRunResult::Failed(RunError::NodeFailed {
+                                    node_id: error.node_id(),
+                                    kind: NodeFailureKind::EngineInput(error.to_string()),
+                                });
                             }
-                            None => user_messages_open = false,
                         }
-                    }
-                    Some(work) = in_flight.next() => {
-                        if let Err(error) = self.apply_work_output(work) {
-                            return EngineRunResult::Failed(error);
-                        }
+                        None => user_messages_open = false,
                     }
                 }
-            } else {
-                let work = tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                    Some(work) = in_flight.next() => work,
-                };
-                if let Err(error) = self.apply_work_output(work) {
-                    return EngineRunResult::Failed(error);
+                Some(work) = in_flight.next() => {
+                    if let Err(error) = self.apply_work_output(work) {
+                        return EngineRunResult::Failed(error);
+                    }
                 }
             }
         }
@@ -889,8 +857,8 @@ impl InteractiveEngine {
         for path in &output.effects.read_call_paths {
             self.note_read_call(node_id, path);
         }
-        self.record_file_changes(node_id, output.effects.file_changes.clone());
-        self.record_reads(node_id, output.effects.reads.clone());
+        self.record_file_changes(node_id, output.effects.file_changes);
+        self.record_reads(node_id, output.effects.reads);
         if output.effects.interrupted {
             self.mark_node_interrupted(node_id);
             return Ok(());
@@ -926,14 +894,12 @@ impl InteractiveEngine {
         self.failed_nodes.remove(node_id);
         self.interrupted_nodes.remove(node_id);
         self.retry_after_by_node.remove(node_id);
-        self.transient_streaks_by_node.remove(node_id);
-        self.submit_output_retries_by_node.remove(node_id);
-        self.request_input_retries_by_node.remove(node_id);
-        self.empty_turn_retries_by_node.remove(node_id);
-        self.mixed_tool_turn_retries_by_node.remove(node_id);
-        self.output_truncation_retries_by_node.remove(node_id);
-        self.auto_continue_streaks_by_node.remove(node_id);
-        let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
+        self.recovery.clear_for_retry(node_id);
+        let retry_count = self
+            .recovery
+            .retries_by_node
+            .entry(node_id.clone())
+            .or_default();
         *retry_count = retry_count.saturating_add(1);
         Ok(())
     }
@@ -1158,7 +1124,7 @@ impl InteractiveEngine {
             project_repository_root: self.project_repository_root.as_deref(),
             frozen_change_evidence_packet: self.frozen_change_evidence_packet.as_ref(),
         };
-        let mut request = build_agent_request(&ctx, node, true)?;
+        let mut request = build_agent_request(&ctx, node)?;
         request.model_attempt = self.model_attempt_for(&node.id);
         request.tool_access_policy = if self.is_plan_mode_active() {
             ToolAccessPolicy::Planning
@@ -1198,7 +1164,12 @@ impl InteractiveEngine {
     }
 
     fn model_attempt_for(&self, node_id: &NodeId) -> u8 {
-        let retries = self.retries_by_node.get(node_id).copied().unwrap_or(0);
+        let retries = self
+            .recovery
+            .retries_by_node
+            .get(node_id)
+            .copied()
+            .unwrap_or(0);
         retries.saturating_add(1)
     }
 
@@ -1250,6 +1221,16 @@ impl InteractiveEngine {
 impl InteractiveEngine {
     pub(crate) fn test_insert_in_flight(&mut self, node_id: NodeId) {
         self.in_flight_ai.insert(node_id);
+    }
+
+    /// Mark `node_id` in flight, then deliver `result` as its AI completion.
+    pub(crate) fn test_deliver_ai(
+        &mut self,
+        node_id: &NodeId,
+        result: Result<crate::AgentTurnOutcome, crate::AgentError>,
+    ) {
+        self.test_insert_in_flight(node_id.clone());
+        self.on_ai_complete(node_id, result);
     }
 
     pub(crate) fn test_insert_output(&mut self, node_id: NodeId, output: Value) {

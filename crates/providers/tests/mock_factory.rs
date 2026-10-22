@@ -22,12 +22,10 @@ impl Default for MockAiPort {
 impl AiPort for MockAiPort {
     async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            handoff: None,
             output: serde_json::json!({"result": self.response}),
             raw_text: self.response.clone(),
             assistant_message: Some(self.response.clone()),
-            reasoning: Vec::new(),
-            usage: None,
+            ..Default::default()
         }))
     }
 }

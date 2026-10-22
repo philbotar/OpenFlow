@@ -174,6 +174,10 @@ pub struct McpOAuthPendingAuthorization {
     pub completion: McpOAuthCompletion,
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait expands to a bare must_use on the boxed future"
+)]
 #[async_trait::async_trait]
 pub trait McpOAuthFlowPort: Send + Sync {
     async fn begin(
@@ -191,6 +195,10 @@ pub trait McpOAuthFlowPort: Send + Sync {
     async fn revoke(&self, credentials: &McpOAuthCredentials) -> Result<(), McpOAuthError>;
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait expands to a bare must_use on the boxed future"
+)]
 #[async_trait::async_trait]
 pub trait McpOAuthSecureStore: Send + Sync {
     async fn load_credentials(

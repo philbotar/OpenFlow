@@ -1,5 +1,9 @@
 /* Parent scroll for chats/workflows/projects; top nav stays pinned. */
 
+.sidebar-history-toggle {
+  color: var(--text-muted);
+}
+
 .sidebar-scroll-wrap {
   position: relative;
   display: flex;
@@ -31,10 +35,10 @@
 .sidebar-scroll-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   min-width: 0;
   /* Clear overlay thumb so row text / hit targets don't sit under it. */
-  padding-right: 8px;
+  padding-right: var(--space-sm);
 }
 
 .sidebar-scroll-content > .sidebar-section-group {
@@ -48,7 +52,9 @@
   top: 0;
   right: 2px;
   width: 4px;
-  border-radius: 999px;
+  height: var(--sidebar-thumb-height);
+  transform: translateY(var(--sidebar-thumb-top));
+  border-radius: var(--radius-pill);
   background: var(--scrollbar-thumb);
   opacity: 0;
   pointer-events: none;
@@ -66,14 +72,14 @@
   }
 }
 
-.sidebar button {
+.sidebar button:not(:disabled) {
   cursor: pointer;
 }
 
 .sidebar-projects-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   min-width: 0;
 }
 
