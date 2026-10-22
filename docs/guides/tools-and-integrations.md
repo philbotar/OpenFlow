@@ -1,6 +1,6 @@
 # Tools and integrations
 
-Choose each node's **Approval mode** to control which tools it can use and when it asks permission. Nodes can use built-in tools, saved agents, discovered skills, web search, and MCP servers. The [Tools reference](../reference/tools.md) lists their arguments and limits.
+A node's **Approval mode** sets which tools it can use and when it asks permission. Nodes can use built-in tools, saved agents, discovered skills, web search, and MCP servers. The [Tools reference](../reference/tools.md) lists arguments and limits.
 
 ## Approval modes
 
@@ -13,28 +13,28 @@ Set **Approval mode** in a node's Inspector:
 | **Always ask** | Prompts for each tool call. |
 | **Auto-approve all** | Skips prompts for tools allowed to that node. |
 
-Read-only `ls` and read-only `find` commands through Bash can remain auto-approved in the middle mode. Shell operators and mutating `find` predicates are write-tier. MCP tools are write-tier by default unless the user explicitly reviews a server policy.
+In the middle mode, read-only `ls` and `find` commands through Bash can stay auto-approved; shell operators and mutating `find` predicates are write-tier. MCP tools are write-tier by default unless you explicitly review a server policy.
 
 ## Skills
 
-Type `/` in a composer or task prompt to search discovered `SKILL.md` files. In a run, OpenFlow resolves each recognized skill to its exact file and loads it into context. Skills are read-only catalog entries and are not copied into OpenFlow storage. An unknown leading command blocks a run; an unknown inline token remains literal.
+Type `/` in a composer or task prompt to search discovered `SKILL.md` files. In a run, each recognized skill resolves to its exact file and loads into context. Skills are read-only catalog entries and aren't copied into OpenFlow storage. An unknown leading command blocks the run; an unknown inline token stays literal.
 
 ## Saved and callable agents
 
-The **Agents** screen stores reusable agent definitions. Add a saved agent to a node as a callable agent when that node should delegate work. The callable-agent definition is snapshotted at run start, so later library edits do not change an in-flight run. [Callable agents](../architecture/callable-agents.md) describes the snapshot lifecycle.
+The **Agents** screen stores reusable agent definitions. To let a node delegate work, add a saved agent to it as a callable agent. The definition is snapshotted at run start, so later library edits don't change an in-flight run. [Callable agents](../architecture/callable-agents.md) describes the snapshot lifecycle.
 
 ## Web search
 
-Configure search credentials in **Settings → Search**. Workflows can then use the bundled web-search tool. Store keys in Settings or use the provider's environment fallback; do not place secrets in prompts or workflow files.
+Add search credentials in **Settings → Search** to let workflows use the bundled web-search tool. Keep keys in Settings or the provider's environment fallback, never in prompts or workflow files.
 
 ## MCP servers
 
-Open **Settings → MCP Servers** to add Stdio, Streamable HTTP, or legacy SSE servers, import `mcpServers` JSON, test, trust, disable, or remove a connection. Have the server command, URL, or imported configuration ready. Enter credentials in Settings, not workflow text. Review the server policy before enabling it; OpenFlow does not automatically trust a server's read-only annotation. [Security and data](../security-and-data.md#mcp-and-external-services) explains what external services can receive.
+In **Settings → MCP Servers**, add Stdio, Streamable HTTP, or legacy SSE servers, import `mcpServers` JSON, and test, trust, disable, or remove connections. Have the server command, URL, or imported configuration ready, and enter credentials in Settings, not workflow text. Review the server policy before enabling it: OpenFlow doesn't automatically trust a server's read-only annotation. [Security and data](../security-and-data.md#mcp-and-external-services) explains what external services can receive.
 
-MCP resources and prompts are not injected just because a server is connected. In a node Inspector, open **MCP context** and select each resource or prompt explicitly. OpenFlow snapshots the selected content at run start; resume and replay use that immutable snapshot. Selected context is untrusted provider input and is bounded by the limits in [Configuration](../reference/configuration.md#mcp).
+Connecting a server doesn't inject its resources or prompts. Select each one explicitly under **MCP context** in a node Inspector. OpenFlow snapshots the selected content at run start; resume and replay use that immutable snapshot. Selected context is untrusted provider input, bounded by the limits in [Configuration](../reference/configuration.md#mcp).
 
-Enable server-to-client capabilities deliberately: **Expose selected project root**, **Allow approved sampling reqs**, and **Allow approved form/URL elicitation** are off by default. Sampling and elicitation requests appear in the originating conversation for one-time approval. Stopping the run cancels pending callbacks.
+**Expose selected project root**, **Allow approved sampling reqs**, and **Allow approved form/URL elicitation** are off by default; enable them deliberately. Sampling and elicitation requests appear in the originating conversation for one-time approval. Stopping the run cancels pending callbacks.
 
-Use **Approve & Test** after import or a security-relevant change. Trust is revoked when source, install, connection, or policy changes. If one enabled server fails setup or listing during a run, OpenFlow skips it and continues with other servers.
+Use **Approve & Test** after import or a security-relevant change. Changing the source, install, connection, or policy revokes trust. If an enabled server fails setup or listing during a run, OpenFlow skips it and continues with the others.
 
-For startup, authentication, or listing failures, use [MCP troubleshooting](../troubleshooting/README.md#mcp-servers).
+For startup, authentication, or listing failures, see [MCP troubleshooting](../troubleshooting/README.md#mcp-servers).
