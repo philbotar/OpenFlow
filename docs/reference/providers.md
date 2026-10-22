@@ -1,6 +1,6 @@
 # Provider profiles
 
-The **Provider** dropdown in **Settings → Providers** contains these profiles:
+Profiles in the **Provider** dropdown (**Settings → Providers**):
 
 | Settings label | Auth group | Env fallback | Default base URL | Default wire API |
 | --- | --- | --- | --- | --- |
@@ -25,20 +25,22 @@ The **Provider** dropdown in **Settings → Providers** contains these profiles:
 
 ## Provider key resolution
 
-OpenFlow resolves provider keys in this order:
+The first key found wins:
 
 1. Transient input panel key.
 2. Stored settings key: `ProviderProfile.api_key`.
 3. Provider environment variable fallback, such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
-Managed cloud providers reject readiness when their required key cannot be resolved. `ollama`, `lmstudio`, and `custom_openai_compatible` can resolve without a key. Custom endpoints still receive a configured key when one exists.
+Managed cloud providers are not ready without a resolvable key. `ollama`, `lmstudio`, and `custom_openai_compatible` resolve without one; custom endpoints still receive a configured key if it exists.
 
-The `openai-codex` provider does not consult `OPENAI_API_KEY`. It is ready when a refreshable ChatGPT OAuth session is stored. **Disconnect** explicitly clears that session; ordinary redacted settings saves preserve it.
+`openai-codex` ignores `OPENAI_API_KEY`. It is ready when a refreshable ChatGPT OAuth session is stored. **Disconnect** explicitly clears the session; ordinary redacted settings saves preserve it.
 
-Follow [Provider setup](../guides/provider-setup.md) to configure credentials. For readiness failures, use [Troubleshooting](../troubleshooting/README.md#provider-not-ready).
+Configure credentials with [Provider setup](../guides/provider-setup.md). For readiness failures, see [Troubleshooting](../troubleshooting/README.md#provider-not-ready).
 
 ## Provider and model selection
 
-A node provider overrides the shared workflow provider, which overrides the active provider. The effective profile supplies credentials, available models, and defaults. A node with an empty model inherits that profile’s default model; an explicit node model wins. Every referenced provider must be ready before the run starts. Provider failures do not trigger failover to another provider.
+Node provider → shared workflow provider → active provider: the most specific wins. The effective profile supplies credentials, available models, and defaults. An empty node model inherits that profile's default model; an explicit node model wins.
 
-For configuration steps, use [Provider setup](../guides/provider-setup.md). The [adapter architecture](../architecture/provider-adapters.md) describes HTTP protocols and request mapping.
+Every referenced provider must be ready before the run starts. A provider failure never fails over to another provider.
+
+[Provider setup](../guides/provider-setup.md) covers configuration. The [adapter architecture](../architecture/provider-adapters.md) covers HTTP protocols and request mapping.
