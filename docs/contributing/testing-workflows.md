@@ -1,16 +1,16 @@
 # Testing workflows
 
-Use deterministic tests to check workflow contracts, provider fixtures to check wire formats, and an authorized live smoke test to check a real account. Each gives different evidence; a fixture pass does not establish live-provider compatibility.
+Deterministic tests check workflow contracts, provider fixtures check wire formats, and an authorized live smoke checks a real account. A fixture pass doesn't prove live-provider compatibility.
 
 ## Test placement conventions
 
 ### Rust unit tests
 
-1. Unit tests live in a `#[cfg(test)] mod tests { ... }` block at the bottom of the source file they test.
-2. If the test module exceeds ~150 lines, move it to a sibling file:
+1. Unit tests go in a `#[cfg(test)] mod tests { ... }` block at the bottom of the file they test.
+2. Past ~150 lines, move the module to a sibling file:
    - `foo.rs` → `foo_tests.rs` in the same directory, declared as `#[cfg(test)] mod foo_tests;` (see `adapters/tool_impl/edit/patch_tests.rs`).
    - `mod.rs` → `tests.rs` in the same directory, declared as `#[cfg(test)] mod tests;` (see `run/execution/tests.rs`).
-3. Every extracted test module declaration carries `#[cfg(test)]` so test code never compiles into release builds.
+3. Every extracted module declaration carries `#[cfg(test)]`, so tests never compile into release builds.
 4. No other variants: no `*_test.rs`, no `test_*.rs`, no `tests/` directories inside `src/`.
 
 ### Rust integration / acceptance tests
@@ -20,10 +20,10 @@ Use deterministic tests to check workflow contracts, provider fixtures to check 
 
 ### Frontend (TypeScript) tests
 
-- Vitest files sit next to the source they test: `foo.ts` → `foo.test.ts`, `Foo.tsx` → `Foo.test.tsx`.
+- Vitest files sit next to their source: `foo.ts` → `foo.test.ts`, `Foo.tsx` → `Foo.test.tsx`.
 - No `__tests__/` directories.
 
-When materially editing a file with older test placement, bring its tests into this layout in the same change. Do not migrate unrelated tests.
+When you materially edit a file with older test placement, move its tests to this layout in the same change. Leave unrelated tests alone.
 
 ## Local dev loops
 
@@ -35,7 +35,7 @@ When materially editing a file with older test placement, bring its tests into t
 
 ## Playwright visual regression (chat segments)
 
-Browser-only E2E with mocked IPC in `crates/desktop/e2e/`. Snapshots assert multi-node chat segment dividers and spacing (dark theme).
+Browser-only E2E with mocked IPC, in `crates/desktop/e2e/`. Snapshots assert multi-node chat segment dividers and spacing (dark theme).
 
 | Goal | Command |
 | --- | --- |
@@ -45,11 +45,15 @@ Browser-only E2E with mocked IPC in `crates/desktop/e2e/`. Snapshots assert mult
 | Full browser E2E smoke | `npm --prefix crates/desktop run e2e:browser` |
 | Providers settings E2E | `npm --prefix crates/desktop/e2e run test:browser -- tests/settings-providers.spec.ts` |
 
-Visual tests use a fixed 1280×900 viewport, `deviceScaleFactor: 1`, and a static three-node settled-run fixture (`fixtures/multiSegmentChat.ts`). Not included in `./scripts/verify.sh` by default (Chromium install + ~30s).
+Visual tests use a fixed 1280×900 viewport, `deviceScaleFactor: 1`, and a static three-node settled-run fixture (`fixtures/multiSegmentChat.ts`). `./scripts/verify.sh` skips them by default (Chromium install + ~30s).
 
 ## Runner
 
-All Rust tests use [cargo-nextest](https://nexte.st/) (`cargo nextest run`). Verify scripts, CI, and docs assume nextest: install via `./scripts/setup.sh` or `cargo install cargo-nextest --locked`. Do not use plain `cargo test` for workspace checks.
+All Rust tests use [cargo-nextest](https://nexte.st/) (`cargo nextest run`); verify scripts, CI, and docs assume it. Never use plain `cargo test` for workspace checks. Install with `./scripts/setup.sh` or:
+
+```bash
+cargo install cargo-nextest --locked
+```
 
 ## Fast local compile loop
 
@@ -60,13 +64,17 @@ All Rust tests use [cargo-nextest](https://nexte.st/) (`cargo nextest run`). Ver
 | Clippy one/few crates (not workspace) | `./scripts/check-fast.sh --clippy orchestration` |
 | Tests without desktop/Tauri | `./scripts/test-fast.sh` |
 
-**Bedrock / AWS SDK:** `providers` and `orchestration` leave the `bedrock` feature **off** by default so day-to-day checks skip the AWS crate graph. The `desktop` crate enables `bedrock` for the shipped app. Bedrock-only tests: `cargo nextest run -p providers --features bedrock` (CI runs `./scripts/verify/test-providers-bedrock.sh`).
+**Bedrock / AWS SDK:** `bedrock` is **off** by default in `providers` and `orchestration`, so daily checks skip the AWS crate graph. `desktop` enables it for the shipped app. CI runs `./scripts/verify/test-providers-bedrock.sh`. Bedrock-only tests:
 
-**Linker / cache:** `.cargo/config.toml` sets `linker = "rust-lld"`. Scripts prepend the rustup host `bin` dir to `PATH`. For an interactive shell: `source ./scripts/dev-env.sh`. If `sccache` is installed, scripts set `RUSTC_WRAPPER=sccache`.
+```bash
+cargo nextest run -p providers --features bedrock
+```
+
+**Linker / cache:** `.cargo/config.toml` sets `linker = "rust-lld"`. Scripts prepend the rustup host `bin` dir to `PATH` (interactive shell: `source ./scripts/dev-env.sh`) and set `RUSTC_WRAPPER=sccache` when `sccache` is installed.
 
 ## Orchestration headless E2E (`MockAiStack`)
 
-Integration tests under `crates/orchestration/tests/` drive real orchestration execution (no desktop UI, no HTTP providers) via `run_workflow_headless` or `spawn_interactive_workflow_run`.
+Integration tests in `crates/orchestration/tests/` drive real orchestration execution via `run_workflow_headless` or `spawn_interactive_workflow_run`, with no desktop UI or HTTP providers.
 
 | Goal | Command |
 | --- | --- |
@@ -74,13 +82,13 @@ Integration tests under `crates/orchestration/tests/` drive real orchestration e
 | Contract acceptance (tools, human-input pauses, checkpoints) | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` |
 | Both integration suites | `cargo nextest run -p orchestration --test workflow_e2e --test workflow_acceptance --no-capture` |
 
-Shared helpers live in `crates/orchestration/tests/support/`:
+Shared helpers in `crates/orchestration/tests/support/`:
 
-- **`MockAiStack`** - `impl AiPort` that pops scripted `MockTurn` responses per invoke (`from_invocation_order([...])` consumes the first array entry on the first call).
-- **`run_headless_script`** - thin wrapper around `run_workflow_headless`.
-- **`spawn_interactive_script`** - wrapper for mid-run interrupt/stop scenarios.
+- **`MockAiStack`**: `impl AiPort` popping scripted `MockTurn` responses per invoke; `from_invocation_order([...])` consumes the first entry on the first call.
+- **`run_headless_script`**: thin wrapper around `run_workflow_headless`.
+- **`spawn_interactive_script`**: wrapper for mid-run interrupt/stop scenarios.
 
-Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acceptance.rs`) when stack order is not deterministic (branch/join parallelism).
+When stack order isn't deterministic (branch/join parallelism), use inline `impl AiPort` stubs, like the node-id-aware `ScriptedAi` in `workflow_acceptance.rs`.
 
 ## Test layers
 
@@ -102,14 +110,19 @@ Deterministic acceptance tests must establish:
 1. Root nodes receive `entrypoint.text`.
 2. Downstream nodes receive upstream outputs in deterministic order.
 3. Branch/join workflows complete with all expected node outputs.
-4. Nodes that allow human input start when dependencies are ready, pause when the model requests input, and retain their per-node conversation. They pass structured output downstream only after a valid submit.
-5. Tool-enabled nodes can request one or more tool calls, receive tool results back into the model loop, and still produce the final node output downstream.
-6. Tool approval pauses block progress until an approval decision is supplied, and denied tools surface a structured error without corrupting the run.
+4. Human-input nodes start when dependencies are ready, pause when the model requests input, keep their per-node conversation, and pass structured output downstream only after a valid submit.
+5. Tool-enabled nodes can request one or more tool calls, receive results in the model loop, and still produce the final output downstream.
+6. Tool approval pauses block progress until a decision arrives; denied tools surface a structured error without corrupting the run.
 7. Run trace entries expose queued, running, paused, completed, or failed state transitions.
 8. Chat logs capture system, thinking, user, and assistant messages where relevant, including paused-node follow-up turns and approval prompts.
-9. Malformed final-output repair: a typed repairable candidate triggers one isolated overseer request (no worker transcript/tools); a valid repair becomes the node output handed downstream; an invalid overseer response preserves the original retryable path; secret sentinels never appear in trace, chat, or formatted errors; `outputRepairModel` overrides the repair model when set and otherwise inherits the worker model.
+9. Malformed final-output repair:
+   - A typed repairable candidate triggers one isolated overseer request (no worker transcript/tools).
+   - A valid repair becomes the node output handed downstream.
+   - An invalid overseer response preserves the original retryable path.
+   - Secret sentinels never appear in trace, chat, or formatted errors.
+   - `outputRepairModel` sets the repair model; unset, it inherits the worker model.
 
-Unit tests in `crates/orchestration/src/run/execution/` should additionally prove:
+Unit tests in `crates/orchestration/src/run/execution/` should also prove:
 
 10. `WorkflowSettings.shared_context` is appended to node and subagent system prompts.
 11. `engine::resolve_callable_agent_snapshots` honors `callable_agents` and `allow_all_callable_agents`.
@@ -123,18 +136,22 @@ Store and backend tests should prove:
 
 ### Plan → Execute coverage
 
-For a workflow that enables `WorkflowSettings.planMode`, add focused coverage for:
+For a workflow that enables `WorkflowSettings.planMode`, cover:
 
-1. Validation rejects a missing review node or one without `requestUserInput`.
+1. Validation rejects a missing review node, or one without `requestUserInput`.
 2. Planning denies non-`docs/**/*.md` repository writes, MCP, and subagent calls at both engine and host tool boundaries. Only the configured evidence-source node may mutate `run://PLAN.md` or see/call the seal tool; a read-only evidence source may still mutate the virtual draft.
-3. `write` plus replace-mode `edit` build `run://PLAN.md`; an argument-free `openflow_write_plan_artifact` call always pauses for explicit human approval. Denial leaves the draft mutable. Approval atomically seals it. A repeated successful seal returns the same artifact. The artifact has a host UUID path, 256 KiB cap, SHA-256, replayable `artifact:<uuid>` lookup, and no Markdown transcript payload.
-4. A schema-valid review completion freezes one hash-verified packet; checkpoint/resume preserves it even if saved workflow settings later change.
-5. Implementation, verification, and review requests receive the same packet hash and reference; non-docs repository writes stay blocked until the packet is frozen.
-6. A workflow without Plan Mode has its existing request and tool behavior.
+3. Drafting and sealing:
+   - `write` plus replace-mode `edit` build `run://PLAN.md`.
+   - An argument-free `openflow_write_plan_artifact` call always pauses for explicit human approval.
+   - Denial leaves the draft mutable; approval seals it atomically; a repeated successful seal returns the same artifact.
+   - The artifact has a host UUID path, a 256 KiB cap, SHA-256, replayable `artifact:<uuid>` lookup, and no Markdown transcript payload.
+4. A schema-valid review completion freezes one hash-verified packet, which checkpoint/resume preserves even if saved workflow settings change later.
+5. Implementation, verification, and review requests get the same packet hash and reference. Non-docs repository writes stay blocked until it's frozen.
+6. A workflow without Plan Mode keeps its existing request and tool behavior.
 
 ## Live AI rules
 
-Live AI smoke tests must avoid exact prose assertions. Model output changes naturally, so assert contracts instead:
+Model output varies, so live smoke tests assert contracts, never exact prose:
 
 1. The run completes.
 2. Every expected node has output.
@@ -143,14 +160,14 @@ Live AI smoke tests must avoid exact prose assertions. Model output changes natu
 5. Required fields are non-empty.
 6. A sentinel value such as `ORCHID-91` is preserved exactly across nodes.
 
-Use deterministic `output_repair_*` acceptance tests for the overseer repair release gate. A real model cannot reliably be forced to submit malformed output, so a live smoke cannot consistently exercise that recovery path.
+The deterministic `output_repair_*` acceptance tests are the release gate for overseer repair: a real model can't reliably be forced to emit malformed output, so live smoke can't consistently exercise that path.
 
 ## Seam test placement
 
-1. Test `AiPort` contract behavior with inline `impl AiPort` stubs in the owning test module (see `workflow_acceptance.rs`, `runner.rs` tests).
-2. Test provider wire mapping in `providers/src/mapping/` and `rig_adapter/` (plus `crates/providers/tests/rig_*.rs`).
-3. Test UI desktop seam by mocking `api.ts` wrappers when adding AppProvider behavior tests.
-4. End-to-end behavior remains in existing acceptance/live workflows.
+1. `AiPort` contract behavior: inline `impl AiPort` stubs in the owning test module (see `workflow_acceptance.rs`, `runner.rs` tests).
+2. Provider wire mapping: `providers/src/mapping/` and `rig_adapter/` (plus `crates/providers/tests/rig_*.rs`).
+3. UI desktop seam: mock `api.ts` wrappers when adding AppProvider behavior tests.
+4. End-to-end behavior: the existing acceptance/live workflows.
 
 ## Frontend test placement
 
@@ -163,22 +180,22 @@ Use deterministic `output_repair_*` acceptance tests for the overseer repair rel
 
 ## Verification gate (`scripts/verify.sh`)
 
-Full gate for code PR readiness, releases, cross-layer changes, or an explicitly requested full verification:
+The full gate, for code PR readiness, releases, cross-layer changes, or an explicitly requested full verification:
 
 ```bash
 ./scripts/verify.sh
 ```
 
-Default Rust test step is **`test-fast`** (same lane as CI: engine + providers + orchestration lib + workspace-checks + workflow acceptance). It does **not** build `desktop`/Tauri. Full workspace coverage (including desktop): `./scripts/verify.sh test`.
+Its Rust test step is **`test-fast`**, the CI lane: engine + providers + orchestration lib + workspace-checks + workflow acceptance. It does **not** build `desktop`/Tauri; `./scripts/verify.sh test` covers the full workspace including desktop.
 
-**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`). Use the full gate for code PR readiness; docs/instruction-only changes use link, path, syntax, and diff checks.
+**CI** ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. CI skips the full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`). Docs/instruction-only changes use link, path, syntax, and diff checks instead of the gate.
 
-Run a granular script directly for full untruncated output; run `verify.sh` for the truncated summary gate.
+`verify.sh` truncates output. For full output, run the granular script:
 
 | Step | Granular script |
 | --- | --- |
 | `fmt` | `./scripts/verify/fmt.sh` |
-| `clippy` | `./scripts/verify/clippy.sh` |
+| `clippy` (pedantic/nursery/cargo) | `./scripts/verify/clippy.sh` |
 | `doc` | `./scripts/verify/doc.sh` |
 | `test-fast` (default) | `./scripts/test-fast.sh --execution --skip-ui-typecheck` |
 | `test` (opt-in) | `./scripts/verify/test.sh` (`cargo nextest run --workspace`, includes desktop) |
@@ -202,36 +219,36 @@ Run a granular script directly for full untruncated output; run `verify.sh` for 
 
 | Behavior | Detail |
 | --- | --- |
-| Default | Runs all 11 steps; continues on failure so one run surfaces every broken step |
+| Default | Runs all 11 steps (every step above except opt-in `test` and `--deep` `mutants`); continues on failure so one run surfaces every broken step |
 | Output | One line per step (`PASS fmt (1s)` / `FAIL clippy (41s)`); truncated logs on fail; summary with exact repro commands |
 | Noise | No ANSI/progress escapes (`CARGO_TERM_COLOR=never`, `NO_COLOR=1`, `--quiet` on cargo/npm where supported) |
 | Filter | `./scripts/verify.sh fmt clippy ui-test` - unknown step name lists valid steps and exits 1 |
 | Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` |
 | Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail; default reuses `./target`; `VERIFY_ISOLATE_TARGET=1` for parallel agents (`target/verify-<pid>`); `OPENFLOW_MAX_DEBUG_CACHE_GIB` caps `target/debug` (default 64 GiB); `OPENFLOW_MIN_BUILD_SPACE_GIB` sets the local pre-build free-space floor (default 24 GiB, 8 GiB on GitHub); `0` disables the corresponding disk guard |
 
-**Steps (default):** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **Opt-in:** `test` (full workspace incl. desktop). **`--deep` only:** `mutants`.
+Release verification runs execution, desktop, and orchestration E2E tests on Ubuntu before the macOS builds.
 
-Release verification runs execution and desktop tests plus orchestration E2E on Ubuntu before the macOS builds.
+**One-time installs:**
 
-**One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`.
+```bash
+cargo install cargo-machete typos-cli cargo-mutants cargo-public-api
+```
 
 ## Fast local lane
 
-Use this during normal edit/test loops:
+For normal edit/test loops:
 
 ```bash
 ./scripts/test-fast.sh
 ```
 
-Each leg is also runnable directly under `scripts/verify/test-*.sh` (e.g. `./scripts/verify/test-providers.sh`).
+Each leg also runs alone as `scripts/verify/test-*.sh` (e.g. `./scripts/verify/test-providers.sh`).
 
-The fast lane omits `desktop` and its Tauri/native dependencies, which `cargo nextest run --workspace` rebuilds. Add `cargo nextest run -p desktop` when changing the desktop boundary. Default `./scripts/verify.sh` includes acceptance through `test-fast --execution`; standalone `./scripts/test-fast.sh` requires `--execution` to include it.
+The fast lane skips `desktop` and its Tauri/native dependencies, which `cargo nextest run --workspace` rebuilds. Add `cargo nextest run -p desktop` when you change the desktop boundary. Standalone `./scripts/test-fast.sh` includes workflow acceptance only with `--execution`; default `./scripts/verify.sh` already runs `test-fast --execution`.
 
-Options:
+Options: `--execution`, `--desktop`, or both:
 
 ```bash
-./scripts/test-fast.sh --execution
-./scripts/test-fast.sh --desktop
 ./scripts/test-fast.sh --execution --desktop
 ```
 
@@ -241,11 +258,15 @@ Wall-clock per leg (warm `./target`):
 
 ```bash
 ./scripts/bench-test-legs.sh
-# optional: also time desktop + full workspace
+```
+
+To also time desktop and the full workspace:
+
+```bash
 ./scripts/bench-test-legs.sh --with-opt-in
 ```
 
-Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22). Measure again on your machine before using these timings. A cold compile after a feature or dependency change can take 10× as long.
+Baseline: Apple Silicon laptop, warm incremental build, 2026-07-22. Re-measure on your machine before relying on it. A cold compile after a feature or dependency change can take 10× as long.
 
 | Leg | Script | Rough warm budget |
 | --- | --- | --- |
@@ -257,7 +278,9 @@ Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22).
 | desktop | `test-desktop.sh` | opt-in; Tauri compile dominates |
 | workspace | `test.sh` | opt-in; includes desktop |
 
-**Not pursued after this baseline:** `[profile.test] opt-level` (engine already ~1s warm). **Already applied:** `bedrock` off by default on `providers`/`orchestration` (desktop enables it); ~2× fewer compile units in the fast lane. If provider tests need further optimization, consider shortening the intentional Wiremock timeout tests in `crates/providers/tests/rig_openai_compat.rs`.
+- **Not pursued after this baseline:** `[profile.test] opt-level` (engine is already ~1s warm).
+- **Already applied:** `bedrock` off by default on `providers`/`orchestration` (desktop enables it): ~2× fewer compile units in the fast lane.
+- **Next option for provider tests:** shorten the intentional Wiremock timeout tests in `crates/providers/tests/rig_openai_compat.rs`.
 
 ## When to run each layer
 
@@ -268,11 +291,9 @@ Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22).
 | Code PR / release | `./scripts/verify.sh` |
 | Desktop / full workspace Rust | `./scripts/verify.sh test` or `./scripts/test-fast.sh --desktop` |
 
-`./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and the CI-aligned Rust test lane before commits.
+Before commits, `./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and the CI-aligned Rust test lane. Otherwise pick checks that exercise the affected behavior. Docs/instruction-only edits skip Rust/UI suites unless executable examples or test/build behavior change. Repeat passing coverage only after relevant changes or failures.
 
-For local changes, select the checks that exercise the affected behavior. Docs/instruction-only edits do not need Rust/UI suites unless executable examples or test/build behavior change. Repeat passing coverage only after relevant changes or failures.
-
-Run this when changing durable run persistence, replay, or resume behavior:
+### Durable run persistence, replay, or resume
 
 ```bash
 cargo nextest run -p orchestration --no-capture run::persistence adapters::storage::run_checkpoint_store run::coordinator_tests
@@ -280,7 +301,9 @@ cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 npm --prefix crates/ui run typecheck
 ```
 
-Run this when changing execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
+### Execution behavior
+
+For execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
 
 ```bash
 cargo nextest run -p orchestration --test workflow_acceptance --no-capture
@@ -289,7 +312,7 @@ cargo nextest run -p orchestration execution::
 
 ### Schedule
 
-Schedules live on `WorkflowSettings.schedule` and are evaluated only while the desktop app is open. For scheduler changes, run:
+Schedules live on `WorkflowSettings.schedule` and are evaluated only while the desktop app is open. For scheduler changes:
 
 ```bash
 cargo nextest run -p orchestration --no-capture schedule
@@ -297,24 +320,26 @@ cargo nextest run -p desktop
 npm --prefix crates/ui run test -- src/lib/schedule.test.ts src/api.test.ts
 ```
 
-For end-to-end run behavior, also run:
+For end-to-end run behavior, add:
 
 ```bash
 cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
-Run this when changing project/workflow persistence or bootstrap:
+### Project and workflow persistence or bootstrap
 
 ```bash
 cargo nextest run -p orchestration project_store flow_store backend agent_store
 cargo nextest run -p desktop
 ```
 
-Run this when changing provider wire mapping or tool-argument parsing:
+### Provider wire mapping or tool-argument parsing
 
 ```bash
 cargo nextest run -p providers
 ```
+
+### Chat attachments
 
 For chat attachments, also run:
 
@@ -328,26 +353,20 @@ npm --prefix crates/ui run typecheck
 npm --prefix crates/ui run test -- src/api.test.ts src/components/conversation/ConversationComposer.test.tsx src/components/conversation/MessageAttachments.test.tsx
 ```
 
-These deterministic tests prove persistence and provider wire shape, not that every configured
-model accepts every media type. For live validation, use a generated PNG/PDF with a deterministic
-question, record provider, exact model, transport, date, result, and exact error. Skip only when
-credentials or a compatible configured model are unavailable. Never include credentials or source
-paths in fixtures or logs.
+These prove persistence and provider wire shape, not that every configured model accepts every media type. For live validation:
 
-To check PNG, PDF, and durable attachment replay with the provider and model selected in OpenFlow
-Settings, run:
+- Use a generated PNG/PDF with a deterministic question.
+- Record provider, exact model, transport, date, result, and exact error.
+- Skip only when credentials or a compatible configured model are unavailable.
+- Never include credentials or source paths in fixtures or logs.
 
-```bash
-./scripts/smoke-live-attachments.sh
-```
+For a scripted live check, see the attachment smoke under [Live provider smoke](#live-provider-smoke).
 
-This command is manual-only. CI and `./scripts/verify.sh` never run it. The smoke creates temporary
-PNG and two-page PDF fixtures, verifies an initial media-derived answer, stops and resumes the saved
-run, then asks for a different fact that only the earlier attachment contains. It reports the exact
-provider, model, and transport without logging credentials. A subscription token refresh may update
-saved OAuth credentials, matching normal app behavior.
+### Live provider smoke
 
-Run this only when intentionally checking a real provider/model:
+Run only when you mean to check a real provider/model. The `./scripts/smoke-live-*.sh` commands are manual-only (CI and `./scripts/verify.sh` never run them) and use the providers and model saved in OpenFlow Settings. A subscription token refresh may update saved OAuth credentials, as in normal app use.
+
+Live workflow test with an explicit key and model:
 
 ```bash
 STEP_WORKFLOW_LIVE_AI=1 \
@@ -355,40 +374,6 @@ STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
 STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
 cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```
-
-To check every direct app AI surface with the provider and model already selected in OpenFlow
-Settings, run:
-
-```bash
-./scripts/smoke-live-ai.sh
-```
-
-This command is manual-only. CI and `./scripts/verify.sh` never run it. It loads the same saved
-API key or subscription OAuth credentials as the app, then reports a separate result for:
-
-1. Workflow **Create with AI** producing a valid small DAG. The generated DAG is not executed.
-2. Agent **Create with AI** producing a valid reusable agent in a temporary store.
-3. A separate fixed two-node workflow preserving `ORCHID-91` through its handoff.
-4. The automatic post-run AI review completing without an error.
-5. Two direct chats running against the saved provider concurrently; stopping one leaves the other
-   active and able to answer a follow-up.
-
-The smoke does not save generated workflows or agents. A subscription token refresh may update the
-saved OAuth credentials, matching normal app behavior. Output repair remains covered by deterministic
-acceptance tests because deliberately forcing malformed live model output would make this smoke
-non-deterministic.
-
-To validate real per-node provider routing, configure credentials for the active provider and one
-secondary saved provider, then run:
-
-```bash
-OPENFLOW_LIVE_AI_SECONDARY_PROVIDER=bedrock ./scripts/smoke-live-multi-provider.sh
-```
-
-The active provider becomes the workflow's shared provider. The planning node overrides it with the
-secondary provider; the implementation node inherits the shared provider. Set
-`OPENFLOW_LIVE_AI_PRIMARY_PROVIDER` to override the active-provider default. The smoke writes run
-records only under a temporary directory. Normal OAuth refresh may update saved credentials.
 
 DeepInfra-compatible chat completions example:
 
@@ -400,3 +385,43 @@ STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH="chat/completions" \
 STEP_WORKFLOW_LIVE_MODEL="deepseek-ai/DeepSeek-V4-Flash" \
 cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```
+
+**Every direct app AI surface:**
+
+```bash
+./scripts/smoke-live-ai.sh
+```
+
+Loads the app's saved API key or subscription OAuth credentials, then reports separately on:
+
+1. Workflow **Create with AI** producing a valid small DAG. The generated DAG is not executed.
+2. Agent **Create with AI** producing a valid reusable agent in a temporary store.
+3. A separate fixed two-node workflow preserving `ORCHID-91` through its handoff.
+4. The automatic post-run AI review completing without an error.
+5. Two concurrent direct chats against the saved provider; stopping one leaves the other active and able to answer a follow-up.
+
+Generated workflows and agents aren't saved. Output repair stays with deterministic acceptance tests; forcing malformed live output would make this smoke non-deterministic.
+
+**PNG, PDF, and durable attachment replay:**
+
+```bash
+./scripts/smoke-live-attachments.sh
+```
+
+1. Creates temporary PNG and two-page PDF fixtures.
+2. Verifies an initial media-derived answer.
+3. Stops and resumes the saved run.
+4. Asks for a different fact only the earlier attachment contains.
+
+Reports the exact provider, model, and transport without logging credentials.
+
+**Per-node provider routing** (needs credentials for the active provider and one secondary saved provider):
+
+```bash
+OPENFLOW_LIVE_AI_SECONDARY_PROVIDER=bedrock ./scripts/smoke-live-multi-provider.sh
+```
+
+- The active provider becomes the workflow's shared provider.
+- The planning node overrides it with the secondary; the implementation node inherits the shared one.
+- `OPENFLOW_LIVE_AI_PRIMARY_PROVIDER` overrides the active-provider default.
+- Run records go only to a temporary directory.

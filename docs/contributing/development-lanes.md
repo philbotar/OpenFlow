@@ -1,6 +1,6 @@
 # Development lanes
 
-Choose the row matching the behavior you are changing. Area `AGENTS.md` files define local constraints; the [architecture contract](../architecture/contract.md) defines layer rules.
+Pick the row for the behavior you're changing. Area `AGENTS.md` files set local constraints; the [architecture contract](../architecture/contract.md) sets layer rules.
 
 ## Lanes
 
@@ -15,11 +15,11 @@ Choose the row matching the behavior you are changing. Area `AGENTS.md` files de
 | Cross-layer behavior | [Runtime](../architecture/end-to-end-runtime.md), [testing](testing-workflows.md) | Full gate plus desktop/Bedrock lanes when affected |
 | Docs and agent instructions only | [Docs](../AGENTS.md) | Changed links, anchors, paths, command syntax, examples, and diff |
 
-For async ownership consult [threading](../architecture/threading-concurrency.md); for uncertain terminology consult the [glossary](../glossary.md). Routine edits do not require a full architecture review.
+Async ownership: [threading](../architecture/threading-concurrency.md). Unclear terms: [glossary](../glossary.md). Routine edits don't need a full architecture review.
 
 ## Skills
 
-Use a skill when its guidance helps with the change. A file's location alone does not determine which skill applies; editing crate documentation does not require an implementation skill.
+Use a skill when its guidance helps. File location alone doesn't pick the skill; editing crate docs doesn't need an implementation skill.
 
 | Skill | Use when |
 | --- | --- |
@@ -34,7 +34,7 @@ Use a skill when its guidance helps with the change. A file's location alone doe
 
 ## Verification
 
-Local edits, builds, linting, and tests needed for the task may proceed without per-step approval. Use temporary persistence fixtures. Live-provider smoke is separate: it can use saved credentials and incur charges, so it needs authorization.
+Local edits, builds, linting, and tests the task needs run without per-step approval. Use temporary persistence fixtures. Live-provider smoke can use saved credentials and incur charges, so it needs authorization.
 
 | Purpose | Command |
 | --- | --- |
@@ -52,12 +52,12 @@ Local edits, builds, linting, and tests needed for the task may proceed without 
 | Code PR readiness, release, cross-layer change, or requested full gate | `./scripts/verify.sh` |
 | Full workspace Rust only | `./scripts/verify.sh test` |
 
-Docs/instruction-only changes do not need Rust/UI suites unless they affect executable examples or test/build behavior. Choose focused checks for local changes. Do not repeat passing coverage without new changes, failures, or unresolved concerns.
+Use focused checks for local changes. Docs/instruction-only changes skip Rust/UI suites unless they affect executable examples or test/build behavior. Rerun passing coverage only after new changes, failures, or unresolved concerns.
 
-The default full gate includes workflow acceptance through `test-fast --execution`; no duplicate standalone acceptance run is needed. It excludes desktop/Tauri and Bedrock-specific coverage. Add those lanes when affected. `--deep` adds optional mutation testing. See [testing workflows](testing-workflows.md) for test placement, granular commands, and environment constraints.
+The default full gate already runs workflow acceptance via `test-fast --execution`; don't add a standalone run. It excludes desktop/Tauri and Bedrock-specific coverage, so add those lanes when affected. `--deep` adds optional mutation testing. [Testing workflows](testing-workflows.md) covers test placement, granular commands, and environment constraints.
 
 ## Completion
 
-Verify the behavior at the code or UI that consumes it, fix failures caused by the change, and report checks and remaining limitations. Reuse results from checks run against unchanged code; report pending CI and blocked checks as such.
+Verify the behavior where it's consumed (code or UI), fix failures the change caused, and report checks and remaining limitations. Reuse results from checks on unchanged code. Report pending CI and blocked checks as such.
 
-Stop at a requested review point, a decision that needs user input, or an external blocker, and state the exact next action. Completing verification does not authorize publication.
+Stop at a requested review point, a decision needing user input, or an external blocker, and state the exact next action. Finishing verification doesn't authorize publication.

@@ -1,6 +1,6 @@
 # Development commands
 
-Run commands from the repository root. [Build from source](../getting-started/build-from-source.md) covers the toolchain and first launch. [Testing workflows](testing-workflows.md) defines which checks each change needs.
+Run from the repository root. Toolchain and first launch: [Build from source](../getting-started/build-from-source.md). Which checks each change needs: [Testing workflows](testing-workflows.md).
 
 | Goal | Command |
 | --- | --- |
@@ -10,7 +10,7 @@ Run commands from the repository root. [Build from source](../getting-started/bu
 | Frontend typecheck | `npm --prefix crates/ui run typecheck` |
 | Fast Rust lane | `./scripts/test-fast.sh` |
 | Fast lane with execution tests | `./scripts/test-fast.sh --execution` |
-| Full verification gate | `./scripts/verify.sh` (default Rust tests = `test-fast`; desktop via `./scripts/verify.sh test`) |
+| Full verification gate | `./scripts/verify.sh` (Rust tests = `test-fast`; desktop via `./scripts/verify.sh test`) |
 | Leg timing | `./scripts/bench-test-legs.sh` |
 | Architecture checks only | `./scripts/check-architecture.sh` |
 | Workflow acceptance | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` |
@@ -18,15 +18,11 @@ Run commands from the repository root. [Build from source](../getting-started/bu
 
 ## Architecture check config
 
-Run architecture checks with:
-
 ```bash
 ./scripts/check-architecture.sh
 ```
 
-The machine-readable rule file is [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml). The workspace-check tooling owns this file.
-
-Human-readable architecture rules live in [`../architecture/contract.md`](../architecture/contract.md).
+Machine-readable rules: [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml), owned by the workspace-check tooling. Human-readable rules: [`../architecture/contract.md`](../architecture/contract.md).
 
 ## Verification quick path
 
@@ -38,14 +34,8 @@ Human-readable architecture rules live in [`../architecture/contract.md`](../arc
 | Full workspace Rust (incl. desktop) | `./scripts/verify.sh test` |
 | Parallel agents on one machine | `VERIFY_ISOLATE_TARGET=1 ./scripts/verify.sh` |
 
-```bash
-./scripts/check-fast.sh
-./scripts/test-fast.sh
-./scripts/verify.sh
-```
+Default `verify` reuses `./target` and runs the CI-aligned `test-fast` lane (no desktop; Bedrock/AWS off unless desktop/featured). Opt in to the full workspace with `./scripts/verify.sh test`, and to mutation testing with `./scripts/verify.sh --deep`.
 
-Default verify reuses `./target` and runs the CI-aligned `test-fast` lane (no desktop; Bedrock/AWS off unless desktop/featured). Opt-in full workspace: `./scripts/verify.sh test`.
+Intentional changes to the engine's public surface need an updated `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
 
-Intentional changes to engine's public surface require updating `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
-
-[Testing workflows](testing-workflows.md) lists checks by behavior. Run `./scripts/verify.sh --deep` to add mutation testing.
+[Testing workflows](testing-workflows.md) lists checks by behavior.

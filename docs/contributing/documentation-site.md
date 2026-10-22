@@ -1,8 +1,8 @@
 # Documentation website
 
-Edit the Markdown in `docs/`. VitePress builds the website and its local search index from those files. GitHub keeps using the same relative Markdown links; the website resolves them during the build.
+Edit the Markdown in `docs/`. VitePress builds the website and its local search index from it. Relative links work on GitHub too; the build resolves them for the site.
 
-Install [Bun](https://bun.sh/docs/installation) 1.3.14 and Node.js 22, then run these commands from the repository root:
+Install [Bun](https://bun.sh/docs/installation) 1.3.14 and Node.js 22. From the repository root:
 
 ```bash
 cd docs
@@ -10,7 +10,7 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-Open the local URL printed by VitePress. To check the production build:
+Open the local URL VitePress prints. To check the production build:
 
 ```bash
 bun run typecheck
@@ -19,33 +19,54 @@ bun run check
 bun run preview
 ```
 
-`check` verifies that every internal link, image, and anchor in the built site resolves; run it after `build`. Links to repository files outside `docs/`, and to pages the site does not publish, open the file on GitHub.
+- `typecheck` checks the VitePress config.
+- `check` verifies every internal link, image, and anchor in the built site. Run it after `build`.
+- Links to repository files outside `docs/`, or to unpublished pages, open the file on GitHub.
 
-The site path comes from `DOCS_SITE_URL`, which defaults to `https://philbotar.github.io/OpenFlow/`. The build uses that URL's path as the site base, so the default is `/OpenFlow/`, and it uses the full URL in the sitemap. For hosting at a domain root, set the variable to that root, for example `DOCS_SITE_URL=https://docs.example.com/ bun run build`. `typecheck` checks the VitePress config.
+`DOCS_SITE_URL` sets the site URL. Default: `https://philbotar.github.io/OpenFlow/`. The build uses its path as the site base (`/OpenFlow/` by default) and the full URL in the sitemap. To host at a domain root, set the root:
+
+```bash
+DOCS_SITE_URL=https://docs.example.com/ bun run build
+```
 
 ## Pages and navigation
 
-[The landing page source](../index.md) supplies the website home page. [OpenFlow overview](../README.md) is the product entry point for GitHub and appears at `overview.html` on the site. Other `README.md` pages become directory indexes: `getting-started/README.md` becomes `getting-started/`.
+- [The landing page source](../index.md) is the site home page.
+- [OpenFlow overview](../README.md) is the GitHub entry point; on the site it's `overview.html`.
+- Other `README.md` pages become directory indexes: `getting-started/README.md` → `getting-started/`.
 
-Add new guides to [the docs index](../README.md) and to the sidebar in `docs/.vitepress/config.ts`. The build includes Markdown pages automatically, except `AGENTS.md`, `CONTEXT.md`, `ROADMAP.md`, and files under `work-specs/`. Links to those files and to repository source open GitHub.
+Add new guides to [the docs index](../README.md) and the sidebar in `docs/.vitepress/config.ts`. The build includes every Markdown page except `AGENTS.md`, `CONTEXT.md`, `ROADMAP.md`, and `work-specs/`. Links to those, and to repository source, open GitHub.
 
-Use relative links to existing files and keep commands inside fenced code blocks. Mermaid fences render as diagrams in the browser and follow the light/dark theme; if rendering fails, the source shows instead. The site uses the OpenFlow app icon with the default VitePress theme: navigation, local search, and light/dark controls.
+Use relative links to existing files. Keep commands in fenced code blocks. Mermaid fences render as diagrams that follow the light/dark theme; if rendering fails, the source shows. The site uses the OpenFlow app icon on the default VitePress theme (navigation, local search, light/dark controls).
 
 ## Product screenshots
 
-Store product captures in `docs/public/media/screenshots/`. Use a relative Markdown image destination such as `../public/media/screenshots/release-checklist-inspector.png` from a guide. Link the image to the same file so readers can open it at full size. These paths render on GitHub; the website maps public assets under `/OpenFlow/media/`, and Markdown exports use the absolute deployed image URL. Components use VitePress `withBase()` for asset URLs.
+Store captures in `docs/public/media/screenshots/`. From a guide, use a relative image path such as `../public/media/screenshots/release-checklist-inspector.png`, and link the image to the same file for full-size viewing. These paths render on GitHub. The site maps public assets under `/OpenFlow/media/`; Markdown exports use the absolute deployed image URL. Components use VitePress `withBase()` for asset URLs.
 
-The current PNG captures were taken from installed OpenFlow 0.1.23 on macOS on 7 September 2026. Appshots was used to inspect and arrange the app, but its 1264 × 768 compressed JPEG output was too soft for the landing page. Window-only macOS `screencapture` produced the original lossless 2880 × 1750 PNGs used here, without resizing or UI alterations. That provides more than 2 source pixels per CSS pixel at the landing image’s 1120px maximum width. Inspect text and composition as well as dimensions; a large image can still be blurry.
+Place each screenshot next to the action it explains, with descriptive alt text and a short caption. The `product-shot` figure style fits the guide column; the full-size link keeps it readable on small screens. Keep prompt text and instructions out of the image. Use diagrams for dependency semantics, screenshots for real controls and states.
 
-`offline-search-canvas.png` shows the prepared five-node branch-and-join workflow before execution. `release-checklist-inspector.png` and `release-checklist-run.png` show the previously approved, completed tutorial run. Sidebars are hidden to exclude personal data. The tutorial keeps its two-agent scope; the landing showcase demonstrates a richer dependency graph. The tutorial frames the Inspector portion with CSS at its native logical width; opening the image retains the complete original.
+Current PNGs: installed OpenFlow 0.1.23, macOS, 7 September 2026.
 
-Keep screenshots next to the action they explain, with descriptive alt text and a short caption. The `product-shot` figure style fits the guide column; a full-size link preserves readability on small screens. Keep prompt text and instructions outside the image, too. Use diagrams for dependency semantics, and screenshots for actual controls and states.
+- Appshots inspected and arranged the app, but its 1264 × 768 compressed JPEGs were too soft for the landing page.
+- Window-only macOS `screencapture` produced the lossless 2880 × 1750 originals, unresized and unaltered: more than 2 source pixels per CSS pixel at the landing image's 1120px maximum width.
+- Check text and composition, not just dimensions; a large image can still be blurry.
+
+| File | Shows |
+| --- | --- |
+| `offline-search-canvas.png` | The prepared five-node branch-and-join workflow, before execution |
+| `release-checklist-inspector.png`, `release-checklist-run.png` | The previously approved, completed tutorial run |
+
+Sidebars are hidden to exclude personal data. The tutorial keeps its two-agent scope; the landing showcase shows a richer dependency graph. The tutorial crops the Inspector with CSS at its native logical width; opening the image shows the full original.
 
 ### Guide capture inventory
 
-The additional guide captures below were taken on 7 September 2026 from installed OpenFlow 0.1.23. Appshots/computer use inspected and arranged the real app; window-only macOS `screencapture -x -o -l WINDOW_ID -t png` captured fresh 2880 × 1750 PNGs. The current window ID was discovered for this session. `sips` checked PNG format and pixel dimensions immediately after capture and extracted detail regions without resampling. No compressed previews, generated UI, or upscaling were used.
+Also from installed OpenFlow 0.1.23, 7 September 2026:
 
-All filenames below are under `docs/public/media/screenshots/`. The maximum CSS widths preserve at least two source pixels per displayed pixel. Each image is also a link: most open the complete native window; the two privacy crops open the complete retained detail because the surrounding window contained unrelated user data and is not published.
+1. Appshots/computer use inspected and arranged the real app.
+2. Window-only macOS `screencapture -x -o -l WINDOW_ID -t png` captured fresh 2880 × 1750 PNGs, with the window ID discovered for that session.
+3. `sips` checked PNG format and pixel dimensions right after capture and cut detail regions without resampling.
+
+No compressed previews, generated UI, or upscaling. Files are under `docs/public/media/screenshots/`. Maximum CSS widths keep at least two source pixels per displayed pixel. Every image links to its original: most to the full native window, the two privacy crops to the full retained detail (the surrounding window held unrelated user data and isn't published).
 
 | Guide / state | Detail PNG | Pixels / maximum CSS width | Full-window original |
 | --- | --- | --- | --- |
@@ -57,19 +78,24 @@ All filenames below are under `docs/public/media/screenshots/`. The maximum CSS 
 | Scheduling, disabled demo | `schedule-time-and-days.png` | 700 × 520 / 350px | Privacy crop: complete dialog retained |
 | Help, final guided-tour step | `help-tour-replay.png` | 1110 × 430 / 555px | Privacy crop: Help and complete tour card retained |
 
-The branching workflow was not executed. The prepared chat was not sent. The disposable `OpenFlow-docs-demo` project was registered in temporary storage, and the demo schedule was saved Off with Next: Never. No new model requests were started. The History capture documents a real stored `completed` status, not a verified successful deliverable: the earlier tutorial conversation included a completion summary and run-review concerns about its output. Do not reuse it as evidence of a substantive final checklist.
+During capture, the branching workflow wasn't run and the prepared chat wasn't sent. The disposable `OpenFlow-docs-demo` project lived in temporary storage. The demo schedule was saved Off with Next: Never. No new model requests started.
 
-The review covered installation and provider setup, first workflow, authoring and Inspector, direct chats, runs and recovery, projects, scheduling, app navigation, and tools/integrations. The existing tutorial step rail and diagrams remain. Provider authentication stays in text to avoid publishing configured credentials or account details; recovery retains its decision diagram rather than fabricating an approval, failure, or resumed state. The Help capture shows the replayable tour, not a fresh-install onboarding state.
+The History capture shows a real stored `completed` status, not a verified good deliverable: that tutorial conversation had a completion summary plus run-review concerns about its output. Don't cite it as evidence of a substantive final checklist.
+
+The review covered installation and provider setup, first workflow, authoring and Inspector, direct chats, runs and recovery, projects, scheduling, app navigation, and tools/integrations. The tutorial step rail and diagrams stay. Provider authentication stays text-only so no credentials or account details are published. Recovery keeps its decision diagram instead of a fabricated approval, failure, or resumed state. The Help capture shows the replayable tour, not fresh-install onboarding.
 
 ## Publish
 
-The build output is a static directory, `docs/.vitepress/dist/`. No OpenFlow backend or model credentials are required, and any static host that serves directory indexes can serve it.
+`bun run build` outputs a static directory, `docs/.vitepress/dist/`. It needs no OpenFlow backend or model credentials; any static host that serves directory indexes works.
 
 ### GitHub Pages
 
-The [documentation workflow](../../.github/workflows/docs.yml) type-checks and builds on pull requests. On `main`, it also deploys the generated site to GitHub Pages. It can run manually from the Actions tab.
+The [documentation workflow](../../.github/workflows/docs.yml) type-checks, builds, and runs `bun run check` on pull requests. On `main` it also deploys to GitHub Pages. You can run it manually from the Actions tab.
 
-In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. After the workflow and documentation changes reach `main`, the default address is `https://philbotar.github.io/OpenFlow/`. For a custom domain, configure it in **Settings → Pages**, add the DNS records GitHub specifies, and set the repository Actions variable `DOCS_SITE_URL` to the full public URL, including its path and trailing slash.
+1. In **Settings → Pages**, set **Source** to **GitHub Actions**.
+2. Once the workflow and docs reach `main`, the site is at `https://philbotar.github.io/OpenFlow/`.
+
+For a custom domain, configure it in **Settings → Pages**, add the DNS records GitHub lists, and set the repository Actions variable `DOCS_SITE_URL` to the full public URL, with path and trailing slash.
 
 ### Other static hosts
 
