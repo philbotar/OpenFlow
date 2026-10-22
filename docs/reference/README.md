@@ -2,7 +2,7 @@
 
 <a id="reference"></a>
 
-OpenFlow keeps app-managed data under `{data_local}/openflow/` and project data under the selected project’s `.flow/` directory.
+App-managed data lives under `{data_local}/openflow/`; project data lives in the selected project's `.flow/` directory.
 
 ## Runtime and persistence paths
 
@@ -25,29 +25,23 @@ OpenFlow keeps app-managed data under `{data_local}/openflow/` and project data 
 | ChatGPT Codex OAuth | Plaintext in `settings.json` as `ProviderProfile.codex_oauth`; redacted from normal settings IPC |
 | MCP inputs and OAuth | Plaintext in `mcp-secrets.json`; `settings.json` and exports contain opaque refs only |
 
-`AppBackend::load_all_workflows` merges app-store and project-discovered workflows. Project files win on ID collision.
-Run start accepts a project ID, then the backend resolves the cwd and run root. Project runs use
-the exact selected project; app workflow/chat runs use the isolated managed folders above.
-OpenFlow does not use a global `~/.flow`; `.flow` stays project-local.
+`AppBackend::load_all_workflows` merges app-store and project-discovered workflows; project files win on ID collision.
 
-Chat checkpoints persist attachment refs only: generated ID, sanitized filename, media type, byte
-size, SHA-256, and kind. They never persist source paths or inline attachment bytes. The
-orchestration layer verifies and hydrates managed bytes immediately before provider invocation.
-Browser paste/drop staging uses opaque tokens under app data; successful sends or explicit removal
-clean staged copies, with 24-hour stale cleanup as fallback.
+Run start takes a project ID, and the backend resolves the cwd and run root. Project runs use the exact selected project; app workflow and chat runs use the isolated managed folders above. There is no global `~/.flow`; `.flow` stays project-local.
+
+Browser paste/drop staging uses opaque tokens under app data. A successful send or explicit removal cleans up staged copies; stale copies are removed after 24 hours as a fallback.
 
 <a id="provider-key-resolution"></a>
 
-Credential precedence is defined in [Provider profiles](providers.md#provider-key-resolution). [Security and data](../security-and-data.md) describes which values are sensitive and which services receive them.
+[Provider profiles](providers.md#provider-key-resolution) defines credential precedence. [Security and data](../security-and-data.md) covers which values are sensitive and which services receive them.
 
 <a id="dev-commands"></a>
 <a id="architecture-check-config"></a>
 
-For source checkouts, use [Development commands](../contributing/commands.md) and the [architecture check configuration](../contributing/commands.md#architecture-check-config).
-
+For source checkouts, see [Development commands](../contributing/commands.md) and the [architecture check configuration](../contributing/commands.md#architecture-check-config).
 
 ## Chat records
 
-OpenFlow stores chat metadata and a durable run ID, then uses the workflow runtime to execute each conversation. Direct chats have no visible nodes, do not appear on the workflow canvas, and do not enter `workflows.json`.
+OpenFlow stores chat metadata and a durable run ID, and runs each conversation on the workflow runtime. Direct chats have no visible nodes, do not appear on the workflow canvas, and are not in `workflows.json`.
 
-Attachment checkpoints store a generated ID, sanitized filename, media type, byte size, SHA-256, and kind. They do not store source paths or inline bytes.
+Chat checkpoints store attachment refs only: generated ID, sanitized filename, media type, byte size, SHA-256, and kind. They never store source paths or inline bytes. Orchestration verifies and hydrates the managed bytes immediately before provider invocation.

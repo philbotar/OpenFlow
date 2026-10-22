@@ -1,16 +1,14 @@
 # Threading and concurrency
 
-Orchestration uses the Tauri Tokio runtime handle in the desktop app. The [architecture contract](contract.md) defines ownership across the runtime boundaries. Tests can still construct `AppBackend` with an owned Tokio runtime through `AppBackend::new(...)`. Each workflow run has one execution task. Within a DAG layer, ready AI calls and tool batches run concurrently via `FuturesUnordered`; completions apply to engine state one at a time. Shared tools may also batch in parallel under `ToolPortImpl`. Concurrency constraints include:
+Orchestration runs on the Tauri Tokio runtime handle in the desktop app. Each workflow run has one execution task. Within a DAG layer, ready AI calls and tool batches run concurrently via `FuturesUnordered`, and completions apply to engine state one at a time. The [architecture contract](contract.md) defines ownership across the runtime boundaries.
 
-1. **Runtime split outside Tauri** when tests or helper entry points construct `AppBackend` with a separate owned runtime.
-2. **Blocking I/O coverage** that depends on dispatching filesystem and subprocess work through `spawn_blocking`.
-3. **Layer-bounded concurrency**: independent nodes only overlap while they share a ready layer; later layers still wait.
-4. **Addressable run sessions** with shared provider/tool budgets and one mutation lease per canonical execution cwd.
-5. **Many sync Tauri commands** doing filesystem or settings I/O on the command thread pool.
+Concurrency constraints:
 
-Each run retains its own per-tool semaphores for `ToolConcurrency::Exclusive`. All runs also share process-wide provider and executable-tool budgets. Different workflows may run concurrently; one workflow owns at most one active run. The registry targets 64 in-process sessions by evicting the oldest inactive session first. It never evicts active sessions, so the count may temporarily exceed 64.
-
----
+1. **Runtime split outside Tauri**: tests or helper entry points can construct `AppBackend` with a separate owned runtime through `AppBackend::new(...)`.
+2. **Blocking I/O coverage** depends on dispatching filesystem and subprocess work through `spawn_blocking`.
+3. **Layer-bounded concurrency**: independent nodes overlap only while they share a ready layer; later layers still wait.
+4. **Addressable run sessions** share provider/tool budgets and hold one mutation lease per canonical execution cwd.
+5. **Many sync Tauri commands** do filesystem or settings I/O on the command thread pool.
 
 ## Process & runtime topology
 
@@ -60,23 +58,17 @@ flowchart TB
 | Tauri commands + event fanout | `tauri::async_runtime` | `crates/desktop/src/lib.rs` |
 | Sync file commands | Tauri blocking pool | `crates/desktop/src/lib.rs` |
 
-`AppBackend::with_runtime_handle()` uses the runtime handle passed by desktop. Tests can still create an owned `tokio::runtime::Runtime` and pass its handle into `AppBackend::new(...)`.
-
-Workflow runs are spawned by `spawn_interactive_workflow_run()` (`crates/orchestration/src/run/execution/mod.rs`).
-
-The event bridge runs on Tauri's runtime in `start_run()` (`crates/desktop/src/lib.rs`), which spawns a task on `tauri::async_runtime` to recv execution events, apply them to run state, and emit `run-state` to the UI.
+- `AppBackend::with_runtime_handle()` uses the handle desktop passes in. Tests can instead create an owned `tokio::runtime::Runtime` and pass its handle to `AppBackend::new(...)`.
+- `spawn_interactive_workflow_run()` (`crates/orchestration/src/run/execution/mod.rs`) spawns workflow runs.
+- `start_run()` (`crates/desktop/src/lib.rs`) spawns the event bridge on `tauri::async_runtime`. The bridge receives execution events, applies them to run state, and emits `run-state` to the UI.
 
 ### Issue: runtime split outside the desktop path
 
-In the desktop path, the same Tauri runtime handle is used for command tasks and run execution. In tests or bespoke non-Tauri entry points, `AppBackend` may still be constructed with a separate owned runtime. That split is useful for local construction, but it should not become the production path.
-
-Keep desktop execution on the injected Tauri runtime handle. Reserve owned runtimes for tests or explicit non-Tauri entry points.
-
----
+On the desktop path, command tasks and run execution share the Tauri runtime handle. Tests or bespoke non-Tauri entry points may still construct `AppBackend` with a separate owned runtime. That split is useful for local construction but must not become the production path: keep desktop execution on the injected handle, and reserve owned runtimes for tests or explicit non-Tauri entry points.
 
 ## Workflow execution model (one task, concurrent layer work)
 
-Each run is a **single async task**. Inside that task, `InteractiveEngine::run()` drives a `FuturesUnordered` of ready work: model invocations and tool batches for all nodes currently runnable in the layer. Completions are applied serially as they arrive. Within one tool batch, `ToolPortImpl` can run adjacent `ToolConcurrency::Shared` tools in parallel and serializes `ToolConcurrency::Exclusive` tools with per-tool semaphores.
+Each run is a **single async task**. Inside it, `InteractiveEngine::run()` drives a `FuturesUnordered` of ready work: model invocations and tool batches for every node runnable in the layer. Completions apply serially as they arrive. Within one tool batch, `ToolPortImpl` runs adjacent `ToolConcurrency::Shared` tools in parallel and serializes `ToolConcurrency::Exclusive` tools with per-tool semaphores.
 
 ```mermaid
 stateDiagram-v2
@@ -95,23 +87,21 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
-The host loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive/mod.rs`). It calls `InteractiveEngine::run()`, which invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
+The host loop, `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive/mod.rs`), calls `InteractiveEngine::run()`. The engine invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
 
 ### Layer parallelism (implemented)
 
-`execution_layers()` groups nodes by dependency depth. When a layer is active, `InteractiveEngine` schedules every ready AI call and tool batch into one `FuturesUnordered` pool (`crates/engine/src/execution/interactive_engine/mod.rs`). Independent nodes in the same layer therefore overlap in wall time; state updates remain single-threaded on completion.
+`execution_layers()` groups nodes by dependency depth. For the active layer, `InteractiveEngine` schedules every ready AI call and tool batch into one `FuturesUnordered` pool (`crates/engine/src/execution/interactive_engine/mod.rs`). Independent nodes in a layer overlap in wall time; state updates stay single-threaded on completion.
 
 ### Subagent waits
 
-A subagent runs inside its parent's tool batch and shares `ai`, `tool_runner`, and channels. The parent waits for its result. Other ready nodes in the layer continue through the engine's `FuturesUnordered` pool; the subagent does not block the whole run.
-
----
+A subagent runs inside its parent's tool batch and shares `ai`, `tool_runner`, and channels. The parent waits for its result. Other ready nodes in the layer continue through the engine's `FuturesUnordered` pool, so the subagent does not block the whole run.
 
 ## Blocking I/O coverage
 
-`ToolRunner` and `RunCoordinator` use **`spawn_blocking`** for search/find/write/edit/patch, local reads, preview/git/revert, execution cwd resolution, and large artifact spills. Desktop and orchestration share one **injected Tokio `Handle`** (Tauri runtime in production).
+`ToolRunner` and `RunCoordinator` use **`spawn_blocking`** for search/find/write/edit/patch, local reads, preview/git/revert, execution cwd resolution, and large artifact spills. Desktop and orchestration share one **injected Tokio `Handle`** (the Tauri runtime in production).
 
-`ToolRunner::execute` is `async`, and concrete local filesystem or subprocess work should stay inside blocking tasks:
+`ToolRunner::execute` is `async`. Keep concrete local filesystem and subprocess work inside blocking tasks:
 
 ```mermaid
 flowchart LR
@@ -134,28 +124,26 @@ flowchart LR
     EX --> HTTP
 ```
 
-Examples from `crates/orchestration/src/tool/dispatch.rs` and `crates/orchestration/src/run/coordinator/mod.rs`:
+Sync work in `crates/orchestration/src/tool/dispatch.rs` and `crates/orchestration/src/run/coordinator/mod.rs`:
 
-- `fs::read_to_string`, `fs::read_dir`, `fs::metadata` - sync
-- `WalkDir` over large trees - sync
-- `Command::new("ast-grep").output()` - sync subprocess wait
-- `search()` - reads every file, regex every line - sync
+- `fs::read_to_string`, `fs::read_dir`, `fs::metadata`
+- `WalkDir` over large trees
+- `Command::new("ast-grep").output()` (sync subprocess wait)
+- `search()`, which reads every file and runs the regex on every line
+
+`read_url` uses async HTTP. Local filesystem and subprocess tools should keep using `spawn_blocking`.
 
 ### Impact
 
-During a large `search` or `find` tool call, the blocking closure can still consume blocking-pool capacity:
+A large `search` or `find` call can still consume blocking-pool capacity:
 
 1. The run task waits for the blocking work to finish.
 2. Other blocking tasks can queue behind long file scans or subprocess calls.
 3. UI commands that also need blocking-pool work can feel delayed.
 
-`read_url` uses async HTTP. Local filesystem and subprocess tools should continue to use `spawn_blocking`.
-
----
-
 ## Tauri command threading
 
-Most commands are **synchronous `fn`**, not `async fn`:
+Most commands are **synchronous `fn`**, not `async fn`. Only a handful are `async fn`; the rest block a Tauri worker. Sync commands call straight into orchestration stores (`crates/orchestration/src/adapters/storage/`).
 
 ```mermaid
 flowchart TB
@@ -171,17 +159,11 @@ flowchart TB
     AsyncCmd --> Mutex["lock RunSession"]
 ```
 
-Sync commands call straight into orchestration stores (`crates/orchestration/src/adapters/storage/`).
-
 ### Impact
 
-- Saving workflows while a run is active competes for disk I/O on a blocking pool thread - usually fine, but large files can delay command responses.
+- Saving workflows during an active run competes for disk I/O on a blocking pool thread. Usually fine, but large files can delay command responses.
 - Provider API key load/save reads and writes `settings.json` synchronously.
-- UI awaits `invoke()` - long sync commands make the app feel frozen.
-
-Only a handful of commands are `async fn`. The rest block a Tauri worker.
-
----
+- The UI awaits `invoke()`, so long sync commands make the app feel frozen.
 
 ## Run session locking & channels
 
@@ -215,17 +197,15 @@ sequenceDiagram
 
 | Issue | Detail |
 | --- | --- |
-| **Per-run mutex** | Events and controls for one run contend on that run's `RunSession`; independent runs do not share the session lock |
-| **Clone on hot path** | `apply_execution_event` clones full `Workflow` and `WorkflowRunState` each event |
-| **Unbounded channels** | `unbounded_channel()` - fast event bursts can grow memory without backpressure |
+| **Per-run mutex** | Events and controls for one run contend on that run's `RunSession`; independent runs do not share the lock |
+| **Clone on hot path** | `apply_execution_event` clones the full `Workflow` and `WorkflowRunState` on each event |
+| **Unbounded channels** | `unbounded_channel()`: fast event bursts can grow memory without backpressure |
 | **Shared capacity** | Active runs across different workflows may exceed the 64-session retention target; provider calls and executable tools wait on shared process budgets |
 | **Same-cwd mutations** | Write-capable runs sharing a canonical cwd serialize for the whole run; read-only runs and different roots can overlap |
 
----
-
 ## UI ↔ backend boundary
 
-The UI is single-threaded (SolidJS in WebView). It does not spawn threads. Slow backend work appears as delayed IPC responses or event delivery:
+The UI is single-threaded (SolidJS in WebView) and spawns no threads. Slow backend work shows up as delayed IPC responses or event delivery:
 
 ```mermaid
 flowchart LR
@@ -245,22 +225,15 @@ flowchart LR
     Emit -.->|"one event per<br/>execution step"| Solid
 ```
 
-`useRunSession` (via `context/appProvider/`) listens for `run-state` events and updates run signals. Each execution step (node start, tool call, chat message) triggers a full state snapshot emit. High-frequency tool loops mean many serializations and IPC round-trips.
-
----
+`useRunSession` (via `context/appProvider/`) listens for `run-state` events and updates run signals. Every execution step (node start, tool call, chat message) emits a full state snapshot, so high-frequency tool loops mean many serializations and IPC round-trips.
 
 ## Tool concurrency controls
 
-`ToolConcurrency` lives in the engine tool model (`crates/engine/src/tools/config.rs`). Builtin tools are registered as either `Shared` or `Exclusive` in `crates/orchestration/src/tool/registry.rs`.
+`ToolConcurrency` lives in the engine tool model (`crates/engine/src/tools/config.rs`). `crates/orchestration/src/tool/registry.rs` registers each builtin tool as `Shared` or `Exclusive`.
 
-`ToolPortImpl` runs adjacent shared tools in parallel. Exclusive tools acquire a per-tool `tokio::sync::Semaphore` before execution (`crates/orchestration/src/run/execution/tool_port.rs`). This protects tools such as write, edit, bash, and apply-patch from running concurrently with the same tool name inside a run.
-
-All runs also acquire process-wide permits in `run/resources.rs`: 8 concurrent provider invocations
-and 16 concurrent executable tools by default. These budgets queue work. `RunRegistry` separately
-rejects a second active run for the same workflow and targets 64 in-process sessions by evicting
-inactive sessions. It never evicts active sessions; durable run records remain on disk.
-
----
+- **Per run**: `ToolPortImpl` runs adjacent shared tools in parallel. Each run keeps its own per-tool `tokio::sync::Semaphore` for `ToolConcurrency::Exclusive` tools and acquires it before execution (`crates/orchestration/src/run/execution/tool_port.rs`). This keeps tools such as write, edit, bash, and apply-patch from running concurrently with the same tool name inside a run.
+- **Across runs**: all runs acquire process-wide permits in `run/resources.rs`, by default 8 concurrent provider invocations and 16 concurrent executable tools. These budgets queue work.
+- **Sessions**: different workflows may run concurrently, but one workflow owns at most one active run; `RunRegistry` rejects a second. The registry targets 64 in-process sessions by evicting the oldest inactive session first. It never evicts active sessions, so the count may temporarily exceed 64. Durable run records remain on disk.
 
 ## Issue severity matrix
 
@@ -273,16 +246,14 @@ inactive sessions. It never evicts active sessions; durable run records remain o
 | **P2** | Unbounded event channel | Memory growth on chatty runs |
 | **P3** | Shared budget sizes are fixed defaults | Provider-specific quotas cannot be tuned independently yet |
 
----
-
 ## Recommended directions (not implemented)
 
-These options require implementation and measurement; they are not current behavior.
+None of these is current behavior; each needs implementation and measurement.
 
 ### A. Keep production on one runtime
 
 - Continue injecting `tauri::async_runtime::handle()` in desktop.
-- Keep any non-Tauri `AppBackend` construction clearly scoped to tests or explicit helper entry points.
+- Scope any non-Tauri `AppBackend` construction to tests or explicit helper entry points.
 
 ### B. Keep blocking work off async workers
 
@@ -297,24 +268,22 @@ tokio::task::spawn_blocking(move || {
 ### C. Tune layer concurrency (already parallel)
 
 - Ready nodes in a layer already share one `FuturesUnordered` pool.
-- Follow-ups: fairer permit ordering under load or isolating per-node cancellation without draining siblings.
+- Follow-ups: fairer permit ordering under load, or isolating per-node cancellation without draining siblings.
 
 ### D. Async persistence commands
 
-- Convert sync `fn` Tauri handlers to `async fn`
-- Use `tokio::fs` or `spawn_blocking` for file stores
+- Convert sync `fn` Tauri handlers to `async fn`.
+- Use `tokio::fs` or `spawn_blocking` for file stores.
 
 ### E. Backpressure on events
 
-- Replace `unbounded_channel` with `bounded_channel(N)`
-- Or batch events before emit to reduce IPC churn
+- Replace `unbounded_channel` with `bounded_channel(N)`.
+- Or batch events before emit to reduce IPC churn.
 
 ### F. Make shared budgets configurable
 
 - Add per-provider overrides for upstream rate limits.
 - Add workload-specific tool budgets if large repositories starve the blocking pool.
-
----
 
 ## Mental model
 
@@ -343,8 +312,6 @@ flowchart TB
 
     WhatYouHave --- WhatYouDontHave
 ```
-
----
 
 ## Key file reference
 

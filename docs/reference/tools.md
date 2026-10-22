@@ -1,17 +1,19 @@
 # Tools reference
 
-Agents use built-in tools for file operations, shell commands, and search. Built-in repository tools are registered in `crates/orchestration/src/tool/registry.rs`. **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`, `openflow_ask_user_question`) control node completion and human pauses. **MCP** tools are added at run start from **Settings → MCP Servers** and use a provider-safe `mcp_…` namespace.
+Agents call three kinds of tools:
 
-Paths are relative to the run **execution folder** (the selected project's configured folder, or an isolated app-managed workspace when no project is selected). The node's [**Approval mode**](../guides/tools-and-integrations.md#approval-modes) in the Inspector controls confirmation prompts.
+- **Built-in** tools for files, shell commands, and search, registered in `crates/orchestration/src/tool/registry.rs`.
+- **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`, `openflow_ask_user_question`) complete the node or pause for a human.
+- **MCP** tools, added at run start from **Settings → MCP Servers** under a provider-safe `mcp_…` namespace.
 
-Many tools accept optional `_i` (intent): short text shown in the chat UI; the implementation ignores it.
+Paths are relative to the run **execution folder**: the selected project's configured folder, or an isolated app-managed workspace when no project is selected. The node's [**Approval mode**](../guides/tools-and-integrations.md#approval-modes) in the Inspector controls confirmation prompts. Many tools accept an optional `_i` (intent): short text shown in the chat UI and ignored by the implementation.
 
 | Tier | Typical approval (Write mode) |
 | --- | --- |
 | Read | Auto-allow |
 | Write | Prompt in chat |
 
-In **Read only** approval mode, write-tier and `bash` are not offered to the model. In **Plan → Execute** planning phase, `bash`, MCP, subagent calls, and most writes are blocked; see [`openflow_write_plan_artifact`](#openflow_write_plan_artifact).
+**Read only** approval mode does not offer write-tier tools or `bash`. The **Plan → Execute** planning phase blocks `bash`, MCP, subagent calls, and most writes; see [`openflow_write_plan_artifact`](#openflow_write_plan_artifact).
 
 ## Quick index
 
@@ -40,7 +42,7 @@ In **Read only** approval mode, write-tier and `bash` are not offered to the mod
 
 ## `read`
 
-Load file contents, list a directory, fetch HTTP(S), or read spilled tool output. Use `read` before editing, to inspect upstream artifacts, or to retrieve truncated output through `artifact:{id}`.
+Read a file or directory, fetch HTTP(S), or read spilled tool output. Use it before editing, to inspect upstream artifacts, or to retrieve truncated output through `artifact:{id}`.
 
 **Key arguments:** `path`: repository-relative path, URL, or `artifact:{id}`. Append `:start-end` for a line range (e.g. `src/lib.rs:10-20`) or `:raw` for unnumbered full content.
 
@@ -50,29 +52,29 @@ Load file contents, list a directory, fetch HTTP(S), or read spilled tool output
 
 ## `ls`
 
-List a local directory under the execution folder without running a shell command.
+List a local directory under the execution folder without a shell command.
 
-**Key arguments:** `path`: repository-relative directory path. Use `.` for the execution folder.
+**Key arguments:** `path`: repository-relative directory; `.` is the execution folder.
 
 **Approval:** Read tier.
 
 ## `search`
 
-Search file contents for symbols or strings with Rust regex syntax, similar to ripgrep. Backreferences and lookaround are unsupported. For syntax-tree queries, use [`ast_grep`](#ast_grep).
+Search file contents for symbols or strings, like ripgrep. Uses Rust regex syntax, so no backreferences or lookaround. For syntax-tree queries, use [`ast_grep`](#ast_grep).
 
 **Key arguments:** `pattern` (required), `paths` (required, string or array), optional `i` (case insensitive), optional `gitignore` (default true).
 
-**Limits:** At most 500 matches: narrow `pattern` or `paths` if capped.
+**Limits:** 500 matches. If capped, narrow `pattern` or `paths`.
 
 **Approval:** Read tier.
 
 ## `find`
 
-Find file and directory paths with globs such as `**/*.rs` or `src/**/*.ts`, then inspect them with `read` or `search`.
+Find file and directory paths by glob, such as `**/*.rs` or `src/**/*.ts`. Inspect results with `read` or `search`.
 
 **Key arguments:** `paths` (required): glob or array of globs.
 
-**Limits:** At most 200 paths.
+**Limits:** 200 paths.
 
 **Approval:** Read tier.
 
@@ -86,19 +88,19 @@ Search code by syntax-tree structure with ast-grep and `$VAR` metavariables.
 
 ## `ast_edit`
 
-Rewrite code by syntax-tree structure through the `ast-grep` CLI. Use it for codemods and changes across multiple files; [`edit`](#edit) suits individual local changes.
+Rewrite code by syntax-tree structure through the `ast-grep` CLI, for codemods and multi-file changes. For individual local changes, use [`edit`](#edit).
 
 **Key arguments:** `ops` (required, non-empty array of `{ "pat", "out" }`) and `paths` (required, non-empty array of files, directories, or globs under the execution folder). An empty `out` deletes each match.
 
-Operations run sequentially. The tool infers the language from file extensions and requires the `ast-grep` binary on `PATH`.
+Operations run in order. The language is inferred from file extensions. Requires the `ast-grep` binary on `PATH`.
 
 **Approval:** Write tier. File mutations are exclusive. Not available during Plan → Execute planning.
 
 ## `web_search`
 
-Search the web through bundled **search-cli**, which merges configured providers' results into rank-fused JSON. For content in the repository, use [`search`](#search).
+Search the web through bundled **search-cli**, which merges configured providers' results into rank-fused JSON. For repository content, use [`search`](#search).
 
-Available only when **Settings → Search** has at least one configured key or an equivalent environment variable. The [web search guide](../guides/tools-and-integrations.md#web-search) explains credential setup.
+Requires at least one key in **Settings → Search** or an equivalent environment variable. The [web search guide](../guides/tools-and-integrations.md#web-search) covers credential setup.
 
 **Key arguments:** `query` (required), optional `mode` (`general`, `news`, `academic`, `scholar`, `deep`, `people`, `social`, `patents`, `images`, `places`, `extract`, `similar`), optional `count` (default 10).
 
@@ -106,7 +108,7 @@ Available only when **Settings → Search** has at least one configured key or a
 
 ## `openflow_update_todo_list`
 
-Show a phase checklist in the current node's chat for work with several distinct phases. Skip it for simple tasks. Replace the whole checklist when a phase starts or completes; older updates collapse to the latest valid state.
+Show a phase checklist in the node's chat for multi-phase work; skip it for simple tasks. Send the whole checklist again when a phase starts or completes. Older updates collapse to the latest valid state.
 
 **Key arguments:** `todos`: 1 to 12 ordered items with `content` and `status` (`pending`, `in_progress`, or `completed`). At most one item may be `in_progress`.
 
@@ -114,17 +116,15 @@ Show a phase checklist in the current node's chat for work with several distinct
 
 ## `write`
 
-Create or fully overwrite a file under the execution folder. Use [`edit`](#edit) for incremental changes to an existing file.
+Create or fully overwrite a file under the execution folder. For incremental changes, use [`edit`](#edit).
 
-**Key arguments:** `path` and `content` (both required). Never call with `path` only.
-
-For large documents, write a small stub first, then expand it with `edit` in roughly 40-line chunks.
+**Key arguments:** `path` and `content`, both required. Never call with `path` only. For large documents, write a small stub, then expand it with `edit` in roughly 40-line chunks.
 
 **Approval:** Write tier.
 
 ## `edit`
 
-Change an existing file using either mode:
+Change an existing file in one of two modes:
 
 1. **Replace mode**: `path` + `edits[]` with `old_text`, `new_text`, optional `all` (replace every match).
 2. **Hashline mode**: `input` string with `¶path#TAG` sections copied from `read` output.
@@ -133,7 +133,7 @@ Change an existing file using either mode:
 
 ## `apply_patch`
 
-Apply a Codex-style patch envelope (`*** Begin Patch` … `*** End Patch`) across one or more files. Use [`edit`](#edit) for small changes.
+Apply a Codex-style patch envelope (`*** Begin Patch` … `*** End Patch`) across one or more files. For small changes, use [`edit`](#edit).
 
 **Key arguments:** `input` (required): full envelope text.
 
@@ -141,37 +141,35 @@ Apply a Codex-style patch envelope (`*** Begin Patch` … `*** End Patch`) acros
 
 ## `bash`
 
-Run a shell command under the execution folder for Git, builds, or work that `read`, `search`, and `edit` do not cover. Set the working directory with `cwd` rather than `cd dir && …`.
+Run a shell command under the execution folder for Git, builds, or work that `read`, `search`, and `edit` don't cover. Set the working directory with `cwd`, not `cd dir && …`.
 
 **Key arguments:** `command` (required), optional `timeout` seconds (default 300, max 3600), optional `env`, optional `cwd`.
 
-**Limits:** Merged stdout/stderr over 50KB spills to an artifact; read via `artifact:{id}`.
+**Limits:** Merged stdout/stderr over 50KB spills to an artifact; read it via `artifact:{id}`.
 
-**Approval:** Write tier. Plain `ls` and read-only `find` commands are treated as read-tier in
-Write mode. Shell operators and mutating `find` predicates remain write-tier. Bash is not available
-during Plan → Execute planning.
+**Approval:** Write tier. In Write mode, plain `ls` and read-only `find` commands count as read-tier; shell operators and mutating `find` predicates stay write-tier. Not available during Plan → Execute planning.
 
 **Concurrency:** At most one `bash` per node at a time.
 
 ## `openflow_write_plan_artifact`
 
-Seal `run://PLAN.md` into an immutable plan artifact after human approval. This tool is available only to the configured evidence-source node in a Plan → Execute workflow. Draft with `write`, refine with replace-mode `edit`, then call the sealer with **no arguments**.
+Seal `run://PLAN.md` into an immutable plan artifact after human approval. Only the configured evidence-source node in a Plan → Execute workflow gets this tool. Draft with `write`, refine with replace-mode `edit`, then call the sealer with **no arguments**.
 
 **Approval:** Always prompts for explicit human approval. Denial leaves the draft mutable.
 
 ## `openflow_declare_subagents`
 
-Register ad hoc subagents by name and purpose for the current node and run. They appear on the canvas and do not need a saved agent definition. The tool is omitted when **Approval mode** is **Read only**.
+Register ad hoc subagents by name and purpose for the current node and run. They appear on the canvas and need no saved agent definition. Omitted when **Approval mode** is **Read only**.
 
 **Key arguments:** `subagents`: array of `{ "name", "purpose" }`.
 
-**Approval:** Write tier (no separate prompt when mode allows the tool).
+**Approval:** Write tier (no separate prompt when the mode allows the tool).
 
 ## `openflow_call_subagent`
 
-Run a subagent by ID with a task string. IDs come from [`openflow_declare_subagents`](#openflow_declare_subagents) and/or **callable agents** attached in the inspector (saved agent snapshots). The live tool schema lists invocable IDs.
+Run a subagent by ID with a task string. The subagent does the task and returns output to its parent. IDs come from [`openflow_declare_subagents`](#openflow_declare_subagents) and/or **callable agents** attached in the inspector (saved agent snapshots); the live tool schema lists invocable IDs.
 
-The subagent performs the task and returns output to its parent. The tool is unavailable in **Read only** mode and inside subagents, which prevents recursive `call_subagent` calls.
+Unavailable in **Read only** mode and inside subagents, which prevents recursive `call_subagent` calls.
 
 **Key arguments:** `subagent_id`, `input`.
 
@@ -181,7 +179,7 @@ The subagent performs the task and returns output to its parent. The tool is una
 
 ## `openflow_submit_node_output`
 
-Finish the agent node when its task is done, its output matches the node JSON schema, and it needs no further human input. Plain assistant text does not complete the node.
+Finish the agent node when its task is done, its output matches the node JSON schema, and it needs no more human input. Plain assistant text does not complete the node.
 
 **Key arguments:**
 
@@ -192,15 +190,15 @@ Finish the agent node when its task is done, its output matches the node JSON sc
 }
 ```
 
-Schema fields belong under `output`, not at the top level. Invalid submits may trigger an automatic repair pass (overseer model); see [Output repair](../architecture/output-repair.md).
+Schema fields go under `output`, not at the top level. An invalid submit may trigger an automatic repair pass (overseer model); see [Output repair](../architecture/output-repair.md).
 
-**Rules:** Call **alone** in a model turn: never in the same batch as executable tools.
+**Rules:** Call **alone** in a model turn, never batched with executable tools.
 
 **Approval:** Harness (no file approval).
 
 ## `openflow_request_user_input`
 
-Pause a workflow node with one required free-text question when tools and upstream input cannot resolve the answer and fixed choices would be insufficient. Normal direct-chat replies use plain assistant text to end the turn.
+Pause a workflow node with one required free-text question when tools and upstream input can't resolve the answer and fixed choices won't do. In direct chat, a normal reply ends the turn with plain assistant text.
 
 **Availability:** Only when the node has **request user input** and free-text input enabled. Direct chat disables this tool because its plain-message lifecycle already accepts the next user message.
 
@@ -208,21 +206,21 @@ Pause a workflow node with one required free-text question when tools and upstre
 
 - `{ "assistant_message": "<one direct human-facing question>" }`
 
-**Rules:** Call **alone** in a model turn (like submit). Plain provider text does not pause ordinary workflow nodes.
+**Rules:** Call **alone** in a model turn, like submit. Plain provider text does not pause ordinary workflow nodes.
 
 **Approval:** Harness.
 
 ## `openflow_ask_user_question`
 
-Pause for a required human answer with 1-3 structured multiple-choice questions. Use it when 2-3 clear choices help the decision, not merely to keep a conversation open.
+Pause for a required human answer with 1-3 structured multiple-choice questions. Use it when 2-3 clear choices help the decision, not just to keep a conversation open.
 
-**Availability:** Only when the node has **request user input** and structured input enabled. Direct chat offers this tool as an optional alternative to a normal plain reply.
+**Availability:** Only when the node has **request user input** and structured input enabled. In direct chat, it is an optional alternative to a plain reply.
 
 **Key arguments:**
 
 - `{ "questions": [{ "id": "<snake_case id>", "header": "<12 chars max>", "question": "<question>", "options": [{ "label": "<choice>", "description": "<tradeoff>" }] }] }`
 
-Each call accepts 1-3 questions with 2-3 options each. The normal composer remains available for a free-text answer.
+Each call takes 1-3 questions with 2-3 options each. The normal composer stays available for a free-text answer.
 
 **Rules:** Call **alone** in a model turn. Do not mix it with submit, free-text input, or executable tools.
 
@@ -230,23 +228,21 @@ Each call accepts 1-3 questions with 2-3 options each. The normal composer remai
 
 ## MCP tools
 
-MCP servers enabled in Settings expose external tools for integrations such as issue trackers, browsers, and custom services.
+MCP servers enabled in Settings expose external tools, such as issue trackers, browsers, and custom services.
 
-**Names:** provider-safe `mcp_…` identifiers containing only ASCII letters, digits, `_`, and `-`. OpenFlow encodes the server ID and original MCP tool name reversibly, then dispatches model calls back to the original names.
-
-In **Settings → MCP Servers**, discover or import a supported config, install a registry package, or configure stdio, Streamable HTTP, or legacy SSE manually. The [MCP guide](../guides/tools-and-integrations.md#mcp-servers) explains setup and trust.
-
-Remote servers support secret-backed headers and OAuth. OpenFlow keeps credential values out of settings payloads and exported configs. Server trust is bound to security-relevant config; changing that config requires review again.
-
-MCP roots, sampling, and elicitation default to denied. Per-server policy may expose only the selected project root. Each sampling or elicitation request requires a one-time chat decision and carries its originating node, tool-call ID, and tool name. Sampling cannot request MCP tools, other tools, tasks, or cross-server context. Configured budgets are bounded by app ceilings: 64 sampling requests per run, 65,536 output tokens per request, 262,144 requested sampling tokens per run, and 64 elicitation requests per run.
-
-An unavailable server is skipped during run setup. Other MCP servers and the chat continue; OpenFlow adds a system chat message naming the skipped server.
+- **Names:** provider-safe `mcp_…` identifiers of ASCII letters, digits, `_`, and `-`. They reversibly encode the server ID and original MCP tool name; OpenFlow dispatches model calls back to the original names.
+- **Setup:** in **Settings → MCP Servers**, discover or import a supported config, install a registry package, or configure stdio, Streamable HTTP, or legacy SSE manually. The [MCP guide](../guides/tools-and-integrations.md#mcp-servers) covers setup and trust.
+- **Credentials:** remote servers support secret-backed headers and OAuth. Credential values stay out of settings payloads and exported configs.
+- **Trust:** bound to security-relevant config; changing that config requires review again.
+- **Roots, sampling, and elicitation:** denied by default. Per-server policy may expose only the selected project root. Each sampling or elicitation request needs a one-time chat decision and carries its originating node, tool-call ID, and tool name. Sampling cannot request MCP tools, other tools, tasks, or cross-server context.
+- **Budgets:** app ceilings bound configured budgets: 64 sampling requests per run, 65,536 output tokens per request, 262,144 requested sampling tokens per run, and 64 elicitation requests per run.
+- **Unavailable servers:** skipped during run setup. Other MCP servers and the chat continue; a system chat message names the skipped server.
 
 **Approval:** Treated as write tier. **Not available during Plan → Execute planning.**
 
 ## Workflow authoring tools (Create with AI)
 
-Used only in the **Create with AI** session, not in normal workflow runs:
+Only in the **Create with AI** session, not in normal workflow runs:
 
 | Tool | Purpose |
 | --- | --- |
@@ -258,6 +254,6 @@ Used only in the **Create with AI** session, not in normal workflow runs:
 | `openflow_remove_edge` | Remove an edge |
 | `openflow_submit_node_output` | Finish authoring with `assistantMessage` only (no workflow `output` payload) |
 
-Do not mix `openflow_submit_node_output` with other authoring tools in the same model batch. Follow [Create with AI](../guides/workflow-authoring.md#create-with-ai-safely) to review and save the result.
+Do not mix `openflow_submit_node_output` with other authoring tools in the same model batch. To review and save the result, follow [Create with AI](../guides/workflow-authoring.md#create-with-ai-safely).
 
-[Using the app](../guides/using-the-app.md) locates the chat and tool controls. [Workflows and runs](../concepts/workflows-and-runs.md) explains run states and Plan → Execute; the [OpenFlow overview](../README.md) gives a first workflow path.
+[Using the app](../guides/using-the-app.md) locates the chat and tool controls. [Workflows and runs](../concepts/workflows-and-runs.md) explains run states and Plan → Execute. The [OpenFlow overview](../README.md) gives a first workflow path.

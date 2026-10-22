@@ -1,36 +1,36 @@
 # Glossary
 
-Use these terms consistently in code, documentation, and UI copy. The final column lists aliases to avoid.
+Use these terms consistently in code, docs, and UI copy. The last column lists aliases to avoid.
 
-[Engine modules](#engine-modules) and [Orchestration modules](#orchestration-modules) map the terms to code; [orchestration crate layout](architecture/orchestration-layout.md) gives the full module map.
+[Engine modules](#engine-modules) and [Orchestration modules](#orchestration-modules) map terms to code. The [orchestration crate layout](architecture/orchestration-layout.md) has the full module map.
 
 ## Graph structure
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **Workflow** | A directed acyclic graph (DAG) of nodes and edges defining an AI pipeline | Graph, pipeline, flowchart |
-| **Node** | A vertex in the workflow graph that runs an AI agent | Step, task, stage |
-| **Edge** | A directed connection between two nodes, carrying output as input | Connection, link, arrow |
-| **NodeId** | A unique identifier for a node within a workflow | |
-| **EdgeId** | A unique identifier for an edge within a workflow | |
-| **WorkflowId** | A unique identifier for a workflow | |
+| **Workflow** | Directed acyclic graph (DAG) of nodes and edges that defines an AI pipeline | Graph, pipeline, flowchart |
+| **Node** | Vertex in the workflow graph that runs an AI agent | Step, task, stage |
+| **Edge** | Directed connection between two nodes that carries output as input | Connection, link, arrow |
+| **NodeId** | Unique identifier for a node within a workflow | |
+| **EdgeId** | Unique identifier for an edge within a workflow | |
+| **WorkflowId** | Unique identifier for a workflow | |
 | **WorkflowSettings** | Portable per-workflow configuration: shared context, retry, schedule, provider override, and optional Plan → Execute gate | Workflow config |
 | **PlanMode** | Optional workflow gate that holds a run in Planning until its configured conversational review node freezes a change evidence packet | Plan-only workflow |
-| **SharedContext** | Text appended to every node's system prompt for the duration of a run (`WorkflowSettings.shared_context`) | Shared node context |
-| **ExecutionCwd** | Folder used as the working directory for filesystem tools during a run; chosen at run time, not stored on the workflow | Working directory, run folder |
+| **SharedContext** | Text appended to every node's system prompt for the whole run (`WorkflowSettings.shared_context`) | Shared node context |
+| **ExecutionCwd** | Working directory for filesystem tools during a run; chosen at run time, not stored on the workflow | Working directory, run folder |
 
 ## Node lifecycle
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **NodeKind** | The variant of a node (e.g. Agent) determining its runtime behavior | Node type, node variant |
-| **AgentNodeConfig** | Configuration for an agent node: model, prompts, handoff, tools, callable agents, and optional human questions | Node config, agent config |
-| **HandoffSpec** | Per-node result format: a heading-based Markdown template or a JSON output schema | Output mode |
+| **NodeKind** | Node variant (e.g. Agent) that determines runtime behavior | Node type, node variant |
+| **AgentNodeConfig** | Agent node configuration: model, prompts, handoff, tools, callable agents, and optional human questions | Node config, agent config |
+| **HandoffSpec** | Per-node result format: heading-based Markdown template or JSON output schema | Output mode |
 | **HandoffArtifact** | Immutable run-scoped `HANDOFF.md` or `HANDOFF.json` reference with media type, size, and SHA-256 digest | Handoff file |
-| **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
+| **NodePosition** | Canvas coordinates for rendering a node | Position, coordinates |
 | **RequestUserInput** | Whether a running node may call enabled human-input harnesses to pause; defaults to false | Manual start |
-| **ConversationMode** | Direct-chat lifecycle where a plain assistant message ends one turn; live user messages may queue between model/tool calls; submit remains terminal | Workflow completion |
-| **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
+| **ConversationMode** | Direct-chat lifecycle: a plain assistant message ends one turn, live user messages may queue between model/tool calls, and submit stays terminal | Workflow completion |
+| **CallableAgent** | Saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
 
@@ -38,8 +38,8 @@ Use these terms consistently in code, documentation, and UI copy. The final colu
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **ChatMessage** | A single message in a node's conversation with a given role | Message, turn |
-| **ChatRole** | Sender of a message: System, Thinking, User, or Assistant | Sender, author |
+| **ChatMessage** | One message, with a role, in a node's conversation | Message, turn |
+| **ChatRole** | Message sender: System, Thinking, User, or Assistant | Sender, author |
 | **AgentTranscriptItem** | Chronological transcript entry: assistant/user message, ToolCall, or ToolResult | Transcript entry, log item |
 
 ## Tool configuration
@@ -48,20 +48,20 @@ Use these terms consistently in code, documentation, and UI copy. The final colu
 | --- | --- | --- |
 | **NodeToolConfig** | Tool capabilities for a node or saved agent: approval mode plus separate free-text and structured human-input harness flags | Tool settings, tool setup |
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
-| **Tool capability class** | Read/write grouping for builtins. Read: retrieval/search tools plus `ls`. Write: mutation, shell, and subagent tools. Plain `ls` and read-only `find` Bash calls use the read approval tier; drives approval and `read_only` availability. | Tool tier |
+| **Tool capability class** | Read/write grouping for builtins; drives approval and `read_only` availability. Read: retrieval/search tools plus `ls`. Write: mutation, shell, and subagent tools. Plain `ls` and read-only `find` Bash calls use the read approval tier. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
-| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools and write-enabled `docs/**/*.md` mutations; only the selected evidence-source node receives `write`/`edit` access to `run://PLAN.md` plus the approval-gated plan sealer. Execution restores the node's normal catalog. | Approval mode |
+| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools and write-enabled `docs/**/*.md` mutations; only the selected evidence-source node gets `write`/`edit` access to `run://PLAN.md` plus the approval-gated plan sealer. Execution restores the node's normal catalog. | Approval mode |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |
-| **ToolCallStatus** | Lifecycle of a tool call: proposed, awaiting_approval, running, completed, blocked, failed, aborted | Call status |
+| **ToolCallStatus** | Tool call lifecycle: proposed, awaiting_approval, running, completed, blocked, failed, aborted | Call status |
 | **ToolTruncation** | Limits and strategy for truncating tool output | Output limit, size cap |
-| **PendingToolApproval** | A tool call awaiting human approval before execution | Pending tool, queued call |
+| **PendingToolApproval** | Tool call awaiting human approval before it runs | Pending tool, queued call |
 
 ## Template system
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Template** | Reusable node definition with default `AgentNodeConfig` and locked fields | Node preset, blueprint |
-| **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`) | Protected field, frozen field |
+| **LockedField** | Field users cannot edit once a template is applied (e.g. `output_schema`) | Protected field, frozen field |
 
 ## Execution model
 
@@ -69,7 +69,7 @@ Use these terms consistently in code, documentation, and UI copy. The final colu
 | --- | --- | --- |
 | **Execution layer** | Topologically sorted group of nodes at the same depth; nodes in a layer may run in parallel | Layer, depth level, wave |
 | **RunTelemetry** | Rich interactive run event stream (chat, tools, subagents, pauses); `ExecutionEvent` alias in orchestration | Execution event |
-| **RunReport** | Aggregated result after a workflow run: per-node outputs plus read/token counters | Summary, result, run summary |
+| **RunReport** | Aggregated result of a workflow run: per-node outputs plus read/token counters | Summary, result, run summary |
 | **NodeRunOutput** | Structured output from one node | Node output, step result |
 | **EntrypointText** | Initial text for nodes with no upstream dependencies at run start | Seed input, initial prompt |
 | **Project** | Folder-scoped workspace binding workflows to a repo path | Workspace, repo binding |
@@ -78,7 +78,7 @@ Use these terms consistently in code, documentation, and UI copy. The final colu
 | **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for `InteractiveEngine` | Request builder |
 | **Effective provider** | Provider selected for a node: node override → shared workflow provider → active settings provider | Runtime provider |
 | **FrozenChangeEvidencePacket** | Immutable, hash-verified structured review output injected into later Plan Mode requests as `input.change_evidence_packet` | Plan file, system prompt |
-| **Plan artifact** | Run-owned immutable Markdown evidence built by the selected evidence-source node at `run://PLAN.md`, then sealed through explicit approval of `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
+| **Plan artifact** | Run-owned immutable Markdown evidence the selected evidence-source node builds at `run://PLAN.md`, sealed through explicit approval of `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
 | **Node handoff** | Canonical run-owned node result under `run://handoffs/{node_id}/`; downstream input carries its manifest next to the compact upstream output | Node output file |
 
 ## AI boundary
@@ -91,7 +91,7 @@ Use these terms consistently in code, documentation, and UI copy. The final colu
 | **AgentTurnSuccess** | Completed outcome: structured output, raw text, and typed reasoning blocks | Success result |
 | **AgentToolCallBatch** | ToolCalls outcome: batch of tool invocations from the model | Tool call batch |
 | **ToolCall** | Single tool invocation from the model | Tool request, tool use |
-| **ToolResult** | Result returned after a tool executes | Tool response |
+| **ToolResult** | Result returned after a tool runs | Tool response |
 | **ToolDefinition** | Schema for a tool exposed to the model | Tool schema, tool spec |
 | **AgentNeedUserInput** | Signal that the model needs human input to continue | User input requested |
 | **AgentError** | Error from the AI backend for the current turn | Backend error, AI failure |
@@ -107,7 +107,7 @@ Use these terms consistently in code, documentation, and UI copy. The final colu
 | **DuplicateNodeId** | Two or more nodes share an id | |
 | **MissingEndpoint** | Edge references a node that does not exist | Dangling edge |
 | **SelfEdge** | Edge from a node to itself | Self-loop |
-| **Cycle** | Directed cycle makes topological order impossible | Circular dependency |
+| **Cycle** | Directed cycle that makes topological order impossible | Circular dependency |
 
 ## Interactive execution
 
@@ -149,7 +149,7 @@ Persistence adapters outside engine:
 
 ## Orchestration modules
 
-The [orchestration layout](architecture/orchestration-layout.md) explains how these modules work together.
+The [orchestration layout](architecture/orchestration-layout.md) explains how these modules fit together.
 
 | Module | Terms |
 | --- | --- |
@@ -164,28 +164,26 @@ The [orchestration layout](architecture/orchestration-layout.md) explains how th
 
 - A **Workflow** has **Nodes** and **Edges**.
 - An **Edge** passes a source **Node**'s output and optional **Node handoff** manifest to a target **Node**.
-- **Execution layers** come from DAG topology; same-layer nodes have no dependency on each other.
+- **Execution layers** come from DAG topology; nodes in the same layer do not depend on each other.
 - An **AgentNodeConfig** belongs to one **Node** and may include **NodeToolConfig**.
 - A **ChatMessage** or **AgentTranscriptItem** belongs to one **Node**'s transcript.
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
-- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools: never both in the same batch.
+- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question`) alongside executable tools. A turn uses either exactly one harness tool alone or one or more executable tools, never both in the same batch.
 - **AgentTurnOutcome** selects completion, executable tool work, human input, or a plain message.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
 - **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.
-- Headless acceptance runs use the same **InteractiveEngine** via `run_workflow_headless` in orchestration.
+- Headless acceptance runs use the same **InteractiveEngine** through `run_workflow_headless` in orchestration.
 
 ## Examples
 
-A node with two incoming edges belongs to the layer one greater than the highest layer of its upstream nodes. This follows the graph's topological order.
-
-When the model returns `ToolCalls`, `InteractiveEngine` returns `NeedsInteraction` with `EngineAwaitApproval` if policy requires a prompt. Auto-allowed calls run inside `run`; after execution, `ToolResult` feeds the same node's next turn.
-
-Headless tests use orchestration's `run_workflow_headless` to construct `InteractiveEngine` with scripted inputs and approvals. They exercise the desktop app's state machine without a separate batch runner.
+- **Layers:** a node with two incoming edges sits one layer above the highest layer of its upstream nodes, following the graph's topological order.
+- **Tool calls:** when the model returns `ToolCalls` and policy requires a prompt, `InteractiveEngine` returns `NeedsInteraction` with `EngineAwaitApproval`. Auto-allowed calls run inside `run`. After execution, `ToolResult` feeds the same node's next turn.
+- **Headless tests:** orchestration's `run_workflow_headless` constructs `InteractiveEngine` with scripted inputs and approvals. The tests exercise the desktop app's state machine without a separate batch runner.
 
 ## Terms with multiple meanings
 
-- **Layer** - in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here: execution layer only.
+- **Layer** - in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here it means execution layer only.
 - **Event** - **RunTelemetry** / **ExecutionEvent** (interactive UI stream) vs OS/Tauri IPC events. Lifecycle detail lives in telemetry, not **RunReport**.
 - **Config** - **AgentNodeConfig** (agent behavior) vs **NodeToolConfig** (tool environment). Distinct concepts.
-- **Template** - canonical type in `engine::template`. Do not confuse it with older `NodeTemplate` naming in historical docs.
+- **Template** - the canonical type in `engine::template`. Not the older `NodeTemplate` naming in historical docs.
 - **Runner** - prefer **InteractiveEngine** or **run_workflow_headless**. Do not use "runner" alone in docs or module names.

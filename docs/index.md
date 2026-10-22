@@ -1,43 +1,55 @@
 ---
 layout: home
 title: OpenFlow documentation
-description: Install OpenFlow, connect a provider, and build workflows you can inspect and control.
+description: Install OpenFlow, connect a model provider, and build multi-agent workflows.
 hero:
   name: OpenFlow
-  text: Multi-agent workflows you can inspect and control
-  tagline: A desktop app where you connect agents on a canvas, give each a task, model, and tools, then follow their conversations as they work.
+  text: Run AI agents as a workflow
+  tagline: Chain agents on a canvas. Each gets its own task, model, and tools, and passes its result to the next. You can read every conversation and step in at any point.
   image:
     src: /logo.png
     alt: OpenFlow
   actions:
     - theme: brand
-      text: Get started
+      text: Install
       link: /getting-started/
     - theme: alt
       text: Build your first workflow
       link: /guides/first-workflow
     - theme: alt
-      text: Star on GitHub
+      text: GitHub
       link: https://github.com/philbotar/OpenFlow
+features:
+  - title: Draw the workflow
+    details: Each step is an agent with a prompt, a model, and tools. Connect steps to say which results feed which.
+  - title: Run steps in parallel
+    details: Steps that don't depend on each other run at the same time. A step starts when everything it needs is ready.
+  - title: Stay in control
+    details: Open any agent's conversation to answer its questions, approve a tool call, or retry a failed step.
+  - title: Bring your own model
+    details: Use OpenAI, Anthropic, ChatGPT sign-in, Amazon Bedrock, OpenRouter, or a local model such as Ollama.
 ---
 
-# OpenFlow documentation
+## See it
 
-OpenFlow is a desktop app for multi-agent workflows. Connect agents on a canvas, give each a task, model, and tools, then follow their conversations as they work.
+[![OpenFlow canvas: a feature brief splits into implementation, tests, and risk review, then joins at a delivery plan.](public/media/screenshots/offline-search-canvas.png)](public/media/screenshots/offline-search-canvas.png)
 
-Each node is an AI step. Its prompt, model, tools, and skills define the job. Edges decide which steps can run together and which need an earlier result. During a run, open a node’s conversation to answer questions, approve tools, or retry.
+One brief fans out to three agents that work at once. The delivery plan waits for all three.
 
-[![OpenFlow canvas with a feature brief branching into implementation, tests, and risk review, then joining at a delivery plan.](public/media/screenshots/offline-search-canvas.png)](public/media/screenshots/offline-search-canvas.png)
+## Get started
 
-One brief branches into implementation, tests, and risk review. The delivery plan depends on all three. This prepared workflow shows [parallel dependencies](concepts/workflows-and-runs.md#parallel-layers) in the installed macOS app. Open the image for the full-size capture.
+1. [Install OpenFlow](getting-started/README.md). The macOS app needs no development tools.
+2. [Connect a provider](guides/provider-setup.md) so agents can call a model.
+3. [Build your first workflow](guides/first-workflow.md), or [start a direct chat](guides/direct-chats.md) if you only want to talk to one agent.
 
-Use a release build without Rust or Node, or build from source. Connect an API-key provider, sign in with ChatGPT, configure AWS credentials, or use a local model server. Start with a direct chat for one conversation, or follow the two-agent walkthrough to build a planner and checklist workflow.
+## Find what you need
 
-- [Install OpenFlow](getting-started/README.md)
-- [Build from source](getting-started/build-from-source.md)
-- [Connect a provider](guides/provider-setup.md)
-- [Build your first workflow](guides/first-workflow.md)
-- [Start a direct chat](guides/direct-chats.md)
-- [Run and recover](guides/runs.md)
-- [Look up configuration](reference/configuration.md)
-- [Browse all documentation](README.md)
+| I want to… | Read |
+| --- | --- |
+| Understand how it works | [How OpenFlow works](concepts/how-openflow-works.md) |
+| Design a workflow | [Workflow authoring](guides/workflow-authoring.md) |
+| Handle approvals, retries, and failures | [Runs and recovery](guides/runs.md) |
+| Look up a setting | [Configuration](reference/configuration.md) |
+| Fix a problem | [Troubleshooting](troubleshooting/README.md) |
+| Build it from source | [Build from source](getting-started/build-from-source.md) |
+| Browse everything | [All documentation](README.md) |
