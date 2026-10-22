@@ -1,6 +1,6 @@
 # Architecture diagrams
 
-Use `layers-current-vs-target.mmd` for reviews and onboarding. `layers-legacy-names.mmd` preserves pre-rename labels for historical reference.
+Use `layers-current-vs-target.mmd` for reviews and onboarding. The [architecture contract](../contract.md) defines the layer rules.
 
 ## Filesystem
 
@@ -11,4 +11,4 @@ diagrams/
 └── layers-legacy-names.mmd        # Historical pre-crate-rename labels (reference only)
 ```
 
-Render the sources in a Mermaid viewer or a Markdown preview with Mermaid support. The [architecture contract](../contract.md) defines the layer rules. Keep the legacy diagram's old names, including `workflow-core` and `app-backend`; do not update it for new work.
+View the sources in a Mermaid viewer or a Markdown preview with Mermaid support. `layers-legacy-names.mmd` keeps the old names, including `workflow-core` and `app-backend`; do not update it for new work.
