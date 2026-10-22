@@ -1,6 +1,6 @@
 # Architecture
 
-The engine owns workflow semantics, orchestration hosts runs and performs I/O, and providers implement model transport. The UI and desktop shell submit actions and display results.
+The engine owns workflow validity and execution semantics. Orchestration stores, configures, and hosts runs, and performs I/O. Providers implement model transport. The UI and desktop shell submit actions and display results: the UI owns presentation and interaction, and desktop bridges its commands and events.
 
 ## Filesystem
 
@@ -38,7 +38,7 @@ architecture/
 | Runtimes, I/O, and parallelism | [Threading and concurrency](threading-concurrency.md) |
 | Checkpoints, replay, and resume after restart | [Run persistence](run-persistence.md) |
 
-Product-facing behavior is summarized in [`../guides/runs.md`](../guides/runs.md), [`../guides/projects-and-persistence.md`](../guides/projects-and-persistence.md), and [`../reference/configuration.md`](../reference/configuration.md).
+Product-facing behavior: [runs](../guides/runs.md), [projects and persistence](../guides/projects-and-persistence.md), [configuration](../reference/configuration.md).
 
 ## Layer stack
 
@@ -52,12 +52,11 @@ UI (crates/ui)
 
 Orchestration owns runtime execution state and `ToolPortImpl`. Engine owns the workflow state machine and ports. Provider adapters own wire transport.
 
-[Coding patterns](../contributing/coding-patterns.md) identifies owning files and runtime rules. [AGENTS.md](../../AGENTS.md) maps common changes to those owners; [architecture check config](../../crates/workspace-checks/arch-check-rules.toml) defines the enforced boundaries.
-
+[Coding patterns](../contributing/coding-patterns.md) names owning files and runtime rules, [AGENTS.md](../../AGENTS.md) maps common changes to those owners, and the [architecture check config](../../crates/workspace-checks/arch-check-rules.toml) defines the enforced boundaries.
 
 ## System boundaries
 
-OpenFlow separates the desktop UI, command bridge, runtime host, engine, and providers. The dependency boundaries are enforced by [`../../scripts/check-architecture.sh`](../../scripts/check-architecture.sh), which reads [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml).
+The desktop UI, command bridge, runtime host, engine, and providers are separate layers. [`../../scripts/check-architecture.sh`](../../scripts/check-architecture.sh) enforces their dependency boundaries from [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml).
 
 ```mermaid
 flowchart TD
@@ -108,5 +107,3 @@ CI checks these constraints:
 | Desktop imports `orchestration::Workflow`, never `engine::Workflow` | Re-export boundary; ban tables |
 | Orchestration may only import `create_provider` + config types from providers | Allowlist; `AiClient` banned |
 | Engine public API is snapshot-tested | `crates/engine/tests/snapshots/public_api.txt` |
-
-The engine owns workflow validity and execution behavior. Orchestration stores, configures, and hosts runs; providers implement model transport. The UI owns presentation and interaction, while desktop bridges its commands and events.
