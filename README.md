@@ -20,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="https://philbotar.github.io/OpenFlow/">Docs</a> ·
   <a href="#manage-multi-step-ai-processes-with-ease">Overview</a> ·
   <a href="#install">Install</a> ·
   <a href="#use-cases">Use cases</a> ·
