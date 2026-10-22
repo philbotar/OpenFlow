@@ -26,6 +26,13 @@ ignore = [
     "RUSTSEC-2026-0104",
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
+    { id = "RUSTSEC-2026-0367", reason = "zip 4 via tauri-plugin-updater (no release uses zip 9); update archives are signature-verified before extraction" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 4 via tauri-plugin-updater (no release uses zip 9); update archives are signature-verified before extraction" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 4 via tauri-plugin-updater (no release uses zip 9); update archives are signature-verified before extraction" },
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml is unmaintained; transitive from serde_yaml in orchestration" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant is unmaintained; transitive from the tauri Linux desktop stack" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names is unmaintained; transitive from the tauri Linux desktop stack" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is unmaintained; transitive from the tauri Linux desktop stack" },
 ]
 
 [licenses]
