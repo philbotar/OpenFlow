@@ -44,6 +44,9 @@ jobs:
       - name: Build website
         working-directory: docs
         run: bun run build
+      - name: Check links, images, and anchors
+        working-directory: docs
+        run: bun run check
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/.vitepress/dist

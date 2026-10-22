@@ -1,0 +1,33 @@
+.mermaid-diagram {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+}
+
+.mermaid-svg {
+  display: flex;
+  justify-content: center;
+}
+
+.mermaid-svg :deep(svg),
+.mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-source {
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: pre;
+}
+
+/* Keep VitePress prose styles from inflating Mermaid's HTML labels. */
+.mermaid-svg p,
+.mermaid-svg span,
+.mermaid-svg div {
+  margin: 0;
+  line-height: 1.4;
+}
