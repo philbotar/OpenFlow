@@ -6,7 +6,8 @@
     "dev": "vitepress dev . --host 127.0.0.1",
     "build": "vitepress build .",
     "preview": "vitepress preview . --host 127.0.0.1",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "check": "node .vitepress/check-links.mjs"
   },
   "devDependencies": {
     "@types/mdast": "4.0.4",

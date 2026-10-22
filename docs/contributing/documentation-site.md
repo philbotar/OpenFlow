@@ -15,18 +15,21 @@ Open the local URL printed by VitePress. To check the production build:
 ```bash
 bun run typecheck
 bun run build
+bun run check
 bun run preview
 ```
 
-The site path comes from `DOCS_SITE_URL`, which defaults to `https://philbotar.github.io/OpenFlow/`. The build uses that URL's path as the site base, so the default is `/OpenFlow/`, and it uses the full URL in the sitemap. For hosting at a domain root, set the variable to that root, for example `DOCS_SITE_URL=https://docs.example.com/ bun run build`. `typecheck` checks the VitePress config; the build does not validate links to files outside `docs/`.
+`check` verifies that every internal link, image, and anchor in the built site resolves; run it after `build`. Links to repository files outside `docs/`, and to pages the site does not publish, open the file on GitHub.
+
+The site path comes from `DOCS_SITE_URL`, which defaults to `https://philbotar.github.io/OpenFlow/`. The build uses that URL's path as the site base, so the default is `/OpenFlow/`, and it uses the full URL in the sitemap. For hosting at a domain root, set the variable to that root, for example `DOCS_SITE_URL=https://docs.example.com/ bun run build`. `typecheck` checks the VitePress config.
 
 ## Pages and navigation
 
 [The landing page source](../index.md) supplies the website home page. [OpenFlow overview](../README.md) is the product entry point for GitHub and appears at `overview.html` on the site. Other `README.md` pages become directory indexes: `getting-started/README.md` becomes `getting-started/`.
 
-Add new guides to [the docs index](../README.md) and to the sidebar in `docs/.vitepress/config.ts`. The build includes Markdown pages automatically, except `AGENTS.md`, `CONTEXT.md`, `ROADMAP.md`, and files under `work-specs/`. Links to those files, repository source, and standalone diagram files do not resolve on the website.
+Add new guides to [the docs index](../README.md) and to the sidebar in `docs/.vitepress/config.ts`. The build includes Markdown pages automatically, except `AGENTS.md`, `CONTEXT.md`, `ROADMAP.md`, and files under `work-specs/`. Links to those files and to repository source open GitHub.
 
-Use relative links to existing files and keep commands inside fenced code blocks. Mermaid fences render as code blocks on the website. The site uses the OpenFlow app icon with the default VitePress theme: navigation, local search, and light/dark controls.
+Use relative links to existing files and keep commands inside fenced code blocks. Mermaid fences render as diagrams in the browser and follow the light/dark theme; if rendering fails, the source shows instead. The site uses the OpenFlow app icon with the default VitePress theme: navigation, local search, and light/dark controls.
 
 ## Product screenshots
 
