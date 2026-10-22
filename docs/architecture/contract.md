@@ -1,6 +1,6 @@
 # Architecture contract
 
-OpenFlow uses nested ports and adapters. The UI calls desktop, desktop calls orchestration, and orchestration hosts the engine through its ports. Provider adapters implement the engine's model interface.
+OpenFlow uses nested ports and adapters. UI calls desktop, desktop calls orchestration, and orchestration hosts the engine through its ports. Provider adapters implement the engine's model interface.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -39,21 +39,19 @@ OpenFlow uses nested ports and adapters. The UI calls desktop, desktop calls orc
 
 ## Crate roles
 
-| Crate | Question it answers |
-| --- | --- |
-| **engine** | What is a valid workflow, and how does a run behave? |
-| **orchestration** | How does the desktop app store, load, wire, and host runs? |
-| **providers** | How do we talk to OpenAI/Anthropic? |
-| **ui** / **desktop** | How does the user interact? |
-
-**engine** holds product rules (graph validation, execution semantics, tool approval policy). **orchestration** holds app rules (persistence, catalog merge, run sessions, tool I/O). **providers** implements `AiPort`. **ui** and **desktop** are inbound adapters only.
+| Crate | Question it answers | Holds |
+| --- | --- | --- |
+| **engine** | What is a valid workflow, and how does a run behave? | Product rules: graph validation, execution semantics, tool approval policy |
+| **orchestration** | How does the desktop app store, load, wire, and host runs? | App rules: persistence, catalog merge, run sessions, tool I/O |
+| **providers** | How do we talk to OpenAI/Anthropic? | The `AiPort` implementation |
+| **ui** / **desktop** | How does the user interact? | Inbound adapters only |
 
 ## Layer definitions
 
 ### 1. **Engine (crates/engine)**
 
 - **Role:** Hexagon: workflow execution engine
-- **Scope:** Workflow model, state machine, ports (`AiPort`, `ToolPort`); self-driving `InteractiveEngine::run()` calls `AiPort` and `ToolPort` internally; surfaces only interaction pauses (`NeedsInteraction`) to orchestration
+- **Scope:** Workflow model, state machine, ports (`AiPort`, `ToolPort`). The self-driving `InteractiveEngine::run()` calls `AiPort` and `ToolPort` internally and surfaces only interaction pauses (`NeedsInteraction`) to orchestration.
 - **Public interface:** Traits in `ports/` + model types
 - **Dependencies:** None upward; only serialization, async traits, tokio
 
@@ -74,7 +72,7 @@ OpenFlow uses nested ports and adapters. The UI calls desktop, desktop calls orc
   - `run/`: run coordination, execution host, persistence policy, and projected run state
   - `adapters/storage/`: concrete JSON/file persistence implementations
   - `adapters/tool_impl/` and `adapters/infrastructure/`: concrete tool, git, LSP, and other I/O drivers
-- **Public interface:** `AppBackend`: façade that Desktop calls
+- **Public interface:** `AppBackend`, the façade Desktop calls
 - **Dependencies:** `engine` + `providers`, no upward
 
 ### 4. **Desktop (crates/desktop)**
@@ -95,21 +93,21 @@ OpenFlow uses nested ports and adapters. The UI calls desktop, desktop calls orc
 
 ### Orchestration
 
-- Active session/run state (approval queues, retry counters, execution trace)
-- Runtime coordination (what step to run next, when to pause for approval)
-- NOT: execution semantics (engine owns that)
+- Active session/run state: approval queues, retry counters, execution trace
+- Runtime coordination: what step runs next, when to pause for approval
+- NOT execution semantics (the engine owns those)
 
 ### Engine
 
 - Model types and invariants (Workflow, Node, ToolCall, ToolResult)
 - Legal transitions and validation rules
-- Execution semantics (when does an engine advance, what are error states)
+- Execution semantics: when the engine advances, what the error states are
 
 ### Infrastructure / Persistence
 
 - Durable state (workflows.json, settings.json, agent definitions)
 - Credentials, cache
-- NOT: runtime session state (that's orchestration)
+- NOT runtime session state (orchestration owns that)
 
 ## Dependency rules
 
@@ -124,50 +122,47 @@ OpenFlow uses nested ports and adapters. The UI calls desktop, desktop calls orc
 - UI → Engine or Providers (bypass orchestration)
 - UI → Orchestration directly (go through Desktop)
 - Desktop → Engine or Providers (go through Orchestration)
-- Desktop → Orchestration internals (`run/execution/`, entity folders, or adapters); only `AppBackend` public façade
+- Desktop → Orchestration internals (`run/execution/`, entity folders, or adapters); only the `AppBackend` public façade
 - Orchestration → UI or Desktop (upward)
 - Engine → anything outward (no imports of provider, orchestration, UI, desktop)
 - Providers → UI or Desktop
 
 ## CI enforcement
 
-Checks run in CI via `./scripts/check-architecture.sh`. Machine-readable rules live in [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml); this contract is the human-readable source of truth.
+CI runs these checks through `./scripts/check-architecture.sh`. The machine-readable rules live in [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml); this contract is the human-readable source of truth.
 
 ### Tier 2 (Phase A): inter-crate
 
-1. **Workspace dependency graph**: path deps in each crate `Cargo.toml` match the allowed inward graph.
+1. **Workspace dependency graph**: path deps in each crate's `Cargo.toml` match the allowed inward graph.
 2. **Forbidden cross-crate `use`**: per-crate ban tables (e.g. `desktop` must not `use engine::`).
-3. **Engine forbidden deps**: `engine` must not depend on transport/GUI crates (`reqwest`, `tauri`, …). Pure validation crates such as `jsonschema` (with default features disabled so `$ref` resolution cannot perform I/O) are allowed.
-4. **Legacy crate aliases**: `domain` and `workflow_core` banned in all workspace `use` paths.
+3. **Engine forbidden deps**: `engine` must not depend on transport/GUI crates (`reqwest`, `tauri`, …). Pure validation crates are allowed, such as `jsonschema` with default features disabled so `$ref` resolution cannot perform I/O.
+4. **Legacy crate aliases**: `domain` and `workflow_core` are banned in all workspace `use` paths.
 
 ### Tier 3 (Phase B): seams and layout
 
-1. **`orchestration → providers` allowlist**: `orchestration/src` may import only listed config/factory symbols; `AiClient` is banned (use `create_provider`).
+1. **`orchestration → providers` allowlist**: `orchestration/src` may import only listed config/factory symbols. `AiClient` is banned; use `create_provider`.
 2. **Engine invocation locality**: only `orchestration/src/run/execution/` may call `InteractiveEngine::new`.
 3. **Orchestration domain folders**: `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::adapters::`.
 4. **UI Tauri seam**: `@tauri-apps/*` imports only in `api.ts`, `port.ts`, and allowed test files. Frontend callers use the wrappers in `api.ts`.
 
-5. **Orchestration domain store ban**: `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::{agent_store, flow_store, ...}`; depend on port traits; wire `File*Store` in `backend/`.
+5. **Orchestration domain store ban**: `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::{agent_store, flow_store, ...}`. They depend on port traits; `backend/` wires the `File*Store`s.
 
-Deferred: `tool/` → `lsp` narrowing; `providers → engine` submodule allowlist. See the [architecture rules file](../../crates/workspace-checks/arch-check-rules.toml) for the exact enforced scope.
+Deferred: `tool/` → `lsp` narrowing; `providers → engine` submodule allowlist. The [architecture rules file](../../crates/workspace-checks/arch-check-rules.toml) has the exact enforced scope.
 
 ## Engine invocation rule
 
-- Only `orchestration/run/execution/` may construct `InteractiveEngine`.
+- Only `orchestration/run/execution/` may construct `InteractiveEngine`. `run/execution/drive/mod.rs` hosts `engine.run()` and coordinates state, interaction, and event delivery.
 - Interactive runs call `InteractiveEngine::run()`; orchestration handles only `NeedsInteraction` and terminal outcomes.
 - Tool and subagent execution goes through `ToolPortImpl` (`engine::ToolPort`).
 - UI, Desktop, and Providers never call the engine directly.
 
 ## Port rule
 
-Engine defines outbound ports (traits) for what it requires from external systems:
-`AiPort` and `ToolPort`.
+The engine defines outbound ports (traits) for what it needs from external systems: `AiPort` and `ToolPort`.
 
-Orchestration implements `ToolPortImpl`, calls `AiPort` via `Box<dyn>`, and resumes
-paused engines through `InteractiveEngine::on_human_input` /
-`InteractiveEngine::on_tool_decision`.
+Orchestration implements `ToolPortImpl`, calls `AiPort` via `Box<dyn>`, and resumes paused engines through `InteractiveEngine::on_human_input` / `InteractiveEngine::on_tool_decision`. Because orchestration depends on `dyn AiPort`, provider implementations can change without moving transport details into the engine.
 
-Provider-specific branching stays in `providers/`. Engine does not know which LLM is being called.
+Provider-specific branching stays in `providers/`. The engine does not know which LLM it is calling.
 
 UI-to-Desktop calls go through typed wrappers in `crates/ui/src/api.ts`. Add a new port only when code is typed on that interface.
 
@@ -181,7 +176,7 @@ UI-to-Desktop calls go through typed wrappers in `crates/ui/src/api.ts`. Add a n
 
 ## Development lanes
 
-Use the changed behavior to choose source guidance and verification from this table. The dependency rules above apply to every lane.
+Pick source guidance and verification by the behavior you changed. The dependency rules above apply to every lane.
 
 | Touched area | Lane | Primary source docs | Required local verification |
 | --- | --- | --- | --- |
@@ -194,16 +189,14 @@ Use the changed behavior to choose source guidance and verification from this ta
 | `crates/ui/**` | UI/Desktop seam and presentation | `crates/ui/AGENTS.md` | `npm --prefix crates/ui run typecheck`; focused Vitest for changed helpers/components |
 | Cross-crate behavior | Full workflow slice | Root `AGENTS.md`, this contract, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; run `./scripts/verify.sh` before handoff |
 
-Agent-facing skills may summarize this table, but they must treat these docs as authoritative. If a skill, rule file, or memory contradicts this contract, update the secondary artifact rather than copying stale architecture facts forward.
+Agent-facing skills may summarize this table but must treat these docs as authoritative. If a skill, rule file, or memory contradicts this contract, update the secondary artifact; don't copy stale architecture facts forward.
 
 ## Change review checklist
 
-1. Does this change add a dependency that violates allowed/forbidden rules?
+1. Does this change add a dependency that violates the allowed/forbidden rules?
 2. Does UI/Desktop bypass layers to call engine/provider code?
 3. Did provider-specific logic leak into Orchestration or Engine?
 4. Does any new runtime state live outside Orchestration without justification?
 5. Are new public interfaces declared at the correct seam (Desktop vs Orchestration vs Engine)?
 6. Does Engine remain free of filesystem/tool I/O (delegated to `ToolPort`)?
 7. Do Desktop/UI contain only transport logic, not orchestration or engine rules?
-
-`run/execution/drive/mod.rs` hosts `engine.run()` and coordinates state, interaction, and event delivery. Orchestration depends on `dyn AiPort` so provider implementations can change without moving transport details into the engine.
