@@ -1,6 +1,4 @@
-use crate::adapters::storage::json_file_store::{
-    app_data_dir, read_json_file, write_json_file,
-};
+use crate::adapters::storage::json_file_store::{app_data_dir, read_json_file, write_json_file};
 use crate::agent::AgentStore;
 use engine::CallableAgent;
 use serde::{Deserialize, Serialize};
@@ -57,6 +55,7 @@ impl AgentStore for FileAgentStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapters::storage::json_file_store::OPENFLOW_DATA_DIR_SLUG;
     use engine::AgentNodeConfig;
     use std::fs;
     use tempfile::tempdir;

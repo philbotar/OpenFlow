@@ -281,10 +281,12 @@ impl EditIo {
         let payload = restore_line_endings(&normalized, ending);
         let final_content = format!("{bom}{payload}");
 
-        atomic_write_bytes(&absolute, final_content.as_bytes()).map_err(|source| EditIoError::Io {
-            operation: "write",
-            path: user_path.to_string(),
-            source,
+        atomic_write_bytes(&absolute, final_content.as_bytes()).map_err(|source| {
+            EditIoError::Io {
+                operation: "write",
+                path: user_path.to_string(),
+                source,
+            }
         })?;
 
         self.finalize_after_disk_write(user_path, file_existed, old_normalized)

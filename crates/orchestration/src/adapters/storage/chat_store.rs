@@ -1,6 +1,4 @@
-use crate::adapters::storage::json_file_store::{
-    app_data_dir, read_json_file, write_json_file,
-};
+use crate::adapters::storage::json_file_store::{app_data_dir, read_json_file, write_json_file};
 use crate::chat::{Chat, ChatStore};
 use serde::{Deserialize, Serialize};
 use std::io;
