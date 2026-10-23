@@ -27,7 +27,7 @@ architecture/
 | Topic | Guide |
 | --- | --- |
 | Run start, IPC, checkpoints, pauses, and resume | [Run lifecycle](end-to-end-runtime.md) |
-| One agent’s turn: context, caching, tools, and completion | [Agent execution and context](technical-overview.md) |
+| One agent's turn: context, caching, tools, and completion | [Agent execution and context](technical-overview.md) |
 | Dependencies, ports, and change review | [Architecture contract](contract.md) |
 | Orchestration services, stores, and change locations | [Orchestration layout](orchestration-layout.md) |
 | Saved-agent snapshots and subagent lifecycle | [Callable agents](callable-agents.md) |
@@ -102,7 +102,7 @@ CI checks these constraints:
 
 | Rule | Enforcement |
 |---|---|
-| Engine has **zero I/O**: no filesystem, no HTTP, no `unwrap`/`expect`/`panic` | Clippy denies + forbidden-dep table (`reqwest`, `tauri` banned in engine) |
+| Engine has zero I/O: no filesystem, no HTTP, no `unwrap`/`expect`/`panic` | Clippy denies + forbidden-dep table (`reqwest`, `tauri` banned in engine) |
 | Only `orchestration/run/execution/` may construct `InteractiveEngine` | Tier-3 arch check |
 | Desktop imports `orchestration::Workflow`, never `engine::Workflow` | Re-export boundary; ban tables |
 | Orchestration may only import `create_provider` + config types from providers | Allowlist; `AiClient` banned |
