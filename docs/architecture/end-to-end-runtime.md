@@ -296,7 +296,7 @@ flowchart LR
 | Seam | Type | Important fields |
 | --- | --- | --- |
 | Workflow → invocation | `NodeInvocationContext` | upstream outputs and handoff refs, `entrypoint_text`, `shared_context`, callable snapshots |
-| → `AgentRequest` | `build_agent_request` | `provider_id`, `model`, reasoning options, `fast_mode`, `system_messages`, `task_prompt`, `input` JSON, `output_schema`, `tool_config` (approval + structured-input capability), `turn_phase`, `allow_user_input`, `transcript` |
+| → `AgentRequest` | `build_agent_request` | `provider_id`, `model`, reasoning options, `fast_mode`, `system_messages`, `task_prompt`, `input` JSON, `output_schema`, `tool_config` (approval + structured-input capability), `available_tools`, `allow_user_input`, `transcript` |
 | → provider | `ProviderRouter` → `AiPort::invoke_stream` | Effective provider, model id, reasoning options, independent fast-mode service tier, phase-specific `available_tools` (`mapping/mod.rs` → `all_tool_specs`) |
 | ← provider | `AgentTurnOutcome` | `Completed.output`, optional `Completed.handoff`, `ToolCalls.tool_calls`, control transitions |
 | Tool execution | `ToolPort::execute_batch` | `ToolBatchOutput` → `on_tool_results` |
@@ -370,7 +370,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 3. `NeedsInteraction { approvals: [EngineAwaitApproval] }` → `ToolApprovalRequested`.
 4. User: `submit_tool_approval(allow: true)` → `on_tool_decision` clears the approval flag.
 5. `take_ready_tool_batches` → `ToolPort::execute_batch` inside `run()`.
-6. `on_tool_results` → next turn **Control** phase.
+6. `on_tool_results` → next model turn with the unified tool catalog.
 
 ### D. Write tool blocked under `read_only`
 
@@ -409,7 +409,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 **Engine guarantees**
 
 - Valid workflows have acyclic execution layers; `validate_workflow` is the gate.
-- Control and Work tool catalogs are never mixed on one `AgentRequest`.
+- A tool batch never mixes harness and executable tools (`AgentError::MixedToolTurn`).
 - `NeedsInteraction` is the only pause surface from `run()`; orchestration must not invent parallel pause semantics.
 - Node outputs propagate downstream only after `Completed` outcome stores structured output.
 

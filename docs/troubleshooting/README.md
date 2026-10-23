@@ -13,7 +13,7 @@ Find your symptom below and keep the exact error text for retries or reports. Co
 | HTTP 403 from the Codex backend | The private ChatGPT backend may have changed or rejected third-party `originator: openflow` | An OpenAI API key won't fix this. Verify current official Codex behavior and the documented compatibility boundary. |
 | Usage/rate-limit error | ChatGPT plan/workspace limits, separate from OpenAI API billing | Check those limits. |
 
-OAuth credentials are plain text in the local OpenFlow `settings.json`, like stored provider API keys. Normal settings IPC and logs redact them. Settings → ChatGPT (Codex) → **Disconnect** deletes them.
+OAuth credentials are plain text in the local OpenFlow `settings.json`, like stored provider API keys. Normal settings IPC and logs redact them. In **Settings → Providers**, with **ChatGPT (Codex)** selected, **Disconnect** deletes them.
 
 ## Provider not ready
 

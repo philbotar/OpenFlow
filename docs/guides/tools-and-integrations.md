@@ -4,7 +4,14 @@ A node's **Approval mode** sets which tools it can use and when it asks permissi
 
 ## Approval modes
 
-Set **Approval mode** in a node's Inspector:
+Set **Approval mode** in a node's Inspector, under **Tools**:
+
+<figure class="product-shot product-shot--detail" style="--shot-width: 285px">
+
+[![The Approval mode dropdown open in the Inspector, listing Read only, Read auto-approve write prompt, Always ask, and Auto-approve all.](../public/media/screenshots/tools-approval-modes.jpg)](../public/media/screenshots/tools-approval-modes.jpg)
+
+<figcaption>The four approval modes.</figcaption>
+</figure>
 
 | Mode | Behavior |
 | --- | --- |
@@ -30,6 +37,13 @@ Add search credentials in **Settings → Search** to let workflows use the bundl
 ## MCP servers
 
 In **Settings → MCP Servers**, add Stdio, Streamable HTTP, or legacy SSE servers, import `mcpServers` JSON, and test, trust, disable, or remove connections. Have the server command, URL, or imported configuration ready, and enter credentials in Settings, not workflow text. Review the server policy before enabling it: OpenFlow doesn't automatically trust a server's read-only annotation. [Security and data](../security-and-data.md#mcp-and-external-services) explains what external services can receive.
+
+<figure class="product-shot">
+
+[![Settings, MCP Servers page with no connections yet, the Registry search, Advanced discovery options, and Add connection.](../public/media/screenshots/tools-mcp-servers.jpg)](../public/media/screenshots/tools-mcp-servers.jpg)
+
+<figcaption><strong>Settings → MCP Servers</strong> before any server is added.</figcaption>
+</figure>
 
 Connecting a server doesn't inject its resources or prompts. Select each one explicitly under **MCP context** in a node Inspector. OpenFlow snapshots the selected content at run start; resume and replay use that immutable snapshot. Selected context is untrusted provider input, bounded by the limits in [Configuration](../reference/configuration.md#mcp).
 
