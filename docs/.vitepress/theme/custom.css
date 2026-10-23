@@ -223,32 +223,19 @@
   background: #101010;
   box-shadow: var(--of-shadow);
 }
-.hero-demo video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; object-position: top; }
+.hero-demo video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; }
 
 @media (min-width: 960px) {
-  /* Headline left, pitch and buttons right, the running app full width below */
-  .VPHero.has-image .container {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    grid-template-areas: 'title pitch' 'title buttons' 'demo demo';
-    column-gap: 72px;
-    row-gap: 22px;
-    align-items: end;
-    text-align: left;
-  }
-  .VPHero.has-image .main { display: contents; }
-  .VPHero .heading { grid-area: title; align-self: end; }
-  .VPHero .tagline { grid-area: pitch; align-self: end; margin: 0; }
-  .VPHero .actions { grid-area: buttons; align-self: start; justify-content: flex-start; }
-  .VPHero .text { max-width: 11ch; font-size: clamp(2.75rem, 5.2vw, 4.5rem); }
+  .VPHero.has-image .container { align-items: center; text-align: left; }
+  .VPHero.has-image .main { flex: 0 0 36%; max-width: 36%; }
   .VPHero.has-image .image {
-    grid-area: demo;
-    order: 0;
-    width: 100%;
+    order: 2;
+    flex: 1 1 auto;
+    margin: 0 0 0 40px;
     max-width: none;
-    margin: 40px 0 0;
   }
   .VPHero.has-image .image-container { width: 100%; height: auto; transform: none; }
+  .VPHero .actions { justify-content: flex-start; }
 }
 .VPHero .main,
 .VPHero .main .text,
