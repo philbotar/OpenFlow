@@ -1,47 +1,14 @@
-import fs from 'node:fs'
-import path from 'node:path'
 import { slug } from 'github-slugger'
 import { defineConfig } from 'vitepress'
-
-const siteUrl = process.env.DOCS_SITE_URL ?? 'https://philbotar.github.io/OpenFlow/'
-const base = new URL(siteUrl).pathname
-const repo = 'https://github.com/philbotar/OpenFlow'
-const docsRoot = path.resolve(import.meta.dirname, '..')
-const repoRoot = path.resolve(docsRoot, '..')
-const unpublished = new Set(['AGENTS.md', 'CONTEXT.md', 'ROADMAP.md'])
-
-// Resolve a Markdown link the way the site publishes it: published pages get
-// site URLs, everything else in the repository points at GitHub.
-function resolveLink(href: string, relativePath: string): string | undefined {
-  if (/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href)) return undefined
-  const [target, hash = ''] = href.split('#')
-  if (!target) return undefined
-  const from = path.resolve(docsRoot, path.dirname(relativePath))
-  const abs = path.resolve(from, target)
-  const suffix = hash ? `#${hash}` : ''
-  const inDocs = abs === docsRoot || abs.startsWith(docsRoot + path.sep)
-  const rel = path.relative(docsRoot, abs).split(path.sep).join('/')
-  if (inDocs && rel.startsWith('public/')) return `/${rel.slice('public/'.length)}${suffix}`
-  const published =
-    inDocs && abs.endsWith('.md') && !unpublished.has(path.basename(abs)) && !rel.startsWith('work-specs/')
-  if (published) {
-    if (rel === 'README.md') return `/overview.html${suffix}`
-    if (rel === 'index.md') return `/${suffix}`
-    if (path.basename(rel) === 'README.md') return `/${path.dirname(rel)}/${suffix}`
-    return `/${rel.replace(/\.md$/, '.html')}${suffix}`
-  }
-  if (!fs.existsSync(abs)) return undefined
-  const repoRel = path.relative(repoRoot, abs).split(path.sep).join('/')
-  const kind = fs.statSync(abs).isDirectory() ? 'tree' : 'blob'
-  return `${repo}/${kind}/main/${repoRel}${suffix}`
-}
+import { base, repo, resolveLink, siteUrl } from './links'
+import { pageHead, transformPage, writeLlmsFiles } from './seo'
 
 export default defineConfig({
   title: 'OpenFlow',
   description: 'Install OpenFlow, connect a provider, and build multi-agent workflows you can inspect and control.',
   base,
   cleanUrls: false,
-  lastUpdated: false,
+  lastUpdated: true,
   ignoreDeadLinks: true,
   srcExclude: ['**/AGENTS.md', '**/CONTEXT.md', '**/ROADMAP.md', 'work-specs/**', 'node_modules/**'],
   rewrites: {
@@ -77,6 +44,9 @@ export default defineConfig({
   },
   head: [['link', { rel: 'icon', href: `${base}logo.png` }]],
   sitemap: { hostname: siteUrl },
+  transformPageData: (pageData, { siteConfig }) => transformPage(pageData, siteConfig),
+  transformHead: ({ pageData }) => pageHead(pageData),
+  buildEnd: (siteConfig) => writeLlmsFiles(siteConfig),
   themeConfig: {
     logo: '/logo.png',
     search: { provider: 'local' },

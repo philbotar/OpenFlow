@@ -84,6 +84,21 @@ The History capture shows a real stored `completed` status, not a verified good 
 
 The review covered installation and provider setup, first workflow, authoring and Inspector, direct chats, runs and recovery, projects, scheduling, app navigation, and tools/integrations. The tutorial step rail and diagrams stay. Provider authentication stays text-only so no credentials or account details are published. Recovery keeps its decision diagram instead of a fabricated approval, failure, or resumed state. The Help capture shows the replayable tour, not fresh-install onboarding.
 
+## Search and LLM output
+
+Each build also writes these files into `docs/.vitepress/dist/`:
+
+| Output | Content |
+| --- | --- |
+| `llms.txt` | Site summary and a link plus description for every page |
+| `llms-full.txt` | All published pages in one file |
+| One `.md` file per page | Page Markdown with links rewritten to absolute site URLs |
+| `sitemap.xml` | Published page URLs with last-modified dates from git |
+
+Every page gets its own meta description, taken from its front matter `description` or its first paragraph. Pages also get a canonical URL, Open Graph tags with a share image, and a link to their Markdown copy. The home page adds `SoftwareApplication` structured data. Set a front matter `description` to override the generated one. The code is in `docs/.vitepress/seo.ts`.
+
+The repository's Pages site can't serve `robots.txt`, because that file must sit at the host root. Submit `sitemap.xml` in a search console instead.
+
 ## Publish
 
 `bun run build` outputs a static directory, `docs/.vitepress/dist/`. It needs no OpenFlow backend or model credentials; any static host that serves directory indexes works.

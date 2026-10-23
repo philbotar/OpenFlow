@@ -1,6 +1,6 @@
 ---
 layout: home
-title: OpenFlow documentation
+title: "OpenFlow: run AI agents as a workflow"
 description: Install OpenFlow, connect a model provider, and build multi-agent workflows.
 hero:
   text: Run AI agents as a workflow
