@@ -195,7 +195,7 @@ While a node is running model or tool work, `ExecutionAction::ProvideInput` goes
 
 **Source:** `crates/engine/src/tools/config.rs` → `ToolCallStatus`
 
-Used for UI/orchestration projection (`events.rs`), not in the engine loop.
+`ToolCallStatus` is used for UI and orchestration projection (`events.rs`). The engine loop does not use it.
 
 ```mermaid
 stateDiagram-v2
@@ -250,7 +250,7 @@ stateDiagram-v2
     Failed --> [*]
 ```
 
-Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent_runtime.rs`), not as DAG layer peers.
+Subagent turns run inside a parent `CALL_SUBAGENT` tool execution (`subagent_runtime.rs`) and are not peers of the nodes in a DAG layer.
 
 ## 4. Validation, pauses, and recovery
 
@@ -265,8 +265,8 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | Retryable node / `RetryPolicy` | `AgentError::Transient`, interrupt, recoverable fail | **engine** | Yes (pause) | `retry_node` | Exhaust → `failed_nodes` / run fail | `completion.rs`, `RetryPolicy` in `WorkflowSettings` |
 | Cancel | User stops an addressed run | **orchestration** + token | Yes (terminal) | New run / continue | `EngineRunResult::Cancelled` | `CancellationToken`, `stop_run(run_id)` |
 | Structured output / completion protocol | Invalid `openflow_submit_node_output` JSON | **engine** | No (nudge retry) | Auto (≤3 nudges) | Then `failed_nodes` | `AgentError::MalformedSubmitOutput` |
-| DAG layer readiness | Upstream node lacks output | **engine** | No (wait) | Auto when upstream completes | — | `is_node_blocked`, `gather_call_ai_actions` |
-| Checkpoint restore | User stop / durable resume | **orchestration** | — | `continue_run` / `resume_durable_run` | Hash / stale node mismatch | `checkpoint.rs`, `run_checkpoint_store.rs` |
+| DAG layer readiness | Upstream node lacks output | **engine** | No (wait) | Auto when upstream completes | N/A | `is_node_blocked`, `gather_call_ai_actions` |
+| Checkpoint restore | User stop / durable resume | **orchestration** | N/A | `continue_run` / `resume_durable_run` | Hash / stale node mismatch | `checkpoint.rs`, `run_checkpoint_store.rs` |
 | Callable agent snapshot | Unknown agent id at run start | **engine** | Yes (prep) | Fix workflow/agents | Prep error | `resolve_callable_agent_snapshots` |
 
 **Provider resolution order:** node `AgentNodeConfig.provider_id` → workflow `WorkflowSettings.provider_id` → active settings provider. Run prep creates clients for every referenced provider. Requests never fail over across providers.
