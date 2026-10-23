@@ -1,6 +1,6 @@
 # Provider adapters
 
-`crates/providers` implements the outbound LLM adapters behind `engine::AiPort`, with transport through **Rig 0.39** (`rig-core`) in `rig_adapter/`. Orchestration resolves settings into provider configuration and calls `create_provider()`; it never depends on concrete provider clients.
+`crates/providers` implements the outbound LLM adapters behind `engine::AiPort`, with transport through Rig 0.39 (`rig-core`) in `rig_adapter/`. Orchestration resolves settings into provider configuration and calls `create_provider()`; it never depends on concrete provider clients.
 
 For keys, OAuth, and readiness controls, follow [Provider setup](../guides/provider-setup.md).
 
@@ -16,9 +16,9 @@ Workflow run (engine)
         → rig_adapter/ (Rig HTTP + streaming to the vendor API)
 ```
 
-- **Engine** owns run logic and sees only `AiPort`: one interface for model turns, streaming, and tool-call results.
-- **Orchestration** loads `settings.json`, merges secrets, resolves every provider the workflow references, validates all their credentials before execution, and builds a run-scoped router over those clients. It imports only factory and config types from `providers`, never Rig or vendor SDKs.
-- **`crates/providers`** owns transport. Rig does most outbound HTTP and SSE streaming. OpenFlow code around it handles:
+- The engine owns run logic and sees only `AiPort`, one interface for model turns, streaming, and tool-call results.
+- Orchestration loads `settings.json`, merges secrets, resolves every provider the workflow references, validates all their credentials before execution, and builds a run-scoped router over those clients. It imports only factory and config types from `providers`, never Rig or vendor SDKs.
+- `crates/providers` owns transport. Rig does most outbound HTTP and SSE streaming, and OpenFlow code around it handles:
   - `AgentRequest` ↔ payload conversion (`mapping/`, `rig_adapter/convert.rs`).
   - API keys, Anthropic headers, OpenAI-compatible base URLs (`auth.rs`, profile fields).
   - ChatGPT Codex OAuth, refresh, and endpoints (`codex_oauth/`, `codex.rs`).
@@ -32,11 +32,11 @@ A provider failure stays attached to its node. OpenFlow never retries through a 
 
 | Profile family | `ProviderAdapterConfig` | Rig model (simplified) | HTTP shape |
 | --- | --- | --- | --- |
-| **Anthropic** | `Anthropic` | `rig_core::providers::anthropic` completion model | Anthropic **Messages** API (`/v1/messages`), `x-api-key` + Anthropic version headers |
-| **OpenAI** and most hosted vendors | `OpenAiCompatible` | `rig_core::providers::openai` | Default **Responses** API for OpenAI; **Chat Completions** for OpenRouter, Groq, Gemini compat, locals, etc. |
-| Per-model override on a compat profile | `OpenAiCompatible` + `model_transports` | Same Rig Anthropic client against the profile **base URL** | **Anthropic Messages** on a non-Anthropic host (gateway or proxy) |
+| **Anthropic** | `Anthropic` | `rig_core::providers::anthropic` completion model | Anthropic Messages API (`/v1/messages`), `x-api-key` + Anthropic version headers |
+| **OpenAI** and most hosted vendors | `OpenAiCompatible` | `rig_core::providers::openai` | Responses API by default for OpenAI; Chat Completions for OpenRouter, Groq, Gemini compat, locals, etc. |
+| Per-model override on a compat profile | `OpenAiCompatible` + `model_transports` | Same Rig Anthropic client against the profile base URL | Anthropic Messages on a non-Anthropic host (gateway or proxy) |
 | **ChatGPT (Codex)** | `OpenAiCodex` (separate `CodexClient`) | Rig ChatGPT responses + OpenFlow OAuth | Private Codex backend (not `api.openai.com` API-key traffic) |
-| **Amazon Bedrock** | `Bedrock` | `rig-bedrock` completion model | AWS Bedrock **Converse** (not Anthropic Messages on `api.anthropic.com`) |
+| **Amazon Bedrock** | `Bedrock` | `rig-bedrock` completion model | AWS Bedrock Converse (not Anthropic Messages on `api.anthropic.com`) |
 
 At invoke time, `rig_adapter` builds one `RigModel` enum arm (Anthropic, OpenAiChat, OpenAiResponses, ChatGPT, or Bedrock), runs the turn, and maps the result to `AgentTurnOutcome`. The engine sees the same `AiPort` whichever arm ran.
 
@@ -69,7 +69,7 @@ Prompt caching reuses exact prompt prefixes. It is separate from OpenFlow's vali
 | --- | --- |
 | OpenAI API, Responses | Stable `prompt_cache_key` per workflow node. GPT-5.6 models add `prompt_cache_options.mode: "explicit"` and a breakpoint on the final stable system block, so changing user/tool history triggers no billable cache write. |
 | OpenAI API, Chat Completions | Same per-node `prompt_cache_key`; the provider picks the automatic breakpoint. |
-| Anthropic Messages | Automatic moving-history caching plus explicit stable system and tool-definition markers. Anthropic's default five-minute TTL. |
+| Anthropic Messages | Automatic moving-history caching plus explicit stable system and tool-definition markers, with Anthropic's default five-minute TTL. |
 | Anthropic-compatible model override | Same Messages policy. Backend support is part of that endpoint's compatibility contract. |
 | Amazon Bedrock Converse | Rig prompt caching only for the Claude and Nova model-ID allowlist in `rig_adapter/model.rs`; other models get no cache points. |
 | Other OpenAI-compatible endpoints | `prompt_cache_key`, except Ollama and LM Studio. Acceptance, discounts, and lifetime are provider-defined. |
@@ -86,7 +86,7 @@ Custom OpenAI-compatible profiles have a default Responses or Chat Completions t
 
 An `anthropic_messages` override uses the Rig Anthropic client against the profile base URL: standard `/v1/messages` request, Anthropic auth/version headers, tool schema, and response mapping. Removing the override restores the profile default.
 
-OpenAI Responses and ChatGPT (Codex) preserve MCP schemas with map-like object parameters. Rig 0.39 marks every Responses function tool strict, but OpenAI strict mode rejects objects that allow additional properties. So the final-wire adapters set `strict: false` on affected tools only, without closing or rewriting the MCP server's schema. Closed schemas stay strict.
+OpenAI Responses and ChatGPT (Codex) preserve MCP schemas with map-like object parameters. Rig 0.39 marks every Responses function tool strict, but OpenAI strict mode rejects objects that allow additional properties. The final-wire adapters therefore set `strict: false` on affected tools only, without closing or rewriting the MCP server's schema. Closed schemas stay strict.
 
 An adapter that must invoke without streaming keeps typed reasoning on the turn outcome. Its fallback stream emits displayable text and summary blocks before assistant text, never encrypted or redacted reasoning payloads.
 
@@ -110,7 +110,7 @@ Rig streams tool-call names and argument deltas before the final response; OpenF
 
 Providers own wire decoding and local `jsonrepair-rs` recovery. Semantic acceptance of `openflow_submit_node_output` lives in the engine completion protocol (`execution/completion_protocol.rs`).
 
-When deterministic recovery cannot satisfy the node output schema, providers attach a redacted `OutputRepairCandidate` to `AgentError::MalformedSubmitOutput`. Orchestration wraps the run provider once in `RepairingAiPort` (before `AiInvocationAdapter`), so nodes and subagents share one overseer pass on the **same** provider.
+When deterministic recovery cannot satisfy the node output schema, providers attach a redacted `OutputRepairCandidate` to `AgentError::MalformedSubmitOutput`. Orchestration wraps the run provider once in `RepairingAiPort` (before `AiInvocationAdapter`), so nodes and subagents share one overseer pass on the same provider.
 
 Malformed wire-argument markers keep at most 64 KiB of raw UTF-8 text, ending on a character boundary. The engine caps the repair candidate independently.
 
@@ -130,7 +130,7 @@ Malformed wire-argument markers keep at most 64 KiB of raw UTF-8 text, ending on
 | Storage | Access, refresh, ID token, expiry, and account metadata in plaintext in `ProviderProfile.codex_oauth` inside `settings.json` |
 | UI boundary | Settings IPC returns only tagged login state, safe email, and device instructions; never tokens or account ID |
 
-OpenFlow implements the OAuth protocol in Rust. Endpoint, PKCE, token-body, and request-shape details derive from [oh-my-pi's MIT-licensed implementation](https://github.com/badlogic/pi-mono/tree/main/packages/ai/src/auth/oauth) and are pinned by fixture tests. Unlike the Codex CLI, OpenFlow intentionally falls back to device authorization, not a second callback port, when port 1455 is occupied.
+OpenFlow implements the OAuth protocol in Rust. Its endpoint, PKCE, token-body, and request-shape details derive from [oh-my-pi's MIT-licensed implementation](https://github.com/badlogic/pi-mono/tree/main/packages/ai/src/auth/oauth) and are pinned by fixture tests. Unlike the Codex CLI, OpenFlow intentionally falls back to device authorization, not a second callback port, when port 1455 is occupied.
 
 ### Compatibility boundary
 

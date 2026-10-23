@@ -11,4 +11,4 @@ diagrams/
 └── layers-legacy-names.mmd        # Historical pre-crate-rename labels (reference only)
 ```
 
-View the sources in a Mermaid viewer or a Markdown preview with Mermaid support. `layers-legacy-names.mmd` keeps the old names, including `workflow-core` and `app-backend`; do not update it for new work.
+View the sources in a Mermaid viewer or a Markdown preview with Mermaid support. `layers-legacy-names.mmd` keeps the old names, including `workflow-core` and `app-backend`. Do not update it for new work.

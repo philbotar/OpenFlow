@@ -13,7 +13,7 @@ A `CallableAgent` is a saved agent definition that a workflow node can invoke as
 1. `RunCoordinator` loads agents through `AgentLibrary` and freezes the selected records as `CallableAgent` snapshots.
 2. Installed `/skill-id` tokens anywhere in task prompts resolve through the configured skill catalog. OpenFlow reads the exact `SKILL.md` files, appends their contents to the node or callable-agent system prompt before the snapshot starts executing, and keeps the resolved paths for later chat turns.
 3. The engine uses the snapshot and never re-fetches saved agents during the run.
-4. The snapshot is discarded; the next run takes a fresh one.
+4. The snapshot is discarded, and the next run takes a fresh one.
 
 ## Extend agents
 
