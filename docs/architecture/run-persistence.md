@@ -1,6 +1,6 @@
 # Run persistence
 
-Orchestration persists each interactive workflow attempt as a run record with append-only checkpoints. It stores snapshots, rebuilds host resources on resume, and projects replay state for the UI. The engine owns execution behavior.
+Orchestration persists each interactive workflow attempt as a run record with append-only checkpoints. It stores snapshots, rebuilds host resources on resume, and projects replay state for the UI, while the engine owns execution behavior.
 
 ## Decisions
 
@@ -16,5 +16,5 @@ Orchestration persists each interactive workflow attempt as a run record with ap
 
 ## Replay versus resume
 
-- **Replay** returns `WorkflowRunState` with `active = false` and clears pending approvals, so old approval buttons cannot execute.
-- **Resume** executes from the checkpoint engine state, keeps the original run id, writes future checkpoints to the same run directory, and reuses the same artifact directory.
+- Replay returns `WorkflowRunState` with `active = false` and clears pending approvals, so old approval buttons cannot execute.
+- Resume executes from the checkpoint engine state, keeps the original run id, writes future checkpoints to the same run directory, and reuses the same artifact directory.

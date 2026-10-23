@@ -108,7 +108,7 @@ orchestration/src/
 | `adapters/storage/app_workflow_store.rs` | `adapters::storage::app_workflow_store` | Persist app-level `workflows.json`. |
 | `adapters/storage/project_workflow_store.rs` | `adapters::storage::project_workflow_store` | Discover and save per-project workflow files. |
 
-Catalog owns merge policy. Stores only read and write bytes.
+The catalog owns merge policy; the stores only read and write bytes.
 
 ### Agent
 
@@ -209,9 +209,9 @@ sequenceDiagram
 ```
 
 `AppBackend` delegates run lifecycle operations to `RunRegistry`, which owns
-one `RunCoordinator` per live or retained in-process run. Different workflows may run concurrently;
-the registry rejects a second active run for the same workflow and targets 64 retained sessions by
-evicting inactive sessions first. Active sessions are never evicted.
+one `RunCoordinator` per live or retained in-process run. Different workflows may run concurrently,
+but the registry rejects a second active run for the same workflow. It targets 64 retained sessions by
+evicting inactive sessions first and never evicts an active session.
 
 Registry operations accept an optional run ID internally: an explicit ID selects that session;
 omitting it selects the latest session for legacy backend calls. Missing explicit IDs return an
@@ -221,8 +221,8 @@ The coordinator completes fallible launch setup, including durable resume status
 spawning execution. It then installs handles without an intervening await. The headless runner
 cancels and joins execution on return; dropping its future cancels and aborts the owned task.
 
-Hashline editing uses one concrete snapshot store. A single mutex protects versions and path
-recency, so concurrent writes cannot bypass eviction. Bash and MCP package installation share
+Hashline editing uses one concrete snapshot store, with a single mutex over versions and path
+recency so concurrent writes cannot bypass eviction. Bash and MCP package installation share
 the process-group cleanup helper in `adapters/infrastructure/process.rs`.
 
 ## Where to add code
