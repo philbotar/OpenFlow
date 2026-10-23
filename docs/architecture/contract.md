@@ -95,7 +95,7 @@ OpenFlow uses nested ports and adapters. UI calls desktop, desktop calls orchest
 
 - Active session/run state: approval queues, retry counters, execution trace
 - Runtime coordination: what step runs next, when to pause for approval
-- NOT execution semantics (the engine owns those)
+- Not execution semantics (the engine owns those)
 
 ### Engine
 
@@ -107,7 +107,7 @@ OpenFlow uses nested ports and adapters. UI calls desktop, desktop calls orchest
 
 - Durable state (workflows.json, settings.json, agent definitions)
 - Credentials, cache
-- NOT runtime session state (orchestration owns that)
+- Not runtime session state (orchestration owns that)
 
 ## Dependency rules
 
