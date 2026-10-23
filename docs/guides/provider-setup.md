@@ -2,13 +2,20 @@
 
 A provider is the model service OpenFlow calls for runs, chats, and AI-assisted workflow editing. Connect one in **Settings → Providers**. **Run** stays disabled until the provider shows **Ready**.
 
-To get there on first launch, select **Set up provider →** at the end of onboarding.
+On first launch, the quick tour's **Connect an AI provider** step points to **Settings** in the sidebar.
 
 ## Connect a provider
 
 1. Open **Settings → Providers** and pick one from the **Provider** dropdown.
 2. Authenticate it using the section below.
 3. Check that the status chip says **Ready**.
+
+<figure class="product-shot">
+
+[![Settings, Providers page with OpenAI active and Ready, an empty API key field, the default model, and available models.](../public/media/screenshots/provider-setup-providers.jpg)](../public/media/screenshots/provider-setup-providers.jpg)
+
+<figcaption><strong>Settings → Providers</strong> with OpenAI active. The chip reads <strong>Ready</strong> once the configuration resolves.</figcaption>
+</figure>
 
 Profile changes save automatically. Only API keys need an explicit **Save API key**. The active provider is the default for chats and for workflows that don't choose their own.
 
@@ -32,14 +39,28 @@ The key is stored in plain text in the local `settings.json`. If you'd rather no
 1. Select **ChatGPT (Codex)** as the provider.
 2. Select **Sign in with ChatGPT** and finish in the browser.
 
+<figure class="product-shot">
+
+[![ChatGPT (Codex) selected as the active provider, with the Sign in with ChatGPT button under ChatGPT account.](../public/media/screenshots/provider-setup-chatgpt.jpg)](../public/media/screenshots/provider-setup-chatgpt.jpg)
+
+<figcaption>With <strong>ChatGPT (Codex)</strong> selected, sign in from the <strong>ChatGPT account</strong> panel.</figcaption>
+</figure>
+
 If port 1455 is busy, OpenFlow offers a device code instead. Use **Disconnect** to sign out. Usage bills to your ChatGPT plan, not to an API account, and `OPENAI_API_KEY` is not used. If sign-in fails, see [ChatGPT (Codex) sign-in](../troubleshooting/README.md#chatgpt-codex-sign-in).
 
 ### Amazon Bedrock
 
 1. Select **Amazon Bedrock**.
-2. Set **AWS profile** and **AWS region**, or leave them to pick up `AWS_PROFILE` and `AWS_REGION` from your environment.
+2. Set **AWS profile** (or an optional **Credential command**) and, under **Advanced settings**, **AWS region**. Or leave them to pick up `AWS_PROFILE` and `AWS_REGION` from your environment.
 3. Select **Test AWS connection**. Until you do, Bedrock only reports that the region is configured; it hasn't checked your credentials.
 4. Optionally select **Fetch from AWS** and choose which models to expose.
+
+<figure class="product-shot">
+
+[![Amazon Bedrock selected, showing AWS profile and Credential command fields, Test AWS connection, and Fetch from AWS.](../public/media/screenshots/provider-setup-bedrock.jpg)](../public/media/screenshots/provider-setup-bedrock.jpg)
+
+<figcaption>Bedrock reports the region as configured until <strong>Test AWS connection</strong> checks your credentials.</figcaption>
+</figure>
 
 For SSO credentials, see [Bedrock with SSO](../architecture/provider-adapters.md#bedrock-with-sso).
 

@@ -336,3 +336,7 @@
 .vp-doc li ol > li::before,
 .vp-doc li ol > li::after { content: none; }
 .vp-doc li ol > li + li { margin-top: 4px; }
+
+/* Product screenshots. Detail crops render at half their pixel width (Retina 2x). */
+.vp-doc .product-shot img { display: block; width: 100%; height: auto; }
+.vp-doc .product-shot--detail img { max-width: var(--shot-width, 100%); }

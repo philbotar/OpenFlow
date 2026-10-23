@@ -17,7 +17,14 @@ If macOS blocks it, right-click **OpenFlow** → **Open**, or run `xattr -cr /pa
 
 ## First launch
 
-An onboarding tour opens. On its last slide, **Set up provider →** opens **Settings → Providers**; then follow [Provider setup](../guides/provider-setup.md). **Help** reopens the tour.
+A quick tour opens and points out the main controls. Its **Connect an AI provider** step highlights **Settings**. Select **Done** to close the tour, then open **Settings → Providers** and follow [Provider setup](../guides/provider-setup.md). **Help** replays the tour.
+
+<figure class="product-shot product-shot--detail" style="--shot-width: 606px">
+
+[![Quick tour step 9 of 10, Connect an AI provider, pointing at Settings in the sidebar.](../public/media/screenshots/getting-started-tour-connect-provider.jpg)](../public/media/screenshots/getting-started-tour-connect-provider.jpg)
+
+<figcaption>The tour’s <strong>Connect an AI provider</strong> step highlights <strong>Settings</strong>.</figcaption>
+</figure>
 
 <a id="update-the-packaged-app"></a>
 

@@ -275,7 +275,7 @@ Handoff / PR gate:
 
 Default verify Rust tests use **`test-fast`** (CI lane: no desktop/Tauri). Full workspace incl. desktop: `./scripts/verify.sh test`. Parallel agents sharing a machine: `VERIFY_ISOLATE_TARGET=1 ./scripts/verify.sh` (isolated `target/verify-<pid>`). Default reuses `./target`.
 
-Runs all steps (`fmt`, clippy-max `clippy`, `doc`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`); prints one-line PASS/FAIL per step and a summary with repro commands. Optional `./scripts/verify.sh --deep` adds `mutants` and `miri` (engine + orchestration UB via `./scripts/miri.sh`). Filter steps: `./scripts/verify.sh fmt clippy`. `VERIFY_FAIL_FAST=1` stops on first failure.
+Runs all steps (`fmt`, clippy-max `clippy`, `doc`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`); prints one-line PASS/FAIL per step and a summary with repro commands. Optional `./scripts/verify.sh --deep` adds `mutants`. Filter steps: `./scripts/verify.sh fmt clippy`. `VERIFY_FAIL_FAST=1` stops on first failure.
 
 For single-step debug with full untruncated output, run a granular script directly: `./scripts/verify/<step>.sh` (see `scripts/verify/`).
 
