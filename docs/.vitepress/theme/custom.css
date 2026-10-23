@@ -272,3 +272,67 @@
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* Numbered steps: a bubble per step, joined by a line */
+.vp-doc ol {
+  margin: 1.25rem 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.vp-doc ol > li {
+  position: relative;
+  margin: 0;
+  padding: 0 0 1.5rem 2.75rem;
+  counter-increment: step;
+}
+.vp-doc ol > li + li { margin-top: 0; }
+.vp-doc ol > li:last-child { padding-bottom: 0; }
+.vp-doc ol > li::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  z-index: 1;
+  border: 1px solid var(--of-hairline-strong);
+  border-radius: 50%;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.vp-doc ol > li::after {
+  content: '';
+  position: absolute;
+  top: calc(1.75rem + 4px);
+  bottom: -4px;
+  left: calc(0.875rem - 1px);
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--vp-c-text-1) 16%, transparent);
+}
+.vp-doc ol > li:last-child::after { display: none; }
+.vp-doc ol > li > :first-child { margin-top: 0; }
+.vp-doc ol > li > :last-child { margin-bottom: 0; }
+.vp-doc ol > li > div[class*='language-'] { margin: 12px 0 0; }
+
+/* Lists inside a step stay plain */
+.vp-doc li ol {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  list-style: decimal;
+  counter-reset: none;
+}
+.vp-doc li ol > li {
+  padding: 0;
+  counter-increment: none;
+}
+.vp-doc li ol > li::before,
+.vp-doc li ol > li::after { content: none; }
+.vp-doc li ol > li + li { margin-top: 4px; }
