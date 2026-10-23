@@ -28,6 +28,13 @@ Open the [installed app](../getting-started/README.md) or your [development buil
 1. In the sidebar, select **New workflow**, then **Create new workflow**.
 2. From the workflow's row menu, select **Rename**, enter `Release checklist demo`, and press Enter.
 
+<figure class="product-shot product-shot--detail" style="--shot-width: 595px">
+
+[![The New workflow menu open at the top of the sidebar, offering Create new workflow and Create with AI.](../public/media/screenshots/first-workflow-new-workflow-menu.jpg)](../public/media/screenshots/first-workflow-new-workflow-menu.jpg)
+
+<figcaption><strong>New workflow</strong> opens this menu. Choose <strong>Create new workflow</strong>.</figcaption>
+</figure>
+
 This is an app workflow, stored in OpenFlow's local data directory. To store it in a repository, use **New workflow** on that project's row instead. [Projects and persistence](projects-and-persistence.md) explains where each kind is stored.
 
 </div>
@@ -68,6 +75,13 @@ Leave **Approval mode** at its default; this node uses no repository or external
 
 3. Drag from the output handle on `Planner` to the input handle on `Checklist`. The arrow must point from `Planner` to `Checklist`.
 4. Select **Save workflow** in the top bar. A **Saved** notification confirms the graph and prompts were saved.
+
+<figure class="product-shot">
+
+[![Planner connected to Checklist on the canvas, with the release request typed in the Chat composer and not yet sent.](../public/media/screenshots/first-workflow-ready-to-start.jpg)](../public/media/screenshots/first-workflow-ready-to-start.jpg)
+
+<figcaption>Ready to run: the arrow points from <code>Planner</code> to <code>Checklist</code>, and the request is typed in the composer.</figcaption>
+</figure>
 
 </div>
 <div class="doc-step">
