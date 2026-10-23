@@ -4,7 +4,7 @@ title: "OpenFlow: run AI agents as a workflow"
 description: Install OpenFlow, connect a model provider, and build multi-agent workflows.
 hero:
   text: Run AI agents as a workflow
-  tagline: Chain agents on a canvas. Each gets its own task, model, and tools, and passes its result to the next. You can read every conversation and step in at any point.
+  tagline: Chain agents on a canvas. Each gets its own task, model, and tools, and passes its result to the next. Read every conversation, and step in at any point.
   image:
     src: /logo.png
     alt: ''
@@ -16,7 +16,7 @@ hero:
       text: Build your first workflow
       link: /guides/first-workflow
     - theme: alt
-      text: GitHub
+      text: Star on GitHub
       link: https://github.com/philbotar/OpenFlow
 ---
 
@@ -27,11 +27,19 @@ hero:
   <div><dt>Bring your own model</dt><dd>Use OpenAI, Anthropic, ChatGPT sign-in, Amazon Bedrock, OpenRouter, or a local model such as Ollama.</dd></div>
 </dl>
 
-## See it
+## How a run goes
 
-[![OpenFlow canvas: a feature brief splits into implementation, tests, and risk review, then joins at a delivery plan.](public/media/screenshots/offline-search-canvas.png)](public/media/screenshots/offline-search-canvas.png)
+1. **Draw the workflow.** Add an agent for each step. Give it a prompt, a model, and tools, then connect it to the steps that feed it.
 
-One brief fans out to three agents that work at once. The delivery plan waits for all three.
+   [![The canvas with a feature brief splitting into risk review, test strategy, and implementation, then joining at a delivery plan, with the Inspector open on the brief agent.](public/media/screenshots/offline-search-authoring-inspector.png)](public/media/screenshots/offline-search-authoring-inspector.png)
+
+2. **Run it and watch.** Steps that don't depend on each other run at the same time. Open any agent's conversation to answer a question, approve a tool call, or retry a failed step.
+
+   [![A finished run: the planner and checklist agents are done, and the checklist agent's conversation shows the handoff it read and the result.](public/media/screenshots/release-checklist-run.png)](public/media/screenshots/release-checklist-run.png)
+
+3. **Review what happened.** History keeps every run. Open a replay to read each agent's conversation and the handoffs between them.
+
+   [![The History tab listing a completed run of the release checklist workflow.](public/media/screenshots/release-checklist-history.png)](public/media/screenshots/release-checklist-history.png)
 
 ## Get started
 
