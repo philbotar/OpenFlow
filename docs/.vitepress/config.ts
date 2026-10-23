@@ -42,7 +42,10 @@ export default defineConfig({
       }
     },
   },
-  head: [['link', { rel: 'icon', href: `${base}logo.png` }]],
+  head: [
+    ['link', { rel: 'icon', href: `${base}logo.png` }],
+    ['meta', { name: 'google-site-verification', content: 'wsmhyTKm7kwUld5TAOfso4_3wTHwKUWkTpK99nRs4sI' }],
+  ],
   sitemap: { hostname: siteUrl },
   transformPageData: (pageData, { siteConfig }) => transformPage(pageData, siteConfig),
   transformHead: ({ pageData }) => pageHead(pageData),
