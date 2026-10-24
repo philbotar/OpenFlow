@@ -99,6 +99,10 @@ Every page gets its own meta description, taken from its front matter `descripti
 
 The repository's Pages site can't serve `robots.txt`, because that file must sit at the host root. Submit `sitemap.xml` in a search console instead.
 
+## Analytics
+
+The live site counts page views with [GoatCounter](https://www.goatcounter.com/), which sets no cookies and stores no personal data. The code is in `docs/.vitepress/theme/analytics.ts`. It counts each page change, because the docs are a single-page app, and it does nothing on `localhost`, so local previews are not counted. The dashboard is at `https://openflow-docs.goatcounter.com`. To change the site, edit the endpoint in that file.
+
 ## Publish
 
 `bun run build` outputs a static directory, `docs/.vitepress/dist/`. It needs no OpenFlow backend or model credentials; any static host that serves directory indexes works.
