@@ -23,7 +23,6 @@ ignore = [
     "RUSTSEC-2025-0098",
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
-    "RUSTSEC-2026-0104",
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
     { id = "RUSTSEC-2026-0367", reason = "zip 4 via tauri-plugin-updater (no release uses zip 9); update archives are signature-verified before extraction" },
